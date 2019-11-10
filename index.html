@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crypsy — Local Notes</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="brand">
+        <span class="brand-name">Crypsy</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="app-layout">
+    <main class="main-content">
+      <section class="composer-wrapper">
+        <div id="noteComposer" class="note-composer">
+          <div id="composerHeader" class="composer-header">
+            <input type="text" id="composerTitle" class="composer-title-input" placeholder="Title" autocomplete="off" />
+          </div>
+          <textarea id="composerDescription" class="composer-desc-input" placeholder="Take a note..." rows="2"></textarea>
+          <div id="composerFooter" class="composer-footer">
+            <div class="composer-actions">
+              <button type="button" id="composerSaveBtn" class="btn-primary">Add Note</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div id="notesWorkspace" class="notes-workspace view-grid">
+        <section id="othersSection" class="notes-section">
+          <div id="othersGrid" class="notes-collection"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

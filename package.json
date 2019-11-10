@@ -1,0 +1,6 @@
+{
+  "name": "crypsy-note",
+  "version": "0.1.0",
+  "description": "Lightweight local-first note card prototype",
+  "private": true
+}
