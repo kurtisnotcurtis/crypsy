@@ -1,6 +1,6 @@
 {
   "name": "crypsy-note",
-  "version": "0.1.0",
-  "description": "Lightweight local-first note card prototype",
+  "version": "0.2.0",
+  "description": "Google Keep-style notes app with pins, card/list layouts, and 7 color themes",
   "private": true
 }
