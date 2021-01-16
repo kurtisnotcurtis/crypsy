@@ -116,4 +116,169 @@
     composerTitle: document.getElementById('composerTitle'),
     composerDescription: document.getElementById('composerDescription'),
     composerPinBtn: document.getElementById('composerPinBtn'),
-    composerTagsRow: document.getElement
+    composerTagsRow: document.getElementById('composerTagsRow'),
+    composerFooter: document.getElementById('composerFooter'),
+    composerTagBtn: document.getElementById('composerTagBtn'),
+    composerTagPopover: document.getElementById('composerTagPopover'),
+    composerTagSearch: document.getElementById('composerTagSearch'),
+    composerTagOptions: document.getElementById('composerTagOptions'),
+    composerColorPicker: document.getElementById('composerColorPicker'),
+    composerCancelBtn: document.getElementById('composerCancelBtn'),
+    composerSaveBtn: document.getElementById('composerSaveBtn'),
+
+    activeFilterBanner: document.getElementById('activeFilterBanner'),
+    activeFilterText: document.getElementById('activeFilterText'),
+    resetFilterBtn: document.getElementById('resetFilterBtn'),
+
+    notesWorkspace: document.getElementById('notesWorkspace'),
+    pinnedSection: document.getElementById('pinnedSection'),
+    pinnedGrid: document.getElementById('pinnedGrid'),
+    othersSection: document.getElementById('othersSection'),
+    othersSectionLabel: document.getElementById('othersSectionLabel'),
+    othersGrid: document.getElementById('othersGrid'),
+    emptyState: document.getElementById('emptyState'),
+
+    editModalBackdrop: document.getElementById('editModalBackdrop'),
+    editModalCard: document.getElementById('editModalCard'),
+    editModalTitle: document.getElementById('editModalTitle'),
+    editModalDescription: document.getElementById('editModalDescription'),
+    editModalPinBtn: document.getElementById('editModalPinBtn'),
+    editModalTagsRow: document.getElementById('editModalTagsRow'),
+    editModalTimestamp: document.getElementById('editModalTimestamp'),
+    editModalTagBtn: document.getElementById('editModalTagBtn'),
+    editModalTagPopover: document.getElementById('editModalTagPopover'),
+    editModalTagSearch: document.getElementById('editModalTagSearch'),
+    editModalTagOptions: document.getElementById('editModalTagOptions'),
+    editModalColorPicker: document.getElementById('editModalColorPicker'),
+    editModalDeleteBtn: document.getElementById('editModalDeleteBtn'),
+    editModalSaveBtn: document.getElementById('editModalSaveBtn'),
+
+    // Cloud Onboarding Wizard
+    cloudOnboardingBackdrop: document.getElementById('cloudOnboardingBackdrop'),
+    closeOnboardingBtn: document.getElementById('closeOnboardingBtn'),
+    providerSelectionGrid: document.getElementById('providerSelectionGrid'),
+    downloadPortableBtn: document.getElementById('downloadPortableBtn'),
+    wizardToStep2Btn: document.getElementById('wizardToStep2Btn'),
+    wizardBackToStep1Btn: document.getElementById('wizardBackToStep1Btn'),
+    selectedProviderTitle: document.getElementById('selectedProviderTitle'),
+    osPathHintCode: document.getElementById('osPathHintCode'),
+    copyPathHintBtn: document.getElementById('copyPathHintBtn'),
+    folderPickerHintText: document.getElementById('folderPickerHintText'),
+    createCrypsySubfolderCb: document.getElementById('createCrypsySubfolderCb'),
+    provisionPortableHtmlCb: document.getElementById('provisionPortableHtmlCb'),
+    wizardStep2Error: document.getElementById('wizardStep2Error'),
+    pickAndProvisionBtn: document.getElementById('pickAndProvisionBtn'),
+    connectedProviderHeading: document.getElementById('connectedProviderHeading'),
+    connectedFolderDetails: document.getElementById('connectedFolderDetails'),
+    unlinkCloudFolderBtn: document.getElementById('unlinkCloudFolderBtn'),
+    reprovisionAssetsBtn: document.getElementById('reprovisionAssetsBtn'),
+    finishOnboardingBtn: document.getElementById('finishOnboardingBtn'),
+    wizardStep1: document.getElementById('wizardStep1'),
+    wizardStep2: document.getElementById('wizardStep2'),
+    wizardStep3: document.getElementById('wizardStep3'),
+
+    // Vault Inspector Modal
+    vaultModalBackdrop: document.getElementById('vaultModalBackdrop'),
+    closeVaultModalBtn: document.getElementById('closeVaultModalBtn'),
+    vaultPassphraseInput: document.getElementById('vaultPassphraseInput'),
+    updatePassphraseBtn: document.getElementById('updatePassphraseBtn'),
+    lockVaultNowBtn: document.getElementById('lockVaultNowBtn'),
+    ciphertextPreview: document.getElementById('ciphertextPreview'),
+    exportEncryptedBtn: document.getElementById('exportEncryptedBtn'),
+    importEncryptedInput: document.getElementById('importEncryptedInput'),
+
+    lockScreenOverlay: document.getElementById('lockScreenOverlay'),
+    unlockVaultForm: document.getElementById('unlockVaultForm'),
+    unlockPassphraseInput: document.getElementById('unlockPassphraseInput'),
+    unlockErrorMsg: document.getElementById('unlockErrorMsg'),
+  };
+
+  // Utility helpers
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function highlightText(text, query) {
+    const safe = escapeHtml(text);
+    if (!query || !query.trim()) return safe;
+    const cleanQ = query.trim().replace(/^#/, '');
+    if (!cleanQ) return safe;
+    const escapedRegex = cleanQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedRegex})`, 'gi');
+    return safe.replace(regex, '<mark class="search-highlight">$1</mark>');
+  }
+
+  function formatTimestamp(ms) {
+    const d = new Date(ms);
+    return d.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  function autoResizeTextarea(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.max(textarea.scrollHeight, 32)}px`;
+  }
+
+  // Preferences
+  function loadPreferences() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_PREFS);
+      if (!raw) return;
+      const prefs = JSON.parse(raw);
+      if (prefs.viewMode === 'list' || prefs.viewMode === 'grid') {
+        state.viewMode = prefs.viewMode;
+      }
+      if (prefs.theme === 'light' || prefs.theme === 'dark') {
+        state.theme = prefs.theme;
+      }
+    } catch (e) {
+      console.warn('Failed to load UI prefs:', e);
+    }
+  }
+
+  function savePreferences() {
+    localStorage.setItem(
+      STORAGE_KEY_PREFS,
+      JSON.stringify({
+        viewMode: state.viewMode,
+        theme: state.theme,
+      })
+    );
+  }
+
+  // Persistence & Cloud Sync
+  async function persistEncryptedVault() {
+    const payload = {
+      notes: state.notes,
+      tags: state.tags,
+    };
+    const envelope = await CrypsyCrypto.encryptPayload(payload, state.passphrase);
+    state.lastEncryptedEnvelope = envelope;
+    localStorage.setItem(STORAGE_KEY_VAULT, JSON.stringify(envelope));
+
+    if (CrypsyCloudSync.isConnected()) {
+      try {
+        await CrypsyCloudSync.writeVaultToCloudFolder(envelope);
+        updateCloudStatusUI();
+      } catch (e) {
+        console.warn('Failed writing vault to cloud folder:', e);
+      }
+    }
+
+    updateVaultInspectorUI();
+  }
+
+  async function tryLoadEnvelope(envelope) {
+    state.lastEncryptedEnvelope = envelope;
+    localStorage.setItem(STORAGE_KEY_VAULT, JSON.stringify(envelope));
+    try {
+      const decrypted = await CrypsyCrypto.decryptPayload(envelo
