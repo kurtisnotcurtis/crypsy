@@ -281,4 +281,183 @@
     state.lastEncryptedEnvelope = envelope;
     localStorage.setItem(STORAGE_KEY_VAULT, JSON.stringify(envelope));
     try {
-      const decrypted = await CrypsyCrypto.decryptPayload(envelo
+      const decrypted = await CrypsyCrypto.decryptPayload(envelope, state.passphrase);
+      state.notes = Array.isArray(decrypted.notes) ? decrypted.notes : [];
+      state.tags = Array.isArray(decrypted.tags) ? decrypted.tags : [];
+      renderAll();
+      return true;
+    } catch (err) {
+      els.lockScreenOverlay.classList.remove('hidden');
+      els.unlockPassphraseInput.focus();
+      return false;
+    }
+  }
+
+  async function initVault() {
+    loadPreferences();
+    applyThemeUI();
+    applyViewModeUI();
+
+    // Listen for external cloud folder updates (e.g. synced from another device)
+    CrypsyCloudSync.onExternalUpdate(async (externalEnvelope) => {
+      await tryLoadEnvelope(externalEnvelope);
+      updateCloudStatusUI();
+    });
+
+    // Check if a cloud folder was previously linked
+    const cloudState = await CrypsyCloudSync.restoreSavedConnection();
+    updateCloudStatusUI(cloudState);
+
+    if (cloudState.status === 'connected') {
+      const cloudEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
+      if (cloudEnvelope) {
+        await tryLoadEnvelope(cloudEnvelope);
+        return;
+      }
+    }
+
+    const storedRaw = localStorage.getItem(STORAGE_KEY_VAULT);
+    if (!storedRaw) {
+      state.notes = SEED_NOTES;
+      await persistEncryptedVault();
+      renderAll();
+      return;
+    }
+
+    try {
+      const envelope = JSON.parse(storedRaw);
+      await tryLoadEnvelope(envelope);
+    } catch (e) {
+      state.notes = SEED_NOTES;
+      await persistEncryptedVault();
+      renderAll();
+    }
+  }
+
+  function updateCloudStatusUI(restoredState) {
+    const meta = CrypsyCloudSync.getSavedProviderMeta();
+    const isConnected = CrypsyCloudSync.isConnected() && (!restoredState || restoredState.status === 'connected');
+
+    if (restoredState && restoredState.status === 'needs_permission' && meta) {
+      els.reconnectBannerMsg.innerHTML = `Linked to <strong>${escapeHtml(meta.providerName)} (${escapeHtml(meta.folderName)})</strong>. Click to resume live auto-sync.`;
+      els.reconnectCloudBanner.classList.remove('hidden');
+      els.cloudSetupBtn.classList.remove('synced');
+      els.cloudSetupBtnLabel.textContent = `Resume ${meta.providerName}`;
+      return;
+    }
+
+    els.reconnectCloudBanner.classList.add('hidden');
+
+    if (isConnected && meta) {
+      els.cloudSetupBtn.classList.add('synced');
+      els.cloudSetupBtnLabel.textContent = `${meta.providerName}: /${meta.folderName}`;
+    } else {
+      els.cloudSetupBtn.classList.remove('synced');
+      els.cloudSetupBtnLabel.textContent = 'Setup Cloud Folder';
+    }
+  }
+
+  // Theme & View Mode UI
+  function applyThemeUI() {
+    document.documentElement.setAttribute('data-theme', state.theme);
+  }
+
+  function applyViewModeUI() {
+    if (state.viewMode === 'list') {
+      els.notesWorkspace.classList.remove('view-grid');
+      els.notesWorkspace.classList.add('view-list');
+      els.viewIconList.classList.add('hidden');
+      els.viewIconGrid.classList.remove('hidden');
+      els.viewToggleBtn.title = 'Switch to Card Grid view';
+    } else {
+      els.notesWorkspace.classList.remove('view-list');
+      els.notesWorkspace.classList.add('view-grid');
+      els.viewIconGrid.classList.add('hidden');
+      els.viewIconList.classList.remove('hidden');
+      els.viewToggleBtn.title = 'Switch to List view';
+    }
+  }
+
+  // Filtering & Search
+  function getFilteredNotes() {
+    const q = state.searchQuery.trim().toLowerCase();
+    const cleanTagQuery = q.startsWith('#') ? q.slice(1) : q;
+
+    return state.notes
+      .filter((note) => {
+        if (state.activeFilter.type === 'pinned' && !note.pinned) return false;
+        if (
+          state.activeFilter.type === 'tag' &&
+          state.activeFilter.tag &&
+          !note.tags.includes(state.activeFilter.tag)
+        ) {
+          return false;
+        }
+
+        if (!q) return true;
+
+        const titleMatch = (note.title || '').toLowerCase().includes(q);
+        const descMatch = (note.description || '').toLowerCase().includes(q);
+        const tagMatch = (note.tags || []).some((t) =>
+          t.toLowerCase().includes(cleanTagQuery)
+        );
+        return titleMatch || descMatch || tagMatch;
+      })
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  // Render Functions
+  function renderSidebar() {
+    els.countAll.textContent = state.notes.length;
+    els.countPinned.textContent = state.notes.filter((n) => n.pinned).length;
+
+    document.querySelectorAll('.sidebar-nav > .nav-item').forEach((btn) => {
+      const filterType = btn.getAttribute('data-filter-type');
+      const isActive =
+        state.activeFilter.type === filterType && !state.activeFilter.tag;
+      btn.classList.toggle('active', isActive);
+    });
+
+    els.sidebarTagsList.innerHTML = state.tags
+      .map((tag) => {
+        const count = state.notes.filter((n) => n.tags.includes(tag)).length;
+        const isActive =
+          state.activeFilter.type === 'tag' && state.activeFilter.tag === tag;
+        return `
+          <div class="nav-item ${isActive ? 'active' : ''}" data-tag="${escapeHtml(tag)}">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+              <line x1="7" y1="7" x2="7.01" y2="7"></line>
+            </svg>
+            <span class="nav-label">#${escapeHtml(tag)}</span>
+            <span class="nav-count">${count}</span>
+            <button type="button" class="tag-delete-btn" data-delete-tag="${escapeHtml(tag)}" title="Delete tag">&times;</button>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  function renderFilterBanner() {
+    const parts = [];
+    if (state.activeFilter.type === 'pinned') {
+      parts.push('Filtered by: <strong>Pinned</strong>');
+    } else if (state.activeFilter.type === 'tag' && state.activeFilter.tag) {
+      parts.push(`Filtered by tag: <strong>#${escapeHtml(state.activeFilter.tag)}</strong>`);
+    }
+    if (state.searchQuery.trim()) {
+      parts.push(`Search: <strong>"${escapeHtml(state.searchQuery.trim())}"</strong>`);
+    }
+
+    if (parts.length > 0) {
+      els.activeFilterText.innerHTML = parts.join(' &bull; ');
+      els.activeFilterBanner.classList.remove('hidden');
+    } else {
+      els.activeFilterBanner.classList.add('hidden');
+    }
+  }
+
+  function createNoteCardHtml(note) {
+    const q = state.searchQuery;
+    const titleHtml = note.title ? highlightText(note.title, q) : '';
+    const d
