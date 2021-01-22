@@ -1,6 +1,6 @@
 {
   "name": "crypsy-note",
-  "version": "0.2.0",
-  "description": "Google Keep-style notes app with pins, card/list layouts, and 7 color themes",
+  "version": "0.3.0",
+  "description": "Google Keep-style notes app with #tags, live search highlighting, and keyboard shortcuts",
   "private": true
 }

@@ -460,4 +460,158 @@
   function createNoteCardHtml(note) {
     const q = state.searchQuery;
     const titleHtml = note.title ? highlightText(note.title, q) : '';
-    const d
+    const descHtml = note.description ? highlightText(note.description, q) : '';
+
+    const tagsHtml = (note.tags || [])
+      .map(
+        (tag) =>
+          `<span class="tag-chip" data-filter-tag="${escapeHtml(tag)}" title="Filter by #${escapeHtml(tag)}">#${highlightText(tag, q)}</span>`
+      )
+      .join('');
+
+    return `
+      <article class="note-card" data-note-id="${escapeHtml(note.id)}" data-color="${escapeHtml(note.color || 'default')}">
+        <div class="note-card-header">
+          <h3 class="note-card-title">${titleHtml || '<span style="color:var(--text-muted);font-weight:400">Untitled</span>'}</h3>
+          <button
+            type="button"
+            class="icon-btn pin-btn note-card-pin ${note.pinned ? 'active' : ''}"
+            data-toggle-pin="${escapeHtml(note.id)}"
+            title="${note.pinned ? 'Unpin note' : 'Pin note'}"
+            aria-label="${note.pinned ? 'Unpin note' : 'Pin note'}"
+          >
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M12 17v5"></path>
+              <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>
+            </svg>
+          </button>
+        </div>
+
+        ${descHtml ? `<div class="note-card-desc">${descHtml}</div>` : ''}
+
+        ${tagsHtml ? `<div class="note-tags-row">${tagsHtml}</div>` : ''}
+
+        <div class="note-card-footer">
+          <span class="note-card-date">Edited ${formatTimestamp(note.updatedAt)}</span>
+          <button
+            type="button"
+            class="icon-btn danger-btn"
+            data-delete-note="${escapeHtml(note.id)}"
+            title="Delete note"
+            aria-label="Delete note"
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        </div>
+      </article>
+    `;
+  }
+
+  function renderNotes() {
+    const filtered = getFilteredNotes();
+    const pinnedNotes = filtered.filter((n) => n.pinned);
+    const otherNotes = filtered.filter((n) => !n.pinned);
+
+    if (filtered.length === 0) {
+      els.pinnedSection.classList.add('hidden');
+      els.othersSection.classList.add('hidden');
+      els.emptyState.classList.remove('hidden');
+      return;
+    }
+
+    els.emptyState.classList.add('hidden');
+
+    if (pinnedNotes.length > 0) {
+      els.pinnedSection.classList.remove('hidden');
+      els.pinnedGrid.innerHTML = pinnedNotes.map(createNoteCardHtml).join('');
+    } else {
+      els.pinnedSection.classList.add('hidden');
+      els.pinnedGrid.innerHTML = '';
+    }
+
+    if (otherNotes.length > 0) {
+      els.othersSection.classList.remove('hidden');
+      els.othersSectionLabel.classList.toggle('hidden', pinnedNotes.length === 0);
+      els.othersGrid.innerHTML = otherNotes.map(createNoteCardHtml).join('');
+    } else {
+      els.othersSection.classList.add('hidden');
+      els.othersGrid.innerHTML = '';
+    }
+  }
+
+  function renderAll() {
+    renderSidebar();
+    renderFilterBanner();
+    renderNotes();
+    updateVaultInspectorUI();
+  }
+
+  // Composer Functions
+  function expandComposer() {
+    if (state.composer.expanded) return;
+    state.composer.expanded = true;
+    els.composerHeader.classList.remove('hidden');
+    els.composerFooter.classList.remove('hidden');
+    if (
+      state.activeFilter.type === 'tag' &&
+      state.activeFilter.tag &&
+      !state.composer.tags.includes(state.activeFilter.tag)
+    ) {
+      state.composer.tags.push(state.activeFilter.tag);
+    }
+    renderComposerTags();
+  }
+
+  function resetComposer() {
+    state.composer = {
+      expanded: false,
+      pinned: false,
+      color: 'default',
+      tags: [],
+    };
+    els.composerTitle.value = '';
+    els.composerDescription.value = '';
+    els.composerDescription.style.height = 'auto';
+    els.noteComposer.setAttribute('data-color', 'default');
+    els.composerPinBtn.classList.remove('active');
+    els.composerHeader.classList.add('hidden');
+    els.composerFooter.classList.add('hidden');
+    els.composerTagsRow.classList.add('hidden');
+    els.composerTagPopover.classList.add('hidden');
+    updateColorDots(els.composerColorPicker, 'default');
+  }
+
+  function renderComposerTags() {
+    if (state.composer.tags.length === 0) {
+      els.composerTagsRow.classList.add('hidden');
+      els.composerTagsRow.innerHTML = '';
+      return;
+    }
+    els.composerTagsRow.classList.remove('hidden');
+    els.composerTagsRow.innerHTML = state.composer.tags
+      .map(
+        (t) => `
+        <span class="tag-chip">
+          #${escapeHtml(t)}
+          <button type="button" class="tag-chip-remove" data-remove-composer-tag="${escapeHtml(t)}">&times;</button>
+        </span>
+      `
+      )
+      .join('');
+  }
+
+  async function saveComposerNote() {
+    const title = els.composerTitle.value.trim();
+    const description = els.composerDescription.value.trim();
+    if (!title && !description) {
+      resetComposer();
+      return;
+    }
+
+    const now = Date.now();
+    const newNote = {
+      id: `note-${now}-${Math.random().toString(36).slice(2, 7)}`,
+      tit
