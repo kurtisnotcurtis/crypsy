@@ -329,6 +329,54 @@
     </div>
   </div>
 
+  <!-- Cloud Ciphertext Inspector & Vault Modal -->
+  <div id="vaultModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card vault-modal">
+      <div class="vault-modal-header">
+        <div>
+          <h3>Transparent Encryption &amp; Cloud Payload Inspector</h3>
+          <p class="vault-subtitle">
+            Notes are decrypted in memory on your device and stored as AES-256-GCM ciphertext blobs.
+          </p>
+        </div>
+        <button id="closeVaultModalBtn" class="icon-btn" aria-label="Close modal">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="vault-controls">
+        <label for="vaultPassphraseInput" class="vault-label">Vault Passphrase (PBKDF2-SHA256 Key Derivation)</label>
+        <div class="vault-pass-row">
+          <input
+            type="password"
+            id="vaultPassphraseInput"
+            class="vault-input"
+            placeholder="Enter custom vault passphrase..."
+          />
+          <button id="updatePassphraseBtn" class="btn-primary">Re-key &amp; Encrypt</button>
+          <button id="lockVaultNowBtn" class="btn-ghost">Lock Screen</button>
+        </div>
+      </div>
+
+      <div class="vault-inspector">
+        <div class="vault-inspector-header">
+          <span>What Cloud Providers See (Encrypted Envelope)</span>
+          <div style="display:flex;gap:12px;">
+            <label class="btn-link" style="cursor:pointer;">
+              Import .crypsy File
+              <input type="file" id="importEncryptedInput" accept=".json,.crypsy" class="hidden" />
+            </label>
+            <button id="exportEncryptedBtn" class="btn-link">Download Encrypted .crypsy File</button>
+          </div>
+        </div>
+        <pre id="ciphertextPreview" class="ciphertext-preview"></pre>
+      </div>
+    </div>
+  </div>
+
   <!-- Locked Vault Overlay -->
   <div id="lockScreenOverlay" class="lock-overlay hidden">
     <div class="lock-card">
@@ -354,6 +402,7 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="crypto.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
