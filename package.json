@@ -1,6 +1,6 @@
 {
   "name": "crypsy-note",
-  "version": "0.3.0",
-  "description": "Google Keep-style notes app with #tags, live search highlighting, and keyboard shortcuts",
+  "version": "0.5.0",
+  "description": "Encrypted notes web application with transparent client-side AES-256-GCM encryption",
   "private": true
 }

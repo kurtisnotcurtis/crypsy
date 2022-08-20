@@ -614,4 +614,338 @@
     const now = Date.now();
     const newNote = {
       id: `note-${now}-${Math.random().toString(36).slice(2, 7)}`,
-      tit
+      title,
+      description,
+      tags: [...state.composer.tags],
+      pinned: state.composer.pinned,
+      color: state.composer.color,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    state.notes.unshift(newNote);
+    resetComposer();
+    await persistEncryptedVault();
+    renderAll();
+  }
+
+  function updateColorDots(pickerEl, activeColor) {
+    pickerEl.querySelectorAll('.color-dot').forEach((dot) => {
+      dot.classList.toggle('active', dot.getAttribute('data-color') === activeColor);
+    });
+  }
+
+  // Tag Popover Helper
+  function renderTagPopoverOptions(optionsContainer, searchValue, selectedTags, onToggleTag) {
+    const q = searchValue.trim().toLowerCase().replace(/^#/, '');
+    const matchingTags = state.tags.filter((t) => t.toLowerCase().includes(q));
+
+    let html = matchingTags
+      .map((tag) => {
+        const checked = selectedTags.includes(tag) ? 'checked' : '';
+        return `
+          <label class="popover-option">
+            <input type="checkbox" value="${escapeHtml(tag)}" ${checked} />
+            <span>#${escapeHtml(tag)}</span>
+          </label>
+        `;
+      })
+      .join('');
+
+    if (q && !state.tags.some((t) => t.toLowerCase() === q)) {
+      html += `
+        <div class="popover-option" data-create-tag="${escapeHtml(q)}" style="color:var(--accent);font-weight:600">
+          + Create "#${escapeHtml(q)}"
+        </div>
+      `;
+    }
+
+    optionsContainer.innerHTML =
+      html || '<div style="font-size:0.8rem;color:var(--text-muted);padding:4px;">No tags yet</div>';
+
+    optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        onToggleTag(cb.value);
+      });
+    });
+
+    const createEl = optionsContainer.querySelector('[data-create-tag]');
+    if (createEl) {
+      createEl.addEventListener('click', () => {
+        const newTag = createEl.getAttribute('data-create-tag');
+        if (!state.tags.includes(newTag)) {
+          state.tags.push(newTag);
+        }
+        onToggleTag(newTag);
+      });
+    }
+  }
+
+  // Edit Note Modal
+  function openEditModal(noteId) {
+    const note = state.notes.find((n) => n.id === noteId);
+    if (!note) return;
+
+    state.editingNoteId = noteId;
+    state.editingDraft = {
+      title: note.title,
+      description: note.description,
+      pinned: note.pinned,
+      color: note.color || 'default',
+      tags: [...(note.tags || [])],
+    };
+
+    els.editModalTitle.value = state.editingDraft.title;
+    els.editModalDescription.value = state.editingDraft.description;
+    els.editModalCard.setAttribute('data-color', state.editingDraft.color);
+    els.editModalPinBtn.classList.toggle('active', state.editingDraft.pinned);
+    els.editModalTimestamp.textContent = `Edited ${formatTimestamp(note.updatedAt)}`;
+    updateColorDots(els.editModalColorPicker, state.editingDraft.color);
+    renderEditModalTags();
+
+    els.editModalTagPopover.classList.add('hidden');
+    els.editModalBackdrop.classList.remove('hidden');
+    autoResizeTextarea(els.editModalDescription);
+    els.editModalDescription.focus();
+  }
+
+  function renderEditModalTags() {
+    if (!state.editingDraft) return;
+    els.editModalTagsRow.innerHTML = state.editingDraft.tags
+      .map(
+        (t) => `
+        <span class="tag-chip">
+          #${escapeHtml(t)}
+          <button type="button" class="tag-chip-remove" data-remove-modal-tag="${escapeHtml(t)}">&times;</button>
+        </span>
+      `
+      )
+      .join('');
+  }
+
+  async function saveAndCloseEditModal() {
+    if (!state.editingNoteId || !state.editingDraft) {
+      els.editModalBackdrop.classList.add('hidden');
+      return;
+    }
+
+    const idx = state.notes.findIndex((n) => n.id === state.editingNoteId);
+    if (idx !== -1) {
+      const newTitle = els.editModalTitle.value.trim();
+      const newDesc = els.editModalDescription.value.trim();
+      const existing = state.notes[idx];
+
+      const changed =
+        existing.title !== newTitle ||
+        existing.description !== newDesc ||
+        existing.pinned !== state.editingDraft.pinned ||
+        existing.color !== state.editingDraft.color ||
+        JSON.stringify(existing.tags) !== JSON.stringify(state.editingDraft.tags);
+
+      if (changed) {
+        state.notes[idx] = {
+          ...existing,
+          title: newTitle,
+          description: newDesc,
+          pinned: state.editingDraft.pinned,
+          color: state.editingDraft.color,
+          tags: [...state.editingDraft.tags],
+          updatedAt: Date.now(),
+        };
+        await persistEncryptedVault();
+      }
+    }
+
+    state.editingNoteId = null;
+    state.editingDraft = null;
+    els.editModalBackdrop.classList.add('hidden');
+    renderAll();
+  }
+
+  // Cloud Onboarding Wizard Logic
+  function setWizardStep(stepNum) {
+    document.querySelectorAll('[data-step-indicator]').forEach((el) => {
+      const n = Number(el.getAttribute('data-step-indicator'));
+      el.classList.toggle('active', n === stepNum);
+    });
+
+    els.wizardStep1.classList.toggle('hidden', stepNum !== 1);
+    els.wizardStep2.classList.toggle('hidden', stepNum !== 2);
+    els.wizardStep3.classList.toggle('hidden', stepNum !== 3);
+    els.wizardStep2Error.classList.add('hidden');
+
+    if (stepNum === 2) {
+      const provider =
+        CrypsyCloudSync.PROVIDERS[state.selectedProviderId] ||
+        CrypsyCloudSync.PROVIDERS.custom;
+      els.selectedProviderTitle.textContent = `Typical ${provider.name} Location on Your OS:`;
+      els.osPathHintCode.textContent = CrypsyCloudSync.getProviderPathHint(
+        state.selectedProviderId
+      );
+      els.folderPickerHintText.textContent = provider.folderHint;
+    }
+
+    if (stepNum === 3) {
+      const meta = CrypsyCloudSync.getSavedProviderMeta();
+      if (meta) {
+        els.connectedProviderHeading.textContent = `Connected to ${meta.providerName} (/${meta.folderName})`;
+        els.connectedFolderDetails.textContent = `Your encrypted vault and portable app files are placed inside "${meta.parentFolderName}/${meta.folderName}".`;
+      }
+    }
+  }
+
+  function openCloudOnboardingModal() {
+    const meta = CrypsyCloudSync.getSavedProviderMeta();
+    if (CrypsyCloudSync.isConnected() && meta) {
+      state.selectedProviderId = meta.providerId || 'onedrive';
+      setWizardStep(3);
+    } else {
+      setWizardStep(1);
+    }
+    els.cloudOnboardingBackdrop.classList.remove('hidden');
+  }
+
+  function updateVaultInspectorUI() {
+    if (!state.lastEncryptedEnvelope) return;
+    els.ciphertextPreview.textContent = JSON.stringify(
+      state.lastEncryptedEnvelope,
+      null,
+      2
+    );
+  }
+
+  // Event Listeners
+  function bindEvents() {
+    // Sidebar toggle
+    els.sidebarToggleBtn.addEventListener('click', () => {
+      els.sidebar.classList.toggle('collapsed');
+    });
+
+    // Sidebar navigation (All / Pinned)
+    document.querySelectorAll('.sidebar-nav > .nav-item').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const type = btn.getAttribute('data-filter-type');
+        state.activeFilter = { type, tag: null };
+        renderAll();
+      });
+    });
+
+    // Sidebar tags click & delete
+    els.sidebarTagsList.addEventListener('click', async (e) => {
+      const deleteBtn = e.target.closest('[data-delete-tag]');
+      if (deleteBtn) {
+        e.stopPropagation();
+        const tagToDelete = deleteBtn.getAttribute('data-delete-tag');
+        state.tags = state.tags.filter((t) => t !== tagToDelete);
+        state.notes.forEach((n) => {
+          n.tags = (n.tags || []).filter((t) => t !== tagToDelete);
+        });
+        if (state.activeFilter.tag === tagToDelete) {
+          state.activeFilter = { type: 'all', tag: null };
+        }
+        await persistEncryptedVault();
+        renderAll();
+        return;
+      }
+
+      const tagItem = e.target.closest('[data-tag]');
+      if (tagItem) {
+        const tag = tagItem.getAttribute('data-tag');
+        state.activeFilter = { type: 'tag', tag };
+        renderAll();
+      }
+    });
+
+    // Create new tag in sidebar
+    els.newTagForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const raw = els.newTagInput.value.trim().toLowerCase().replace(/^#/, '');
+      if (!raw) return;
+      if (!state.tags.includes(raw)) {
+        state.tags.push(raw);
+        await persistEncryptedVault();
+      }
+      els.newTagInput.value = '';
+      state.activeFilter = { type: 'tag', tag: raw };
+      renderAll();
+    });
+
+    // Search input
+    els.searchInput.addEventListener('input', () => {
+      state.searchQuery = els.searchInput.value;
+      els.clearSearchBtn.classList.toggle('hidden', !state.searchQuery);
+      renderFilterBanner();
+      renderNotes();
+    });
+
+    els.clearSearchBtn.addEventListener('click', () => {
+      state.searchQuery = '';
+      els.searchInput.value = '';
+      els.clearSearchBtn.classList.add('hidden');
+      renderFilterBanner();
+      renderNotes();
+      els.searchInput.focus();
+    });
+
+    // Reset filter banner
+    els.resetFilterBtn.addEventListener('click', () => {
+      state.activeFilter = { type: 'all', tag: null };
+      state.searchQuery = '';
+      els.searchInput.value = '';
+      els.clearSearchBtn.classList.add('hidden');
+      renderAll();
+    });
+
+    // View toggle
+    els.viewToggleBtn.addEventListener('click', () => {
+      state.viewMode = state.viewMode === 'grid' ? 'list' : 'grid';
+      applyViewModeUI();
+      savePreferences();
+    });
+
+    // Theme toggle
+    els.themeToggleBtn.addEventListener('click', () => {
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      applyThemeUI();
+      savePreferences();
+    });
+
+    // Cloud Setup & Reconnect Banner
+    els.cloudSetupBtn.addEventListener('click', () => {
+      openCloudOnboardingModal();
+    });
+
+    els.resumeCloudSyncBtn.addEventListener('click', async () => {
+      const ok = await CrypsyCloudSync.reconnectSavedHandle();
+      if (ok) {
+        const existingCloudVault = await CrypsyCloudSync.readVaultFromCloudFolder();
+        if (existingCloudVault) {
+          await tryLoadEnvelope(existingCloudVault);
+        } else {
+          await persistEncryptedVault();
+        }
+        updateCloudStatusUI({ status: 'connected' });
+      }
+    });
+
+    els.changeCloudFolderBtn.addEventListener('click', () => {
+      setWizardStep(1);
+      els.cloudOnboardingBackdrop.classList.remove('hidden');
+    });
+
+    // Cloud Onboarding Wizard events
+    els.closeOnboardingBtn.addEventListener('click', () => {
+      els.cloudOnboardingBackdrop.classList.add('hidden');
+    });
+
+    els.cloudOnboardingBackdrop.addEventListener('click', (e) => {
+      if (e.target === els.cloudOnboardingBackdrop) {
+        els.cloudOnboardingBackdrop.classList.add('hidden');
+      }
+    });
+
+    els.providerSelectionGrid.addEventListener('click', (e) => {
+      const card = e.target.closest('[data-provider]');
+      if (!card) return;
+      state.selectedProviderId = card.getAttribute('data-provider');
+      els.providerSele
