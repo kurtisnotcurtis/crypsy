@@ -313,4 +313,169 @@ const CrypsyCloudSync = (() => {
     await writable.close();
 
     const updatedFile = await fileHandle.getFile();
-    lastKnownFileModified = updatedFile.lastModifi
+    lastKnownFileModified = updatedFile.lastModified;
+
+    const meta = getSavedProviderMeta();
+    if (meta) {
+      meta.lastSyncedAt = new Date().toISOString();
+      saveProviderMeta(meta);
+    }
+    return true;
+  }
+
+  /**
+   * Provisions `README-CRYPSY.txt` and optionally a self-contained `Crypsy-Portable.html`
+   * directly into the user's cloud folder so they can open Crypsy on any other synced computer.
+   */
+  async function provisionCloudFolderAssets(includePortableHtml = true) {
+    if (!activeDirHandle) {
+      throw new Error('No cloud folder linked yet.');
+    }
+
+    const readmeText = [
+      '===================================================================',
+      '  CRYPSY — TRANSPARENTLY ENCRYPTED CLOUD VAULT',
+      '===================================================================',
+      '',
+      'This folder is managed by Crypsy and synced via your cloud provider.',
+      '',
+      'FILES IN THIS FOLDER:',
+      `  1. ${VAULT_FILENAME}`,
+      '     Your encrypted notes & tags payload (Cipher: AES-256-GCM,',
+      '     Key Derivation: PBKDF2-SHA256, 150,000 iterations).',
+      '     Do NOT delete or manually edit this file.',
+      '',
+      `  2. ${PORTABLE_HTML_FILENAME}`,
+      '     Self-contained portable Crypsy web application.',
+      '     On any computer where this cloud folder is synced, simply',
+      `     open ${PORTABLE_HTML_FILENAME} in Chrome, Edge, or Brave and`,
+      '     link this folder to read and edit your encrypted notes.',
+      '',
+      `Provisioned at: ${new Date().toISOString()}`,
+      '===================================================================',
+    ].join('\r\n');
+
+    const readmeHandle = await activeDirHandle.getFileHandle(README_FILENAME, {
+      create: true,
+    });
+    const readmeWritable = await readmeHandle.createWritable();
+    await readmeWritable.write(readmeText);
+    await readmeWritable.close();
+
+    if (includePortableHtml) {
+      const portableHtml = await buildSelfContainedHtmlInBrowser();
+      const htmlHandle = await activeDirHandle.getFileHandle(
+        PORTABLE_HTML_FILENAME,
+        { create: true }
+      );
+      const htmlWritable = await htmlHandle.createWritable();
+      await htmlWritable.write(portableHtml);
+      await htmlWritable.close();
+    }
+
+    return true;
+  }
+
+  /**
+   * Assembles a single self-contained HTML file right in the browser
+   * so users can drop `Crypsy-Portable.html` into their cloud drive even without Node.js.
+   */
+  async function buildSelfContainedHtmlInBrowser() {
+    try {
+      const [cssRes, cryptoRes, syncRes, appRes] = await Promise.all([
+        fetch('styles.css').then((r) => (r.ok ? r.text() : '')),
+        fetch('crypto.js').then((r) => (r.ok ? r.text() : '')),
+        fetch('cloud-sync.js').then((r) => (r.ok ? r.text() : '')),
+        fetch('app.js').then((r) => (r.ok ? r.text() : '')),
+      ]);
+
+      if (cssRes && cryptoRes && appRes) {
+        const docClone = document.documentElement.outerHTML;
+        return docClone
+          .replace(
+            /<link\s+rel="stylesheet"\s+href="styles\.css"\s*\/?>/i,
+            `<style>\n${cssRes}\n</style>`
+          )
+          .replace(
+            /<script\s+src="crypto\.js"><\/script>/i,
+            `<script>\n${cryptoRes}\n</script>`
+          )
+          .replace(
+            /<script\s+src="cloud-sync\.js"><\/script>/i,
+            `<script>\n${syncRes}\n</script>`
+          )
+          .replace(
+            /<script\s+src="app\.js"><\/script>/i,
+            `<script>\n${appRes}\n</script>`
+          );
+      }
+    } catch (e) {
+      // Fallback if running from a single-file bundle already (`file://` where fetch isn't needed)
+    }
+    return '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  }
+
+  /**
+   * Polls `vault.crypsy.json` in the cloud directory to detect changes synced from other devices.
+   */
+  function startSyncPolling() {
+    stopSyncPolling();
+    pollIntervalId = setInterval(async () => {
+      if (!activeDirHandle || !onExternalVaultUpdateCallback) return;
+      try {
+        const hasPerm = await verifyPermission(activeDirHandle, false);
+        if (!hasPerm) return;
+        const fileHandle = await activeDirHandle.getFileHandle(VAULT_FILENAME, {
+          create: false,
+        });
+        const file = await fileHandle.getFile();
+        if (
+          lastKnownFileModified > 0 &&
+          file.lastModified > lastKnownFileModified
+        ) {
+          lastKnownFileModified = file.lastModified;
+          const text = await file.text();
+          const envelope = JSON.parse(text);
+          onExternalVaultUpdateCallback(envelope);
+        }
+      } catch (e) {
+        // Ignore if file hasn't been created yet
+      }
+    }, 3500);
+  }
+
+  function stopSyncPolling() {
+    if (pollIntervalId) {
+      clearInterval(pollIntervalId);
+      pollIntervalId = null;
+    }
+  }
+
+  function onExternalUpdate(cb) {
+    onExternalVaultUpdateCallback = cb;
+  }
+
+  function isConnected() {
+    return Boolean(activeDirHandle);
+  }
+
+  return {
+    PROVIDERS,
+    VAULT_FILENAME,
+    PORTABLE_HTML_FILENAME,
+    isFileSystemAccessSupported,
+    detectOS,
+    getProviderPathHint,
+    getSavedProviderMeta,
+    pickCloudFolder,
+    restoreSavedConnection,
+    reconnectSavedHandle,
+    unlinkCloudFolder,
+    readVaultFromCloudFolder,
+    writeVaultToCloudFolder,
+    provisionCloudFolderAssets,
+    buildSelfContainedHtmlInBrowser,
+    onExternalUpdate,
+    isConnected,
+  };
+})();
