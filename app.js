@@ -948,4 +948,435 @@
       const card = e.target.closest('[data-provider]');
       if (!card) return;
       state.selectedProviderId = card.getAttribute('data-provider');
-      els.providerSele
+      els.providerSelectionGrid.querySelectorAll('.provider-card').forEach((c) => {
+        c.classList.toggle('active', c === card);
+      });
+    });
+
+    els.wizardToStep2Btn.addEventListener('click', () => {
+      setWizardStep(2);
+    });
+
+    els.wizardBackToStep1Btn.addEventListener('click', () => {
+      setWizardStep(1);
+    });
+
+    els.copyPathHintBtn.addEventListener('click', async () => {
+      const rawPath = els.osPathHintCode.textContent.split('   or   ')[0].trim();
+      try {
+        await navigator.clipboard.writeText(rawPath);
+        els.copyPathHintBtn.textContent = 'Copied!';
+        setTimeout(() => {
+          els.copyPathHintBtn.textContent = 'Copy Path';
+        }, 1500);
+      } catch (e) {
+        // ignore clipboard failure
+      }
+    });
+
+    els.pickAndProvisionBtn.addEventListener('click', async () => {
+      els.wizardStep2Error.classList.add('hidden');
+      const createSub = els.createCrypsySubfolderCb.checked;
+      const includeHtml = els.provisionPortableHtmlCb.checked;
+
+      try {
+        await CrypsyCloudSync.pickCloudFolder(state.selectedProviderId, createSub);
+
+        // Check if an encrypted vault already exists in that cloud folder
+        const existingEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
+        if (existingEnvelope) {
+          await tryLoadEnvelope(existingEnvelope);
+        } else {
+          await persistEncryptedVault();
+        }
+
+        await CrypsyCloudSync.provisionCloudFolderAssets(includeHtml);
+        updateCloudStatusUI({ status: 'connected' });
+        setWizardStep(3);
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+        els.wizardStep2Error.textContent =
+          err.message || 'Could not link cloud folder.';
+        els.wizardStep2Error.classList.remove('hidden');
+      }
+    });
+
+    els.reprovisionAssetsBtn.addEventListener('click', async () => {
+      try {
+        await CrypsyCloudSync.provisionCloudFolderAssets(true);
+        await persistEncryptedVault();
+        els.reprovisionAssetsBtn.textContent = 'Files Updated!';
+        setTimeout(() => {
+          els.reprovisionAssetsBtn.textContent = 'Re-write Portable Files';
+        }, 1600);
+      } catch (e) {
+        console.warn('Re-provision failed:', e);
+      }
+    });
+
+    els.unlinkCloudFolderBtn.addEventListener('click', async () => {
+      await CrypsyCloudSync.unlinkCloudFolder();
+      updateCloudStatusUI({ status: 'unlinked' });
+      setWizardStep(1);
+    });
+
+    els.finishOnboardingBtn.addEventListener('click', () => {
+      els.cloudOnboardingBackdrop.classList.add('hidden');
+    });
+
+    els.downloadPortableBtn.addEventListener('click', async () => {
+      const html = await CrypsyCloudSync.buildSelfContainedHtmlInBrowser();
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Crypsy-Portable.html';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // Composer expand & auto-resize
+    els.composerDescription.addEventListener('focus', () => {
+      expandComposer();
+    });
+
+    els.composerDescription.addEventListener('input', () => {
+      autoResizeTextarea(els.composerDescription);
+    });
+
+    els.composerPinBtn.addEventListener('click', () => {
+      state.composer.pinned = !state.composer.pinned;
+      els.composerPinBtn.classList.toggle('active', state.composer.pinned);
+    });
+
+    els.composerColorPicker.addEventListener('click', (e) => {
+      const dot = e.target.closest('.color-dot');
+      if (!dot) return;
+      const color = dot.getAttribute('data-color');
+      state.composer.color = color;
+      els.noteComposer.setAttribute('data-color', color);
+      updateColorDots(els.composerColorPicker, color);
+    });
+
+    // Composer Tag Popover
+    const toggleComposerTag = (tag) => {
+      if (state.composer.tags.includes(tag)) {
+        state.composer.tags = state.composer.tags.filter((t) => t !== tag);
+      } else {
+        state.composer.tags.push(tag);
+      }
+      renderComposerTags();
+      renderSidebar();
+      renderTagPopoverOptions(
+        els.composerTagOptions,
+        els.composerTagSearch.value,
+        state.composer.tags,
+        toggleComposerTag
+      );
+    };
+
+    els.composerTagBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isHidden = els.composerTagPopover.classList.contains('hidden');
+      if (isHidden) {
+        els.composerTagSearch.value = '';
+        renderTagPopoverOptions(
+          els.composerTagOptions,
+          '',
+          state.composer.tags,
+          toggleComposerTag
+        );
+        els.composerTagPopover.classList.remove('hidden');
+        els.composerTagSearch.focus();
+      } else {
+        els.composerTagPopover.classList.add('hidden');
+      }
+    });
+
+    els.composerTagSearch.addEventListener('input', () => {
+      renderTagPopoverOptions(
+        els.composerTagOptions,
+        els.composerTagSearch.value,
+        state.composer.tags,
+        toggleComposerTag
+      );
+    });
+
+    els.composerTagsRow.addEventListener('click', (e) => {
+      const rmBtn = e.target.closest('[data-remove-composer-tag]');
+      if (!rmBtn) return;
+      const tag = rmBtn.getAttribute('data-remove-composer-tag');
+      state.composer.tags = state.composer.tags.filter((t) => t !== tag);
+      renderComposerTags();
+    });
+
+    els.composerSaveBtn.addEventListener('click', () => {
+      saveComposerNote();
+    });
+
+    els.composerCancelBtn.addEventListener('click', () => {
+      resetComposer();
+    });
+
+    // Click outside composer to auto-save
+    document.addEventListener('click', (e) => {
+      if (state.composer.expanded && !els.noteComposer.contains(e.target)) {
+        saveComposerNote();
+      }
+      if (!els.composerTagPopover.contains(e.target) && e.target !== els.composerTagBtn) {
+        els.composerTagPopover.classList.add('hidden');
+      }
+      if (!els.editModalTagPopover.contains(e.target) && e.target !== els.editModalTagBtn) {
+        els.editModalTagPopover.classList.add('hidden');
+      }
+    });
+
+    // Card interactions
+    els.notesWorkspace.addEventListener('click', async (e) => {
+      const pinBtn = e.target.closest('[data-toggle-pin]');
+      if (pinBtn) {
+        e.stopPropagation();
+        const id = pinBtn.getAttribute('data-toggle-pin');
+        const note = state.notes.find((n) => n.id === id);
+        if (note) {
+          note.pinned = !note.pinned;
+          note.updatedAt = Date.now();
+          await persistEncryptedVault();
+          renderAll();
+        }
+        return;
+      }
+
+      const deleteBtn = e.target.closest('[data-delete-note]');
+      if (deleteBtn) {
+        e.stopPropagation();
+        const id = deleteBtn.getAttribute('data-delete-note');
+        state.notes = state.notes.filter((n) => n.id !== id);
+        await persistEncryptedVault();
+        renderAll();
+        return;
+      }
+
+      const tagChip = e.target.closest('[data-filter-tag]');
+      if (tagChip) {
+        e.stopPropagation();
+        const tag = tagChip.getAttribute('data-filter-tag');
+        state.activeFilter = { type: 'tag', tag };
+        renderAll();
+        return;
+      }
+
+      const card = e.target.closest('.note-card');
+      if (card) {
+        openEditModal(card.getAttribute('data-note-id'));
+      }
+    });
+
+    // Edit Modal interactions
+    els.editModalDescription.addEventListener('input', () => {
+      autoResizeTextarea(els.editModalDescription);
+    });
+
+    els.editModalPinBtn.addEventListener('click', () => {
+      if (!state.editingDraft) return;
+      state.editingDraft.pinned = !state.editingDraft.pinned;
+      els.editModalPinBtn.classList.toggle('active', state.editingDraft.pinned);
+    });
+
+    els.editModalColorPicker.addEventListener('click', (e) => {
+      const dot = e.target.closest('.color-dot');
+      if (!dot || !state.editingDraft) return;
+      const color = dot.getAttribute('data-color');
+      state.editingDraft.color = color;
+      els.editModalCard.setAttribute('data-color', color);
+      updateColorDots(els.editModalColorPicker, color);
+    });
+
+    const toggleModalTag = (tag) => {
+      if (!state.editingDraft) return;
+      if (state.editingDraft.tags.includes(tag)) {
+        state.editingDraft.tags = state.editingDraft.tags.filter((t) => t !== tag);
+      } else {
+        state.editingDraft.tags.push(tag);
+      }
+      renderEditModalTags();
+      renderSidebar();
+      renderTagPopoverOptions(
+        els.editModalTagOptions,
+        els.editModalTagSearch.value,
+        state.editingDraft.tags,
+        toggleModalTag
+      );
+    };
+
+    els.editModalTagBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!state.editingDraft) return;
+      const isHidden = els.editModalTagPopover.classList.contains('hidden');
+      if (isHidden) {
+        els.editModalTagSearch.value = '';
+        renderTagPopoverOptions(
+          els.editModalTagOptions,
+          '',
+          state.editingDraft.tags,
+          toggleModalTag
+        );
+        els.editModalTagPopover.classList.remove('hidden');
+        els.editModalTagSearch.focus();
+      } else {
+        els.editModalTagPopover.classList.add('hidden');
+      }
+    });
+
+    els.editModalTagSearch.addEventListener('input', () => {
+      if (!state.editingDraft) return;
+      renderTagPopoverOptions(
+        els.editModalTagOptions,
+        els.editModalTagSearch.value,
+        state.editingDraft.tags,
+        toggleModalTag
+      );
+    });
+
+    els.editModalTagsRow.addEventListener('click', (e) => {
+      const rmBtn = e.target.closest('[data-remove-modal-tag]');
+      if (!rmBtn || !state.editingDraft) return;
+      const tag = rmBtn.getAttribute('data-remove-modal-tag');
+      state.editingDraft.tags = state.editingDraft.tags.filter((t) => t !== tag);
+      renderEditModalTags();
+    });
+
+    els.editModalDeleteBtn.addEventListener('click', async () => {
+      if (!state.editingNoteId) return;
+      state.notes = state.notes.filter((n) => n.id !== state.editingNoteId);
+      state.editingNoteId = null;
+      state.editingDraft = null;
+      els.editModalBackdrop.classList.add('hidden');
+      await persistEncryptedVault();
+      renderAll();
+    });
+
+    els.editModalSaveBtn.addEventListener('click', () => {
+      saveAndCloseEditModal();
+    });
+
+    els.editModalBackdrop.addEventListener('click', (e) => {
+      if (e.target === els.editModalBackdrop) {
+        saveAndCloseEditModal();
+      }
+    });
+
+    // Vault Inspector Modal
+    const openVaultModal = () => {
+      updateVaultInspectorUI();
+      els.vaultModalBackdrop.classList.remove('hidden');
+    };
+    els.encryptionBadge.addEventListener('click', openVaultModal);
+    els.vaultBtn.addEventListener('click', openVaultModal);
+
+    els.closeVaultModalBtn.addEventListener('click', () => {
+      els.vaultModalBackdrop.classList.add('hidden');
+    });
+
+    els.vaultModalBackdrop.addEventListener('click', (e) => {
+      if (e.target === els.vaultModalBackdrop) {
+        els.vaultModalBackdrop.classList.add('hidden');
+      }
+    });
+
+    els.updatePassphraseBtn.addEventListener('click', async () => {
+      const nextPass = els.vaultPassphraseInput.value.trim();
+      if (!nextPass) return;
+      state.passphrase = nextPass;
+      els.vaultPassphraseInput.value = '';
+      await persistEncryptedVault();
+    });
+
+    els.lockVaultNowBtn.addEventListener('click', () => {
+      els.vaultModalBackdrop.classList.add('hidden');
+      els.unlockErrorMsg.classList.add('hidden');
+      els.unlockPassphraseInput.value = '';
+      els.lockScreenOverlay.classList.remove('hidden');
+      els.unlockPassphraseInput.focus();
+    });
+
+    els.unlockVaultForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const attempt = els.unlockPassphraseInput.value;
+      try {
+        const storedRaw = localStorage.getItem(STORAGE_KEY_VAULT);
+        const envelope = JSON.parse(storedRaw);
+        const decrypted = await CrypsyCrypto.decryptPayload(envelope, attempt);
+        state.passphrase = attempt;
+        state.notes = decrypted.notes || [];
+        state.tags = decrypted.tags || [];
+        els.lockScreenOverlay.classList.add('hidden');
+        els.unlockErrorMsg.classList.add('hidden');
+        renderAll();
+      } catch (err) {
+        els.unlockErrorMsg.classList.remove('hidden');
+      }
+    });
+
+    els.exportEncryptedBtn.addEventListener('click', () => {
+      if (!state.lastEncryptedEnvelope) return;
+      const blob = new Blob(
+        [JSON.stringify(state.lastEncryptedEnvelope, null, 2)],
+        { type: 'application/json' }
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `crypsy-vault-${new Date().toISOString().slice(0, 10)}.crypsy.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    els.importEncryptedInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const envelope = JSON.parse(text);
+        const ok = await tryLoadEnvelope(envelope);
+        if (ok && CrypsyCloudSync.isConnected()) {
+          await CrypsyCloudSync.writeVaultToCloudFolder(envelope);
+        }
+        els.vaultModalBackdrop.classList.add('hidden');
+      } catch (err) {
+        alert('Invalid .crypsy vault file.');
+      } finally {
+        els.importEncryptedInput.value = '';
+      }
+    });
+
+    // Global keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (!els.editModalBackdrop.classList.contains('hidden')) {
+          saveAndCloseEditModal();
+        } else if (!els.cloudOnboardingBackdrop.classList.contains('hidden')) {
+          els.cloudOnboardingBackdrop.classList.add('hidden');
+        } else if (!els.vaultModalBackdrop.classList.contains('hidden')) {
+          els.vaultModalBackdrop.classList.add('hidden');
+        } else if (state.composer.expanded) {
+          saveComposerNote();
+        }
+      }
+
+      const tag = document.activeElement ? document.activeElement.tagName : '';
+      const isTyping = tag === 'INPUT' || tag === 'TEXTAREA';
+      if (
+        (e.key === '/' && !isTyping) ||
+        ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')
+      ) {
+        e.preventDefault();
+        els.searchInput.focus();
+      }
+    });
+  }
+
+  // Boot
+  bindEvents();
+  initVault();
+})();

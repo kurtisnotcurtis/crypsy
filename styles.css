@@ -977,3 +977,322 @@ mark.search-highlight {
 }
 
 
+/* Cloud Setup Pill & Reconnect Banner */
+.cloud-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cloud-pill-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.cloud-pill-btn.synced {
+  border-color: rgba(52, 168, 83, 0.45);
+  background: rgba(52, 168, 83, 0.12);
+  color: var(--emerald);
+}
+
+.reconnect-banner {
+  background-color: var(--accent-bg);
+  border-bottom: 1px solid rgba(138, 180, 248, 0.3);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.88rem;
+}
+
+.reconnect-banner-text {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-primary);
+}
+
+.reconnect-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Cloud Onboarding Wizard Modal */
+.onboarding-modal {
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  max-width: 660px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.onboarding-eyebrow {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.wizard-steps {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background-color: var(--bg-input);
+}
+
+.wizard-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.wizard-step.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+}
+
+.wizard-step.active .step-num {
+  background-color: var(--accent);
+  color: #111;
+  border-color: var(--accent);
+}
+
+.wizard-step-line {
+  flex: 1;
+  height: 1px;
+  background-color: var(--border-subtle);
+}
+
+.wizard-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wizard-instruction {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+  gap: 10px;
+}
+
+.provider-card {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.provider-card:hover {
+  border-color: var(--text-secondary);
+}
+
+.provider-card.active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.provider-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.provider-sub {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.cli-installer-callout {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(154, 160, 166, 0.08);
+  border: 1px dashed var(--border-subtle);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.cli-installer-callout strong {
+  color: var(--text-primary);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.cli-installer-callout code {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.path-guidance-box {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.path-guidance-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.path-code {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #111214;
+  color: #7ee787;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.path-hint-sub {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.provision-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.checkbox-row input[type="checkbox"] {
+  margin-top: 3px;
+}
+
+.checkbox-row strong {
+  font-size: 0.86rem;
+  display: block;
+}
+
+.checkbox-row p {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.wizard-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.success-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(52, 168, 83, 0.14);
+  border: 1px solid rgba(52, 168, 83, 0.35);
+}
+
+.success-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--emerald);
+  color: #fff;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.success-banner p {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.provisioned-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.provisioned-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.84rem;
+}
+
+.provisioned-file-item code {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.file-badge {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.danger-text {
+  color: var(--danger) !important;
+}

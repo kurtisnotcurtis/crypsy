@@ -1,6 +1,6 @@
 {
   "name": "crypsy-note",
-  "version": "0.5.0",
-  "description": "Encrypted notes web application with transparent client-side AES-256-GCM encryption",
+  "version": "0.8.0",
+  "description": "Encrypted notes web application with AES-256-GCM encryption and BYOC cloud folder sync",
   "private": true
 }

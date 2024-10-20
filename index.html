@@ -329,6 +329,171 @@
     </div>
   </div>
 
+  <!-- Cloud Folder Onboarding & Provisioning Wizard Modal -->
+  <div id="cloudOnboardingBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card onboarding-modal">
+      <div class="vault-modal-header">
+        <div>
+          <span class="onboarding-eyebrow">BYOC — BRING YOUR OWN CLOUD</span>
+          <h3>Place Crypsy in Your Cloud Drive</h3>
+          <p class="vault-subtitle">
+            Walk through placing the encrypted vault and portable app inside your synced cloud folder—zero servers or API keys needed.
+          </p>
+        </div>
+        <button id="closeOnboardingBtn" class="icon-btn" aria-label="Close wizard">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Step Indicator -->
+      <div class="wizard-steps">
+        <div class="wizard-step active" data-step-indicator="1">
+          <span class="step-num">1</span>
+          <span>Choose Provider</span>
+        </div>
+        <div class="wizard-step-line"></div>
+        <div class="wizard-step" data-step-indicator="2">
+          <span class="step-num">2</span>
+          <span>Place Files in Cloud</span>
+        </div>
+        <div class="wizard-step-line"></div>
+        <div class="wizard-step" data-step-indicator="3">
+          <span class="step-num">3</span>
+          <span>Live Sync Active</span>
+        </div>
+      </div>
+
+      <!-- STEP 1: Select Cloud Provider -->
+      <div id="wizardStep1" class="wizard-pane">
+        <p class="wizard-instruction">
+          Which cloud storage client do you have installed on this device?
+        </p>
+        <div class="provider-grid" id="providerSelectionGrid">
+          <button type="button" class="provider-card active" data-provider="onedrive">
+            <div class="provider-title">Microsoft OneDrive</div>
+            <div class="provider-sub">Windows &amp; macOS built-in sync</div>
+          </button>
+          <button type="button" class="provider-card" data-provider="gdrive">
+            <div class="provider-title">Google Drive</div>
+            <div class="provider-sub">Google Drive for Desktop</div>
+          </button>
+          <button type="button" class="provider-card" data-provider="dropbox">
+            <div class="provider-title">Dropbox</div>
+            <div class="provider-sub">Dropbox Desktop folder</div>
+          </button>
+          <button type="button" class="provider-card" data-provider="icloud">
+            <div class="provider-title">iCloud Drive</div>
+            <div class="provider-sub">Apple iCloud Drive folder</div>
+          </button>
+          <button type="button" class="provider-card" data-provider="custom">
+            <div class="provider-title">Nextcloud / Syncthing / Custom</div>
+            <div class="provider-sub">Any synced folder or USB drive</div>
+          </button>
+        </div>
+
+        <div class="cli-installer-callout">
+          <div>
+            <strong>Prefer a 1-click native installer?</strong>
+            <span>Run <code>.\install.ps1</code> (Windows) or <code>./install.sh</code> (macOS/Linux) in the project folder to auto-detect your cloud drive and create shortcuts.</span>
+          </div>
+        </div>
+
+        <div class="wizard-footer">
+          <button type="button" id="downloadPortableBtn" class="btn-ghost">
+            Download Portable Crypsy.html
+          </button>
+          <button type="button" id="wizardToStep2Btn" class="btn-primary">
+            Continue &rarr;
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 2: Locate & Provision Cloud Folder -->
+      <div id="wizardStep2" class="wizard-pane hidden">
+        <div class="path-guidance-box">
+          <div class="path-guidance-header">
+            <span id="selectedProviderTitle">Typical OneDrive Location on Your OS:</span>
+            <button type="button" id="copyPathHintBtn" class="btn-link">Copy Path</button>
+          </div>
+          <code id="osPathHintCode" class="path-code">%UserProfile%\OneDrive\Crypsy</code>
+          <p id="folderPickerHintText" class="path-hint-sub">
+            When the folder dialog opens, select your cloud folder and Crypsy will place the encrypted vault and portable app inside it.
+          </p>
+        </div>
+
+        <div class="provision-options">
+          <label class="checkbox-row">
+            <input type="checkbox" id="createCrypsySubfolderCb" checked />
+            <div>
+              <strong>Create a dedicated <code>Crypsy/</code> subfolder</strong>
+              <p>Keeps your encrypted vault and portable app neatly organized inside your cloud drive.</p>
+            </div>
+          </label>
+
+          <label class="checkbox-row">
+            <input type="checkbox" id="provisionPortableHtmlCb" checked />
+            <div>
+              <strong>Copy portable <code>Crypsy-Portable.html</code> into cloud folder</strong>
+              <p>Allows you to open Crypsy directly from your cloud folder on any other synced computer without installing anything.</p>
+            </div>
+          </label>
+        </div>
+
+        <p id="wizardStep2Error" class="unlock-error hidden"></p>
+
+        <div class="wizard-footer">
+          <button type="button" id="wizardBackToStep1Btn" class="btn-ghost">&larr; Back</button>
+          <button type="button" id="pickAndProvisionBtn" class="btn-primary">
+            Select Cloud Folder &amp; Place Files
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 3: Connected & Provisioned -->
+      <div id="wizardStep3" class="wizard-pane hidden">
+        <div class="success-banner">
+          <div class="success-icon">&#10003;</div>
+          <div>
+            <h4 id="connectedProviderHeading">Connected to Cloud Folder</h4>
+            <p id="connectedFolderDetails">Live AES-256-GCM auto-sync is active.</p>
+          </div>
+        </div>
+
+        <div class="provisioned-files-list">
+          <div class="provisioned-file-item">
+            <code>vault.crypsy.json</code>
+            <span class="file-badge">Encrypted Vault (Auto-synced on every edit)</span>
+          </div>
+          <div class="provisioned-file-item">
+            <code>Crypsy-Portable.html</code>
+            <span class="file-badge">Self-Contained App for Other Devices</span>
+          </div>
+          <div class="provisioned-file-item">
+            <code>README-CRYPSY.txt</code>
+            <span class="file-badge">Recovery &amp; Usage Instructions</span>
+          </div>
+        </div>
+
+        <div class="wizard-footer">
+          <button type="button" id="unlinkCloudFolderBtn" class="btn-ghost danger-text">
+            Unlink Cloud Folder
+          </button>
+          <div style="display:flex;gap:8px;">
+            <button type="button" id="reprovisionAssetsBtn" class="btn-ghost">
+              Re-write Portable Files
+            </button>
+            <button type="button" id="finishOnboardingBtn" class="btn-primary">
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Cloud Ciphertext Inspector & Vault Modal -->
   <div id="vaultModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
     <div class="modal-card vault-modal">
@@ -403,6 +568,7 @@
   </div>
 
   <script src="crypto.js"></script>
-    <script src="app.js"></script>
+  <script src="cloud-sync.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
