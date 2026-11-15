@@ -52,7 +52,7 @@
       </button>
     </div>
 
-    <!-- Right Actions: Cloud Setup, View Mode, Vault Inspector, Theme -->
+    <!-- Right Actions: Cloud Setup, Last Updated, View Mode, Vault Inspector, Theme -->
     <div class="topbar-right">
       <button id="cloudSetupBtn" class="cloud-pill-btn" title="Connect or manage synced cloud provider folder">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -60,6 +60,11 @@
         </svg>
         <span id="cloudSetupBtnLabel">Setup Cloud Folder</span>
       </button>
+
+      <span id="lastUpdatedBadge" class="last-updated-badge hidden" title="Last vault update">
+        <span class="last-updated-dot"></span>
+        <span id="lastUpdatedText">Updated just now</span>
+      </span>
 
       <button id="viewToggleBtn" class="icon-btn" title="Switch to List view" aria-label="Toggle Card or List view">
         <svg id="viewIconList" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">

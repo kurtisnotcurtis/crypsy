@@ -98,6 +98,66 @@ const CrypsyCloudSync = (() => {
     return provider.paths[os] || provider.paths.windows;
   }
 
+  /**
+   * Detects if Crypsy is currently opened from a local file:// path inside
+   * a known synced cloud storage folder (OneDrive, Google Drive, Dropbox, iCloud, etc.).
+   */
+  function detectRunningCloudLocation() {
+    if (typeof window === 'undefined' || window.location.protocol !== 'file:') {
+      return null;
+    }
+
+    let decodedPath = '';
+    try {
+      decodedPath = decodeURIComponent(window.location.pathname || '');
+    } catch (e) {
+      decodedPath = window.location.pathname || '';
+    }
+
+    const normalized = decodedPath.replace(/\\/g, '/');
+    const lower = normalized.toLowerCase();
+
+    const rules = [
+      { id: 'onedrive', name: 'OneDrive', patterns: ['/onedrive'] },
+      { id: 'gdrive', name: 'Google Drive', patterns: ['/my drive/', '/google drive/', '/googledrive'] },
+      { id: 'dropbox', name: 'Dropbox', patterns: ['/dropbox/'] },
+      { id: 'icloud', name: 'iCloud Drive', patterns: ['/iclouddrive/', '/icloud drive/', '/com~apple~clouddocs/'] },
+      { id: 'custom', name: 'Nextcloud', patterns: ['/nextcloud/'] },
+      { id: 'custom', name: 'Syncthing', patterns: ['/syncthing/'] },
+      { id: 'custom', name: 'ownCloud', patterns: ['/owncloud/'] },
+      { id: 'custom', name: 'pCloud', patterns: ['/pcloud'] },
+      { id: 'custom', name: 'Box', patterns: ['/box/'] },
+    ];
+
+    for (const rule of rules) {
+      if (rule.patterns.some((p) => lower.includes(p))) {
+        const parts = normalized.split('/').filter(Boolean);
+        const folderName = parts.length >= 2 ? parts[parts.length - 2] : '';
+        return {
+          isPortableFile: true,
+          providerId: rule.id,
+          providerName: rule.name,
+          folderName,
+          filePath: normalized,
+        };
+      }
+    }
+
+    const parts = normalized.split('/').filter(Boolean);
+    const folderName = parts.length >= 2 ? parts[parts.length - 2] : '';
+    return {
+      isPortableFile: true,
+      providerId: null,
+      providerName: null,
+      folderName,
+      filePath: normalized,
+    };
+  }
+
+  function getLastKnownFileModified() {
+    return lastKnownFileModified || null;
+  }
+
   // IndexedDB helpers for persisting FileSystemDirectoryHandle across browser restarts
   function openHandleDB() {
     return new Promise((resolve, reject) => {
@@ -470,6 +530,8 @@ const CrypsyCloudSync = (() => {
     isFileSystemAccessSupported,
     detectOS,
     getProviderPathHint,
+    detectRunningCloudLocation,
+    getLastKnownFileModified,
     getSavedProviderMeta,
     pickCloudFolder,
     restoreSavedConnection,

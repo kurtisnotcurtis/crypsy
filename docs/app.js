@@ -102,6 +102,8 @@
     clearSearchBtn: document.getElementById('clearSearchBtn'),
     cloudSetupBtn: document.getElementById('cloudSetupBtn'),
     cloudSetupBtnLabel: document.getElementById('cloudSetupBtnLabel'),
+    lastUpdatedBadge: document.getElementById('lastUpdatedBadge'),
+    lastUpdatedText: document.getElementById('lastUpdatedText'),
     viewToggleBtn: document.getElementById('viewToggleBtn'),
     viewIconList: document.getElementById('viewIconList'),
     viewIconGrid: document.getElementById('viewIconGrid'),
@@ -226,6 +228,17 @@
     });
   }
 
+  function formatRelativeTime(ms) {
+    if (!ms) return '';
+    const diffSec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+    if (diffSec < 45) return 'just now';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    return formatTimestamp(ms);
+  }
+
   function autoResizeTextarea(textarea) {
     textarea.style.height = 'auto';
     textarea.style.height = `${Math.max(textarea.scrollHeight, 32)}px`;
@@ -307,14 +320,23 @@
       updateCloudStatusUI();
     });
 
+    // Check if running from a cloud folder and pre-select provider if detected
+    const detectedCloud = CrypsyCloudSync.detectRunningCloudLocation();
+    if (detectedCloud && detectedCloud.providerId) {
+      state.selectedProviderId = detectedCloud.providerId;
+    }
+
     // Check if a cloud folder was previously linked
     const cloudState = await CrypsyCloudSync.restoreSavedConnection();
     updateCloudStatusUI(cloudState);
+
+    setInterval(updateLastUpdatedUI, 30000);
 
     if (cloudState.status === 'connected') {
       const cloudEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
       if (cloudEnvelope) {
         await tryLoadEnvelope(cloudEnvelope);
+        updateLastUpdatedUI();
         return;
       }
     }
@@ -337,27 +359,80 @@
     }
   }
 
+  function updateLastUpdatedUI() {
+    if (!els.lastUpdatedBadge || !els.lastUpdatedText) return;
+
+    const meta = CrypsyCloudSync.getSavedProviderMeta();
+    const isConnected = CrypsyCloudSync.isConnected();
+    const fileModifiedMs = CrypsyCloudSync.getLastKnownFileModified();
+    const envelopeUpdatedMs =
+      state.lastEncryptedEnvelope && state.lastEncryptedEnvelope.updatedAt
+        ? Date.parse(state.lastEncryptedEnvelope.updatedAt)
+        : 0;
+    const syncedAtMs =
+      meta && meta.lastSyncedAt ? Date.parse(meta.lastSyncedAt) : 0;
+    const latestNoteMs = state.notes.reduce(
+      (max, n) => Math.max(max, n.updatedAt || 0),
+      0
+    );
+
+    const bestTimestamp = isConnected
+      ? Math.max(fileModifiedMs || 0, syncedAtMs || 0, envelopeUpdatedMs || 0)
+      : Math.max(envelopeUpdatedMs || 0, latestNoteMs || 0);
+
+    if (!bestTimestamp) {
+      els.lastUpdatedBadge.classList.add('hidden');
+      return;
+    }
+
+    const rel = formatRelativeTime(bestTimestamp);
+    const fullDate = new Date(bestTimestamp).toLocaleString();
+    const prefix = isConnected ? 'Synced' : 'Updated';
+
+    els.lastUpdatedBadge.classList.remove('hidden');
+    els.lastUpdatedBadge.classList.toggle('synced', isConnected);
+    els.lastUpdatedText.textContent = `${prefix} ${rel}`;
+    els.lastUpdatedBadge.title = `${prefix} at ${fullDate}`;
+  }
+
   function updateCloudStatusUI(restoredState) {
     const meta = CrypsyCloudSync.getSavedProviderMeta();
     const isConnected = CrypsyCloudSync.isConnected() && (!restoredState || restoredState.status === 'connected');
+    const detectedCloud = CrypsyCloudSync.detectRunningCloudLocation();
 
     if (restoredState && restoredState.status === 'needs_permission' && meta) {
       els.reconnectBannerMsg.innerHTML = `Linked to <strong>${escapeHtml(meta.providerName)} (${escapeHtml(meta.folderName)})</strong>. Click to resume live auto-sync.`;
       els.reconnectCloudBanner.classList.remove('hidden');
-      els.cloudSetupBtn.classList.remove('synced');
+      els.cloudSetupBtn.classList.remove('synced', 'detected');
       els.cloudSetupBtnLabel.textContent = `Resume ${meta.providerName}`;
+      updateLastUpdatedUI();
       return;
     }
 
     els.reconnectCloudBanner.classList.add('hidden');
 
     if (isConnected && meta) {
+      els.cloudSetupBtn.classList.remove('detected');
       els.cloudSetupBtn.classList.add('synced');
       els.cloudSetupBtnLabel.textContent = `${meta.providerName}: /${meta.folderName}`;
-    } else {
+      els.cloudSetupBtn.title = `Live auto-sync active with ${meta.providerName} (/${meta.folderName})`;
+    } else if (detectedCloud && detectedCloud.providerName) {
       els.cloudSetupBtn.classList.remove('synced');
+      els.cloudSetupBtn.classList.add('detected');
+      els.cloudSetupBtnLabel.textContent = `In ${detectedCloud.providerName} (Link Sync)`;
+      els.cloudSetupBtn.title = `Running from your ${detectedCloud.providerName} folder — click to link live auto-sync for vault.crypsy.json`;
+    } else if (detectedCloud && detectedCloud.isPortableFile) {
+      els.cloudSetupBtn.classList.remove('synced');
+      els.cloudSetupBtn.classList.add('detected');
+      els.cloudSetupBtnLabel.textContent = 'Portable Mode (Link Sync)';
+      els.cloudSetupBtn.title = 'Running as a local portable file — click to link your cloud folder for live auto-sync';
+    } else {
+      els.cloudSetupBtn.classList.remove('synced', 'detected');
       els.cloudSetupBtnLabel.textContent = 'Setup Cloud Folder';
+      els.cloudSetupBtn.title = 'Connect or manage synced cloud provider folder';
     }
+
+    updateLastUpdatedUI();
   }
 
   // Theme & View Mode UI
@@ -460,10 +535,100 @@
     }
   }
 
+  function renderMarkdownDescription(noteId, text, query) {
+    if (!text) return '';
+    const lines = String(text).split(/\r?\n/);
+    const out = [];
+    let listType = null; // 'ul' | 'ol' | 'task'
+    let listStart = 1;
+
+    const closeList = () => {
+      if (!listType) return;
+      out.push(listType === 'ol' ? '</ol>' : '</ul>');
+      listType = null;
+      listStart = 1;
+    };
+
+    lines.forEach((rawLine, idx) => {
+      const taskMatch = rawLine.match(/^(\s*)[-*+]\s+\[([ xX])\]\s*(.*)$/);
+      if (taskMatch) {
+        if (listType !== 'task') {
+          closeList();
+          listType = 'task';
+          out.push('<ul class="md-list md-task-list">');
+        }
+        const checked = taskMatch[2].toLowerCase() === 'x';
+        const contentHtml = highlightText(taskMatch[3], query);
+        out.push(
+          `<li class="md-task-item">` +
+            `<input type="checkbox" class="md-checkbox" data-toggle-checkbox="${escapeHtml(noteId)}" data-line-index="${idx}" ${checked ? 'checked' : ''} aria-label="Toggle task" />` +
+            `<span class="${checked ? 'md-task-done' : ''}">${contentHtml}</span>` +
+          `</li>`
+        );
+        return;
+      }
+
+      const ulMatch = rawLine.match(/^(\s*)(?:[-*+•])\s+(.*)$/);
+      if (ulMatch) {
+        if (listType !== 'ul') {
+          closeList();
+          listType = 'ul';
+          out.push('<ul class="md-list">');
+        }
+        out.push(`<li>${highlightText(ulMatch[2], query)}</li>`);
+        return;
+      }
+
+      const olMatch = rawLine.match(/^(\s*)(\d+)[.)]\s+(.*)$/);
+      if (olMatch) {
+        const num = parseInt(olMatch[2], 10);
+        if (listType !== 'ol') {
+          closeList();
+          listType = 'ol';
+          listStart = Number.isFinite(num) && num > 0 ? num : 1;
+          const startAttr = listStart !== 1 ? ` start="${listStart}"` : '';
+          out.push(`<ol class="md-list"${startAttr}>`);
+        }
+        out.push(`<li>${highlightText(olMatch[3], query)}</li>`);
+        return;
+      }
+
+      closeList();
+      if (rawLine.trim() === '') {
+        out.push('<div class="md-spacer"></div>');
+      } else {
+        out.push(`<div class="md-line">${highlightText(rawLine, query)}</div>`);
+      }
+    });
+
+    closeList();
+    return out.join('');
+  }
+
+  async function toggleNoteCheckbox(noteId, lineIndex) {
+    const note = state.notes.find((n) => n.id === noteId);
+    if (!note || typeof note.description !== 'string') return;
+    const lines = note.description.split(/\r?\n/);
+    if (lineIndex < 0 || lineIndex >= lines.length) return;
+
+    const line = lines[lineIndex];
+    const match = line.match(/^(\s*[-*+]\s+\[)([ xX])(\]\s*.*)$/);
+    if (!match) return;
+
+    const nextState = match[2].toLowerCase() === 'x' ? ' ' : 'x';
+    lines[lineIndex] = `${match[1]}${nextState}${match[3]}`;
+    note.description = lines.join('\n');
+    note.updatedAt = Date.now();
+    await persistEncryptedVault();
+    renderAll();
+  }
+
   function createNoteCardHtml(note) {
     const q = state.searchQuery;
     const titleHtml = note.title ? highlightText(note.title, q) : '';
-    const descHtml = note.description ? highlightText(note.description, q) : '';
+    const descHtml = note.description
+      ? renderMarkdownDescription(note.id, note.description, q)
+      : '';
 
     const tagsHtml = (note.tags || [])
       .map(
@@ -550,6 +715,7 @@
     renderFilterBanner();
     renderNotes();
     updateVaultInspectorUI();
+    updateLastUpdatedUI();
   }
 
   // Composer Functions
@@ -1136,6 +1302,15 @@
 
     // Card interactions
     els.notesWorkspace.addEventListener('click', async (e) => {
+      const checkbox = e.target.closest('[data-toggle-checkbox]');
+      if (checkbox) {
+        e.stopPropagation();
+        const noteId = checkbox.getAttribute('data-toggle-checkbox');
+        const lineIndex = parseInt(checkbox.getAttribute('data-line-index'), 10);
+        await toggleNoteCheckbox(noteId, lineIndex);
+        return;
+      }
+
       const pinBtn = e.target.closest('[data-toggle-pin]');
       if (pinBtn) {
         e.stopPropagation();

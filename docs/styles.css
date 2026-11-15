@@ -707,9 +707,62 @@ html[data-theme="light"] .color-dot {
   font-size: 0.92rem;
   color: var(--text-primary);
   opacity: 0.9;
-  white-space: pre-wrap;
+  white-space: normal;
   max-height: 240px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.note-card-desc .md-line {
+  white-space: pre-wrap;
+}
+
+.note-card-desc .md-spacer {
+  height: 6px;
+}
+
+.note-card-desc .md-list {
+  margin: 2px 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.note-card-desc ul.md-list {
+  list-style-type: disc;
+}
+
+.note-card-desc ol.md-list {
+  list-style-type: decimal;
+}
+
+.note-card-desc ul.md-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.note-card-desc .md-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.note-card-desc .md-checkbox {
+  margin-top: 3px;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.note-card-desc .md-task-done {
+  text-decoration: line-through;
+  color: var(--text-secondary);
+  opacity: 0.75;
 }
 
 .note-tags-row {
@@ -1014,6 +1067,47 @@ mark.search-highlight {
   border-color: rgba(52, 168, 83, 0.45);
   background: rgba(52, 168, 83, 0.12);
   color: var(--emerald);
+}
+
+.cloud-pill-btn.detected {
+  border-color: rgba(138, 180, 248, 0.45);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.last-updated-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 600;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.last-updated-badge.synced {
+  border-color: rgba(52, 168, 83, 0.35);
+  background: rgba(52, 168, 83, 0.1);
+  color: var(--emerald);
+}
+
+.last-updated-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+  opacity: 0.85;
+}
+
+@media (max-width: 900px) {
+  .last-updated-badge {
+    display: none;
+  }
 }
 
 .reconnect-banner {

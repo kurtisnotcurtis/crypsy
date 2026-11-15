@@ -715,9 +715,62 @@ html[data-theme="light"] .color-dot {
   font-size: 0.92rem;
   color: var(--text-primary);
   opacity: 0.9;
-  white-space: pre-wrap;
+  white-space: normal;
   max-height: 240px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.note-card-desc .md-line {
+  white-space: pre-wrap;
+}
+
+.note-card-desc .md-spacer {
+  height: 6px;
+}
+
+.note-card-desc .md-list {
+  margin: 2px 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.note-card-desc ul.md-list {
+  list-style-type: disc;
+}
+
+.note-card-desc ol.md-list {
+  list-style-type: decimal;
+}
+
+.note-card-desc ul.md-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.note-card-desc .md-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.note-card-desc .md-checkbox {
+  margin-top: 3px;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.note-card-desc .md-task-done {
+  text-decoration: line-through;
+  color: var(--text-secondary);
+  opacity: 0.75;
 }
 
 .note-tags-row {
@@ -1022,6 +1075,47 @@ mark.search-highlight {
   border-color: rgba(52, 168, 83, 0.45);
   background: rgba(52, 168, 83, 0.12);
   color: var(--emerald);
+}
+
+.cloud-pill-btn.detected {
+  border-color: rgba(138, 180, 248, 0.45);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.last-updated-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 600;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.last-updated-badge.synced {
+  border-color: rgba(52, 168, 83, 0.35);
+  background: rgba(52, 168, 83, 0.1);
+  color: var(--emerald);
+}
+
+.last-updated-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+  opacity: 0.85;
+}
+
+@media (max-width: 900px) {
+  .last-updated-badge {
+    display: none;
+  }
 }
 
 .reconnect-banner {
@@ -1363,7 +1457,7 @@ mark.search-highlight {
       </button>
     </div>
 
-    <!-- Right Actions: Cloud Setup, View Mode, Vault Inspector, Theme -->
+    <!-- Right Actions: Cloud Setup, Last Updated, View Mode, Vault Inspector, Theme -->
     <div class="topbar-right">
       <button id="cloudSetupBtn" class="cloud-pill-btn" title="Connect or manage synced cloud provider folder">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -1371,6 +1465,11 @@ mark.search-highlight {
         </svg>
         <span id="cloudSetupBtnLabel">Setup Cloud Folder</span>
       </button>
+
+      <span id="lastUpdatedBadge" class="last-updated-badge hidden" title="Last vault update">
+        <span class="last-updated-dot"></span>
+        <span id="lastUpdatedText">Updated just now</span>
+      </span>
 
       <button id="viewToggleBtn" class="icon-btn" title="Switch to List view" aria-label="Toggle Card or List view">
         <svg id="viewIconList" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -2091,6 +2190,66 @@ const CrypsyCloudSync = (() => {
     return provider.paths[os] || provider.paths.windows;
   }
 
+  /**
+   * Detects if Crypsy is currently opened from a local file:// path inside
+   * a known synced cloud storage folder (OneDrive, Google Drive, Dropbox, iCloud, etc.).
+   */
+  function detectRunningCloudLocation() {
+    if (typeof window === 'undefined' || window.location.protocol !== 'file:') {
+      return null;
+    }
+
+    let decodedPath = '';
+    try {
+      decodedPath = decodeURIComponent(window.location.pathname || '');
+    } catch (e) {
+      decodedPath = window.location.pathname || '';
+    }
+
+    const normalized = decodedPath.replace(/\\/g, '/');
+    const lower = normalized.toLowerCase();
+
+    const rules = [
+      { id: 'onedrive', name: 'OneDrive', patterns: ['/onedrive'] },
+      { id: 'gdrive', name: 'Google Drive', patterns: ['/my drive/', '/google drive/', '/googledrive'] },
+      { id: 'dropbox', name: 'Dropbox', patterns: ['/dropbox/'] },
+      { id: 'icloud', name: 'iCloud Drive', patterns: ['/iclouddrive/', '/icloud drive/', '/com~apple~clouddocs/'] },
+      { id: 'custom', name: 'Nextcloud', patterns: ['/nextcloud/'] },
+      { id: 'custom', name: 'Syncthing', patterns: ['/syncthing/'] },
+      { id: 'custom', name: 'ownCloud', patterns: ['/owncloud/'] },
+      { id: 'custom', name: 'pCloud', patterns: ['/pcloud'] },
+      { id: 'custom', name: 'Box', patterns: ['/box/'] },
+    ];
+
+    for (const rule of rules) {
+      if (rule.patterns.some((p) => lower.includes(p))) {
+        const parts = normalized.split('/').filter(Boolean);
+        const folderName = parts.length >= 2 ? parts[parts.length - 2] : '';
+        return {
+          isPortableFile: true,
+          providerId: rule.id,
+          providerName: rule.name,
+          folderName,
+          filePath: normalized,
+        };
+      }
+    }
+
+    const parts = normalized.split('/').filter(Boolean);
+    const folderName = parts.length >= 2 ? parts[parts.length - 2] : '';
+    return {
+      isPortableFile: true,
+      providerId: null,
+      providerName: null,
+      folderName,
+      filePath: normalized,
+    };
+  }
+
+  function getLastKnownFileModified() {
+    return lastKnownFileModified || null;
+  }
+
   // IndexedDB helpers for persisting FileSystemDirectoryHandle across browser restarts
   function openHandleDB() {
     return new Promise((resolve, reject) => {
@@ -2463,6 +2622,8 @@ const CrypsyCloudSync = (() => {
     isFileSystemAccessSupported,
     detectOS,
     getProviderPathHint,
+    detectRunningCloudLocation,
+    getLastKnownFileModified,
     getSavedProviderMeta,
     pickCloudFolder,
     restoreSavedConnection,
@@ -2583,6 +2744,8 @@ const CrypsyCloudSync = (() => {
     clearSearchBtn: document.getElementById('clearSearchBtn'),
     cloudSetupBtn: document.getElementById('cloudSetupBtn'),
     cloudSetupBtnLabel: document.getElementById('cloudSetupBtnLabel'),
+    lastUpdatedBadge: document.getElementById('lastUpdatedBadge'),
+    lastUpdatedText: document.getElementById('lastUpdatedText'),
     viewToggleBtn: document.getElementById('viewToggleBtn'),
     viewIconList: document.getElementById('viewIconList'),
     viewIconGrid: document.getElementById('viewIconGrid'),
@@ -2707,6 +2870,17 @@ const CrypsyCloudSync = (() => {
     });
   }
 
+  function formatRelativeTime(ms) {
+    if (!ms) return '';
+    const diffSec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+    if (diffSec < 45) return 'just now';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    return formatTimestamp(ms);
+  }
+
   function autoResizeTextarea(textarea) {
     textarea.style.height = 'auto';
     textarea.style.height = `${Math.max(textarea.scrollHeight, 32)}px`;
@@ -2788,14 +2962,23 @@ const CrypsyCloudSync = (() => {
       updateCloudStatusUI();
     });
 
+    // Check if running from a cloud folder and pre-select provider if detected
+    const detectedCloud = CrypsyCloudSync.detectRunningCloudLocation();
+    if (detectedCloud && detectedCloud.providerId) {
+      state.selectedProviderId = detectedCloud.providerId;
+    }
+
     // Check if a cloud folder was previously linked
     const cloudState = await CrypsyCloudSync.restoreSavedConnection();
     updateCloudStatusUI(cloudState);
+
+    setInterval(updateLastUpdatedUI, 30000);
 
     if (cloudState.status === 'connected') {
       const cloudEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
       if (cloudEnvelope) {
         await tryLoadEnvelope(cloudEnvelope);
+        updateLastUpdatedUI();
         return;
       }
     }
@@ -2818,27 +3001,80 @@ const CrypsyCloudSync = (() => {
     }
   }
 
+  function updateLastUpdatedUI() {
+    if (!els.lastUpdatedBadge || !els.lastUpdatedText) return;
+
+    const meta = CrypsyCloudSync.getSavedProviderMeta();
+    const isConnected = CrypsyCloudSync.isConnected();
+    const fileModifiedMs = CrypsyCloudSync.getLastKnownFileModified();
+    const envelopeUpdatedMs =
+      state.lastEncryptedEnvelope && state.lastEncryptedEnvelope.updatedAt
+        ? Date.parse(state.lastEncryptedEnvelope.updatedAt)
+        : 0;
+    const syncedAtMs =
+      meta && meta.lastSyncedAt ? Date.parse(meta.lastSyncedAt) : 0;
+    const latestNoteMs = state.notes.reduce(
+      (max, n) => Math.max(max, n.updatedAt || 0),
+      0
+    );
+
+    const bestTimestamp = isConnected
+      ? Math.max(fileModifiedMs || 0, syncedAtMs || 0, envelopeUpdatedMs || 0)
+      : Math.max(envelopeUpdatedMs || 0, latestNoteMs || 0);
+
+    if (!bestTimestamp) {
+      els.lastUpdatedBadge.classList.add('hidden');
+      return;
+    }
+
+    const rel = formatRelativeTime(bestTimestamp);
+    const fullDate = new Date(bestTimestamp).toLocaleString();
+    const prefix = isConnected ? 'Synced' : 'Updated';
+
+    els.lastUpdatedBadge.classList.remove('hidden');
+    els.lastUpdatedBadge.classList.toggle('synced', isConnected);
+    els.lastUpdatedText.textContent = `${prefix} ${rel}`;
+    els.lastUpdatedBadge.title = `${prefix} at ${fullDate}`;
+  }
+
   function updateCloudStatusUI(restoredState) {
     const meta = CrypsyCloudSync.getSavedProviderMeta();
     const isConnected = CrypsyCloudSync.isConnected() && (!restoredState || restoredState.status === 'connected');
+    const detectedCloud = CrypsyCloudSync.detectRunningCloudLocation();
 
     if (restoredState && restoredState.status === 'needs_permission' && meta) {
       els.reconnectBannerMsg.innerHTML = `Linked to <strong>${escapeHtml(meta.providerName)} (${escapeHtml(meta.folderName)})</strong>. Click to resume live auto-sync.`;
       els.reconnectCloudBanner.classList.remove('hidden');
-      els.cloudSetupBtn.classList.remove('synced');
+      els.cloudSetupBtn.classList.remove('synced', 'detected');
       els.cloudSetupBtnLabel.textContent = `Resume ${meta.providerName}`;
+      updateLastUpdatedUI();
       return;
     }
 
     els.reconnectCloudBanner.classList.add('hidden');
 
     if (isConnected && meta) {
+      els.cloudSetupBtn.classList.remove('detected');
       els.cloudSetupBtn.classList.add('synced');
       els.cloudSetupBtnLabel.textContent = `${meta.providerName}: /${meta.folderName}`;
-    } else {
+      els.cloudSetupBtn.title = `Live auto-sync active with ${meta.providerName} (/${meta.folderName})`;
+    } else if (detectedCloud && detectedCloud.providerName) {
       els.cloudSetupBtn.classList.remove('synced');
+      els.cloudSetupBtn.classList.add('detected');
+      els.cloudSetupBtnLabel.textContent = `In ${detectedCloud.providerName} (Link Sync)`;
+      els.cloudSetupBtn.title = `Running from your ${detectedCloud.providerName} folder — click to link live auto-sync for vault.crypsy.json`;
+    } else if (detectedCloud && detectedCloud.isPortableFile) {
+      els.cloudSetupBtn.classList.remove('synced');
+      els.cloudSetupBtn.classList.add('detected');
+      els.cloudSetupBtnLabel.textContent = 'Portable Mode (Link Sync)';
+      els.cloudSetupBtn.title = 'Running as a local portable file — click to link your cloud folder for live auto-sync';
+    } else {
+      els.cloudSetupBtn.classList.remove('synced', 'detected');
       els.cloudSetupBtnLabel.textContent = 'Setup Cloud Folder';
+      els.cloudSetupBtn.title = 'Connect or manage synced cloud provider folder';
     }
+
+    updateLastUpdatedUI();
   }
 
   // Theme & View Mode UI
@@ -2941,10 +3177,100 @@ const CrypsyCloudSync = (() => {
     }
   }
 
+  function renderMarkdownDescription(noteId, text, query) {
+    if (!text) return '';
+    const lines = String(text).split(/\r?\n/);
+    const out = [];
+    let listType = null; // 'ul' | 'ol' | 'task'
+    let listStart = 1;
+
+    const closeList = () => {
+      if (!listType) return;
+      out.push(listType === 'ol' ? '</ol>' : '</ul>');
+      listType = null;
+      listStart = 1;
+    };
+
+    lines.forEach((rawLine, idx) => {
+      const taskMatch = rawLine.match(/^(\s*)[-*+]\s+\[([ xX])\]\s*(.*)$/);
+      if (taskMatch) {
+        if (listType !== 'task') {
+          closeList();
+          listType = 'task';
+          out.push('<ul class="md-list md-task-list">');
+        }
+        const checked = taskMatch[2].toLowerCase() === 'x';
+        const contentHtml = highlightText(taskMatch[3], query);
+        out.push(
+          `<li class="md-task-item">` +
+            `<input type="checkbox" class="md-checkbox" data-toggle-checkbox="${escapeHtml(noteId)}" data-line-index="${idx}" ${checked ? 'checked' : ''} aria-label="Toggle task" />` +
+            `<span class="${checked ? 'md-task-done' : ''}">${contentHtml}</span>` +
+          `</li>`
+        );
+        return;
+      }
+
+      const ulMatch = rawLine.match(/^(\s*)(?:[-*+•])\s+(.*)$/);
+      if (ulMatch) {
+        if (listType !== 'ul') {
+          closeList();
+          listType = 'ul';
+          out.push('<ul class="md-list">');
+        }
+        out.push(`<li>${highlightText(ulMatch[2], query)}</li>`);
+        return;
+      }
+
+      const olMatch = rawLine.match(/^(\s*)(\d+)[.)]\s+(.*)$/);
+      if (olMatch) {
+        const num = parseInt(olMatch[2], 10);
+        if (listType !== 'ol') {
+          closeList();
+          listType = 'ol';
+          listStart = Number.isFinite(num) && num > 0 ? num : 1;
+          const startAttr = listStart !== 1 ? ` start="${listStart}"` : '';
+          out.push(`<ol class="md-list"${startAttr}>`);
+        }
+        out.push(`<li>${highlightText(olMatch[3], query)}</li>`);
+        return;
+      }
+
+      closeList();
+      if (rawLine.trim() === '') {
+        out.push('<div class="md-spacer"></div>');
+      } else {
+        out.push(`<div class="md-line">${highlightText(rawLine, query)}</div>`);
+      }
+    });
+
+    closeList();
+    return out.join('');
+  }
+
+  async function toggleNoteCheckbox(noteId, lineIndex) {
+    const note = state.notes.find((n) => n.id === noteId);
+    if (!note || typeof note.description !== 'string') return;
+    const lines = note.description.split(/\r?\n/);
+    if (lineIndex < 0 || lineIndex >= lines.length) return;
+
+    const line = lines[lineIndex];
+    const match = line.match(/^(\s*[-*+]\s+\[)([ xX])(\]\s*.*)$/);
+    if (!match) return;
+
+    const nextState = match[2].toLowerCase() === 'x' ? ' ' : 'x';
+    lines[lineIndex] = `${match[1]}${nextState}${match[3]}`;
+    note.description = lines.join('\n');
+    note.updatedAt = Date.now();
+    await persistEncryptedVault();
+    renderAll();
+  }
+
   function createNoteCardHtml(note) {
     const q = state.searchQuery;
     const titleHtml = note.title ? highlightText(note.title, q) : '';
-    const descHtml = note.description ? highlightText(note.description, q) : '';
+    const descHtml = note.description
+      ? renderMarkdownDescription(note.id, note.description, q)
+      : '';
 
     const tagsHtml = (note.tags || [])
       .map(
@@ -3031,6 +3357,7 @@ const CrypsyCloudSync = (() => {
     renderFilterBanner();
     renderNotes();
     updateVaultInspectorUI();
+    updateLastUpdatedUI();
   }
 
   // Composer Functions
@@ -3617,6 +3944,15 @@ const CrypsyCloudSync = (() => {
 
     // Card interactions
     els.notesWorkspace.addEventListener('click', async (e) => {
+      const checkbox = e.target.closest('[data-toggle-checkbox]');
+      if (checkbox) {
+        e.stopPropagation();
+        const noteId = checkbox.getAttribute('data-toggle-checkbox');
+        const lineIndex = parseInt(checkbox.getAttribute('data-line-index'), 10);
+        await toggleNoteCheckbox(noteId, lineIndex);
+        return;
+      }
+
       const pinBtn = e.target.closest('[data-toggle-pin]');
       if (pinBtn) {
         e.stopPropagation();
