@@ -38,3 +38,7 @@ node install.js               # Interactive wizard
 node install.js --list        # Inspect auto-detected cloud folders
 node install.js --build-only  # Build standalone dist/Crypsy-Portable.html
 ```
+
+## License
+
+Licensed under the [MIT License](./LICENSE).
