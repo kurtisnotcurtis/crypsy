@@ -20,6 +20,7 @@ const os = require('os');
 const readline = require('readline');
 
 const ROOT_DIR = __dirname;
+const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8')).version || '1.0.0';
 
 /**
  * Bundles index.html + styles.css + crypto.js + cloud-sync.js + app.js
@@ -218,7 +219,7 @@ function createDesktopShortcut(portableHtmlPath) {
 
 async function runInteractiveWizard() {
   console.log('\n================================================================');
-  console.log('  Crypsy — Cross-Platform Cloud Folder Onboarding & Installer');
+  console.log(`  Crypsy v${PKG_VERSION} — Cross-Platform Cloud Folder Onboarding & Installer`);
   console.log('================================================================\n');
 
   const detected = detectCloudDrives();
@@ -284,6 +285,11 @@ async function runInteractiveWizard() {
 // CLI Entrypoint
 (async () => {
   const args = process.argv.slice(2);
+
+  if (args.includes('--version') || args.includes('-v')) {
+    console.log(`crypsy-note v${PKG_VERSION}`);
+    return;
+  }
 
   if (args.includes('--list')) {
     const detected = detectCloudDrives();

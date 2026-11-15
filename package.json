@@ -1,11 +1,12 @@
 {
   "name": "crypsy-note",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "description": "Google Keep-style encrypted notes web application with transparent client-side AES-256-GCM encryption and BYOC cloud folder installer",
   "private": true,
   "scripts": {
     "build": "node install.js --build-only",
     "install-cloud": "node install.js",
-    "detect-clouds": "node install.js --list"
+    "detect-clouds": "node install.js --list",
+    "version:show": "node install.js --version"
   }
 }

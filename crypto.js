@@ -67,6 +67,7 @@ const CrypsyCrypto = (() => {
 
     return {
       version: 1,
+      appVersion: '1.0.0',
       cipher: 'AES-256-GCM',
       kdf: 'PBKDF2-SHA256',
       iterations: PBKDF2_ITERATIONS,

@@ -11,10 +11,13 @@
  */
 
 (() => {
+  const APP_VERSION = '1.0.0';
+  const VAULT_SCHEMA_VERSION = 1;
   const STORAGE_KEY_VAULT = 'crypsy_encrypted_vault_v1';
   const STORAGE_KEY_PREFS = 'crypsy_ui_prefs_v1';
   const DEFAULT_DEVICE_SECRET = 'crypsy-local-device-default-key-v1';
 
+  window.CRYPSY_VERSION = APP_VERSION;
 
   // Application State
   let state = {
