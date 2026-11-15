@@ -173,8 +173,11 @@ function installToDirectory(baseDir, createSubfolder = true) {
   fs.writeFileSync(portablePath, portableHtml, 'utf8');
 
   // 2. Also copy modular source files for local development / inspection
-  for (const file of ['index.html', 'styles.css', 'crypto.js', 'cloud-sync.js', 'app.js']) {
-    fs.copyFileSync(path.join(ROOT_DIR, file), path.join(targetDir, file));
+  for (const file of ['index.html', 'styles.css', 'crypto.js', 'cloud-sync.js', 'app.js', 'logo.svg']) {
+    const srcPath = path.join(ROOT_DIR, file);
+    if (fs.existsSync(srcPath)) {
+      fs.copyFileSync(srcPath, path.join(targetDir, file));
+    }
   }
 
   // 3. Write README-CRYPSY.txt
