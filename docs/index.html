@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crypsy — Zero-Server Encrypted Notes for Your Cloud Drive</title>
+  <meta name="description" content="Lightweight, Google Keep-style encrypted notes app with transparent client-side AES-256-GCM encryption and Bring Your Own Cloud (BYOC) folder sync for OneDrive, Google Drive, Dropbox, and iCloud." />
+  <style>
+    :root {
+      --bg-deep: #0f1115;
+      --bg-surface: #181a20;
+      --bg-elevated: #21242c;
+      --bg-glass: rgba(24, 26, 32, 0.78);
+      --border: #2e323d;
+      --border-highlight: rgba(138, 180, 248, 0.35);
+      --text-primary: #f1f3f5;
+      --text-secondary: #9aa0a6;
+      --text-muted: #6c727f;
+      --accent: #8ab4f8;
+      --accent-strong: #669df6;
+      --accent-glow: rgba(138, 180, 248, 0.14);
+      --emerald: #34a853;
+      --emerald-glow: rgba(52, 168, 83, 0.15);
+      --note-teal: #16504b;
+      --note-cobalt: #2d555e;
+      --note-amber: #614a19;
+      --note-sage: #345920;
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.55);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-deep);
+      color: var(--text-primary);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    /* Ambient Background Glow */
+    .ambient-glow {
+      position: fixed;
+      top: -180px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 900px;
+      height: 450px;
+      background: radial-gradient(ellipse at center, rgba(138, 180, 248, 0.15) 0%, rgba(52, 168, 83, 0.06) 45%, transparent 75%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Navbar */
+    .navbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg-glass);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .navbar-inner {
+      height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: var(--accent-glow);
+      border: 1px solid var(--border-highlight);
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .version-pill {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      font-size: 0.92rem;
+      color: var(--text-secondary);
+    }
+
+    .nav-links a:hover {
+      color: var(--text-primary);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.92rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0d1017;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-strong);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--accent);
+      background: rgba(138, 180, 248, 0.08);
+    }
+
+    .btn-lg {
+      padding: 13px 24px;
+      font-size: 1rem;
+      border-radius: 12px;
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 84px 0 64px;
+      text-align: center;
+    }
+
+    .eyebrow-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: var(--emerald-glow);
+      border: 1px solid rgba(52, 168, 83, 0.4);
+      color: #6dd58c;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 24px;
+    }
+
+    .eyebrow-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 8px var(--emerald);
+    }
+
+    .hero h1 {
+      font-size: clamp(2.3rem, 5vw, 3.8rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.12;
+      max-width: 850px;
+      margin: 0 auto 20px;
+    }
+
+    .hero h1 .gradient-text {
+      background: linear-gradient(135deg, #8ab4f8 0%, #7ee787 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-sub {
+      font-size: clamp(1.05rem, 2vw, 1.22rem);
+      color: var(--text-secondary);
+      max-width: 680px;
+      margin: 0 auto 36px;
+    }
+
+    .hero-cta {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+
+    .provider-strip {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--text-muted);
+      font-size: 0.84rem;
+      margin-bottom: 52px;
+    }
+
+    .provider-chip {
+      padding: 4px 11px;
+      border-radius: 999px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* Interactive App Preview Window */
+    .preview-window {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+      text-align: left;
+      max-width: 1020px;
+      margin: 0 auto;
+    }
+
+    .window-bar {
+      height: 46px;
+      background: #13151a;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+    }
+
+    .window-dots {
+      display: flex;
+      gap: 7px;
+    }
+
+    .window-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #3a3f4b;
+    }
+
+    .window-dot.red { background: #ff5f56; }
+    .window-dot.yellow { background: #ffbd2e; }
+    .window-dot.green { background: #27c93f; }
+
+    .window-title {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .preview-body {
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 1.25fr 1fr;
+      gap: 20px;
+      align-items: stretch;
+    }
+
+    .mock-notes-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .mock-card {
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mock-card.teal { background: var(--note-teal); }
+    .mock-card.cobalt { background: var(--note-cobalt); }
+    .mock-card.amber { background: var(--note-amber); }
+    .mock-card.sage { background: var(--note-sage); }
+
+    .mock-card h4 {
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+
+    .mock-card p {
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.85);
+      line-height: 1.45;
+    }
+
+    .mock-tags {
+      display: flex;
+      gap: 6px;
+      margin-top: auto;
+    }
+
+    .mock-tag {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+    }
+
+    .mock-cipher-box {
+      background: #0d0f13;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .mock-cipher-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .mock-cipher-code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.74rem;
+      color: #7ee787;
+      line-height: 1.55;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    /* Section Headers */
+    .section {
+      padding: 80px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .section-header {
+      text-align: center;
+      max-width: 680px;
+      margin: 0 auto 48px;
+    }
+
+    .section-eyebrow {
+      font-size: 0.76rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .section-header h2 {
+      font-size: clamp(1.75rem, 3.5vw, 2.4rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+    }
+
+    .section-header p {
+      color: var(--text-secondary);
+      font-size: 1rem;
+    }
+
+    /* Features Grid */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+      gap: 20px;
+    }
+
+    .feature-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+
+    .feature-card:hover {
+      border-color: var(--border-highlight);
+      transform: translateY(-2px);
+    }
+
+    .feature-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      background: var(--accent-glow);
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+
+    .feature-card h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .feature-card p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    /* How BYOC Works */
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 20px;
+    }
+
+    .step-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 26px;
+      position: relative;
+    }
+
+    .step-badge {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #0d1017;
+      font-weight: 700;
+      font-size: 0.88rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+
+    .step-card h3 {
+      font-size: 1.08rem;
+      margin-bottom: 8px;
+    }
+
+    .step-card p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    .step-card code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: var(--accent);
+      font-size: 0.84rem;
+    }
+
+    /* CLI & Quick Start Box */
+    .cli-box {
+      background: #0d0f13;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      max-width: 780px;
+      margin: 36px auto 0;
+    }
+
+    .cli-box-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    .cli-box pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.85rem;
+      color: #e6edf3;
+      overflow-x: auto;
+      line-height: 1.65;
+    }
+
+    .cli-comment {
+      color: #6e7681;
+    }
+
+    /* Footer */
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+      color: var(--text-secondary);
+      font-size: 0.88rem;
+    }
+
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 20px;
+    }
+
+    .footer-links a:hover {
+      color: var(--accent);
+    }
+
+    @media (max-width: 860px) {
+      .preview-body {
+        grid-template-columns: 1fr;
+      }
+      .nav-links {
+        display: none;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .mock-notes-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient-glow"></div>
+
+  <!-- Top Navigation -->
+  <header class="navbar">
+    <div class="container navbar-inner">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        </div>
+        <span>Crypsy</span>
+        <span class="version-pill">v1.0.0</span>
+      </div>
+
+      <nav class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#byoc">How Cloud Sync Works</a>
+        <a href="#security">Encryption</a>
+        <a href="https://github.com/kurtisnotcurtis/crypsy" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="https://github.com/kurtisnotcurtis/crypsy" target="_blank" rel="noopener" class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.26 5.67.41.36.78 1.06.78 2.14 0 1.55-.01 2.79-.01 3.17 0 .31.21.68.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
+          <span>Star on GitHub</span>
+        </a>
+        <a href="./app.html" class="btn btn-primary">
+          <span>Launch Web App</span>
+          <span>&rarr;</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="eyebrow-badge">
+        <span class="eyebrow-dot"></span>
+        <span>v1.0.0 Public Release &bull; Client-Side AES-256-GCM</span>
+      </div>
+
+      <h1>
+        Google Keep Speed.<br />
+        <span class="gradient-text">Zero-Knowledge Cloud Encryption.</span>
+      </h1>
+
+      <p class="hero-sub">
+        Crypsy encrypts your notes, tags, and pins in-browser using WebCrypto <strong>AES-256-GCM</strong> and syncs directly through your existing cloud folder—with zero servers, accounts, or subscriptions.
+      </p>
+
+      <div class="hero-cta">
+        <a href="./app.html" class="btn btn-primary btn-lg">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <span>Launch Crypsy Note in Browser</span>
+        </a>
+        <a href="./Crypsy-Portable.html" download="Crypsy-Portable.html" class="btn btn-secondary btn-lg">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>Download Single-File Portable App</span>
+        </a>
+      </div>
+
+      <div class="provider-strip">
+        <span>Bring Your Own Cloud (BYOC):</span>
+        <span class="provider-chip">Microsoft OneDrive</span>
+        <span class="provider-chip">Google Drive</span>
+        <span class="provider-chip">Dropbox</span>
+        <span class="provider-chip">Apple iCloud Drive</span>
+        <span class="provider-chip">Nextcloud / Syncthing</span>
+      </div>
+
+      <!-- Interactive App + Ciphertext Split Preview -->
+      <div class="preview-window">
+        <div class="window-bar">
+          <div class="window-dots">
+            <span class="window-dot red"></span>
+            <span class="window-dot yellow"></span>
+            <span class="window-dot green"></span>
+          </div>
+          <div class="window-title">
+            <span>Crypsy Note — Decrypted In-Memory View vs. Cloud Disk Payload</span>
+          </div>
+          <div style="width: 48px;"></div>
+        </div>
+
+        <div class="preview-body">
+          <div class="mock-notes-grid">
+            <div class="mock-card teal">
+              <h4>Welcome to Crypsy</h4>
+              <p>Notes are decrypted on-device and encrypted with AES-256-GCM before touching your disk or cloud folder.</p>
+              <div class="mock-tags">
+                <span class="mock-tag">#security</span>
+                <span class="mock-tag">#byoc</span>
+              </div>
+            </div>
+            <div class="mock-card cobalt">
+              <h4>Recovery Seed &amp; Backup</h4>
+              <p>Hardware security key stored in home safe. Vault passphrase derives a 256-bit key via 150k PBKDF2 iterations.</p>
+              <div class="mock-tags">
+                <span class="mock-tag">#personal</span>
+                <span class="mock-tag">#vault</span>
+              </div>
+            </div>
+            <div class="mock-card amber">
+              <h4>Instant Keyboard Flow</h4>
+              <p>Press "/" or Ctrl+K to search across titles, descriptions, and #tags with live match highlighting.</p>
+              <div class="mock-tags">
+                <span class="mock-tag">#shortcuts</span>
+              </div>
+            </div>
+            <div class="mock-card sage">
+              <h4>Single-File Portability</h4>
+              <p>Drop Crypsy-Portable.html into your cloud drive to open your vault on any computer without installing anything.</p>
+              <div class="mock-tags">
+                <span class="mock-tag">#portable</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="mock-cipher-box">
+            <div>
+              <div class="mock-cipher-header">
+                <span>What Your Cloud Provider Sees (vault.crypsy.json)</span>
+                <span style="color:#6dd58c;">AES-256-GCM</span>
+              </div>
+              <pre class="mock-cipher-code">{
+  "version": 1,
+  "appVersion": "1.0.0",
+  "cipher": "AES-256-GCM",
+  "kdf": "PBKDF2-SHA256",
+  "iterations": 150000,
+  "salt": "8fV2m9xL0pQ7rK3wZ1yB4g==",
+  "iv": "a9K4mP2xQ8vL1nR5",
+  "ciphertext": "7xR9kL2mP8vQ4nW1zB5cY3tH6jF0..."
+}</pre>
+            </div>
+            <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: var(--text-secondary);">
+              <span>Zero plaintext metadata leaked</span>
+              <a href="./app.html" style="color: var(--accent); font-weight: 600;">Try live inspector &rarr;</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Core Features -->
+  <section id="features" class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-eyebrow">Built for Speed &amp; Privacy</div>
+        <h2>Everything You Love About Keep, Encrypted</h2>
+        <p>Fast, tactile note-taking without surrendering your private thoughts to a remote database.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+          </div>
+          <h3>Transparent AES-256-GCM</h3>
+          <p>Every note and tag is encrypted in-browser via the native WebCrypto API using PBKDF2-SHA256 (150,000 iterations) and authenticated AES-256-GCM.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+          </div>
+          <h3>Bring Your Own Cloud (BYOC)</h3>
+          <p>Link any local folder synced by OneDrive, Google Drive, Dropbox, or iCloud Drive. Crypsy writes directly to <code>vault.crypsy.json</code> and polls for remote edits.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </div>
+          <h3>Instant Search &amp; Highlighting</h3>
+          <p>Press <code>/</code> or <code>Ctrl+K</code> to filter across note titles, descriptions, and <code>#tags</code> in real time with live match highlighting.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+          </div>
+          <h3>Tags, Pins &amp; Color Palettes</h3>
+          <p>Organize thoughts with sidebar <code>#tags</code>, pin priority cards to the top, and customize notes with 7 color themes that adapt to Dark and Light mode.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect></svg>
+          </div>
+          <h3>Card Grid &amp; List Layouts</h3>
+          <p>Switch effortlessly between a responsive multi-column masonry grid and a focused single-column list view.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+          </div>
+          <h3>Zero-Dependency Portable HTML</h3>
+          <p>Bundle the entire application into a single self-contained <code>Crypsy-Portable.html</code> file that lives right next to your encrypted vault in your cloud drive.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How Cloud Sync Works -->
+  <section id="byoc" class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-eyebrow">Zero Servers &bull; Zero API Keys</div>
+        <h2>How Bring Your Own Cloud Works</h2>
+        <p>Set up encrypted multi-device sync in under 30 seconds using the browser onboarding wizard or the CLI installer.</p>
+      </div>
+
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-badge">1</div>
+          <h3>Choose Your Cloud Drive</h3>
+          <p>Open Crypsy and click <strong>"Setup Cloud Folder"</strong>. Select OneDrive, Google Drive, Dropbox, iCloud Drive, or any custom synced folder.</p>
+        </div>
+
+        <div class="step-card">
+          <div class="step-badge">2</div>
+          <h3>Link &amp; Provision Folder</h3>
+          <p>Grant folder access via the browser File System Access API. Crypsy automatically provisions <code>vault.crypsy.json</code> and <code>Crypsy-Portable.html</code> inside your cloud folder.</p>
+        </div>
+
+        <div class="step-card">
+          <div class="step-badge">3</div>
+          <h3>Sync Across Every Device</h3>
+          <p>Every edit is encrypted with AES-256-GCM and written to disk immediately. Your desktop cloud client handles syncing across all your machines.</p>
+        </div>
+      </div>
+
+      <div class="cli-box" id="security">
+        <div class="cli-box-header">
+          <span>Prefer a terminal installer? Auto-detects cloud folders on Windows, macOS &amp; Linux:</span>
+          <span>PowerShell / Bash / Node.js</span>
+        </div>
+        <pre><span class="cli-comment"># Clone Crypsy Note</span>
+git clone https://github.com/kurtisnotcurtis/crypsy.git
+cd crypsy
+
+<span class="cli-comment"># Launch interactive cloud drive installer (Windows PowerShell or macOS/Linux)</span>
+.\install.ps1          <span class="cli-comment"># or ./install.sh</span>
+
+<span class="cli-comment"># Or build the standalone single-file Crypsy-Portable.html bundle</span>
+node install.js --build-only</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div>
+        <strong>Crypsy Note</strong> <code>v1.0.0</code> — Transparent Client-Side Encrypted Notes.
+      </div>
+      <div class="footer-links">
+        <a href="./app.html">Launch Web App</a>
+        <a href="./Crypsy-Portable.html" download="Crypsy-Portable.html">Download Portable HTML</a>
+        <a href="https://github.com/kurtisnotcurtis/crypsy" target="_blank" rel="noopener">GitHub Repository</a>
+        <a href="https://github.com/kurtisnotcurtis/crypsy/releases/tag/v1.0.0" target="_blank" rel="noopener">Release Notes</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

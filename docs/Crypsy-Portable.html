@@ -1,0 +1,3859 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crypsy — Transparently Encrypted Notes</title>
+  <style>
+:root {
+  --bg-app: #18191c;
+  --bg-surface: #202124;
+  --bg-elevated: #292a2d;
+  --bg-input: #2c2d31;
+  --border-subtle: #3c4043;
+  --border-focus: #8ab4f8;
+  --text-primary: #e8eaed;
+  --text-secondary: #9aa0a6;
+  --text-muted: #70757a;
+  --accent: #8ab4f8;
+  --accent-strong: #669df6;
+  --accent-bg: rgba(138, 180, 248, 0.14);
+  --emerald: #34a853;
+  --danger: #f28b82;
+  --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-modal: 0 14px 40px rgba(0, 0, 0, 0.6);
+
+  /* Note Palette (Dark Theme) */
+  --note-default: #202124;
+  --note-coral: #5c2b29;
+  --note-amber: #614a19;
+  --note-sage: #345920;
+  --note-teal: #16504b;
+  --note-cobalt: #2d555e;
+  --note-plum: #42275e;
+}
+
+html[data-theme="light"] {
+  --bg-app: #f8f9fa;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-input: #f1f3f4;
+  --border-subtle: #dadce0;
+  --border-focus: #1a73e8;
+  --text-primary: #202124;
+  --text-secondary: #5f6368;
+  --text-muted: #80868b;
+  --accent: #1a73e8;
+  --accent-strong: #1557b0;
+  --accent-bg: rgba(26, 115, 232, 0.1);
+  --emerald: #1e8e3e;
+  --danger: #d93025;
+  --shadow-card: 0 1px 4px rgba(60, 64, 67, 0.2);
+  --shadow-modal: 0 12px 36px rgba(60, 64, 67, 0.3);
+
+  /* Note Palette (Light Theme) */
+  --note-default: #ffffff;
+  --note-coral: #faafa8;
+  --note-amber: #fff8b8;
+  --note-sage: #e2f6d3;
+  --note-teal: #b4ddd3;
+  --note-cobalt: #d4e4ed;
+  --note-plum: #d3bfdb;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.5;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Topbar */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  height: 64px;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  gap: 16px;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 220px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.version-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  user-select: none;
+}
+
+.crypto-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(52, 168, 83, 0.14);
+  color: var(--emerald);
+  border: 1px solid rgba(52, 168, 83, 0.35);
+  cursor: pointer;
+  user-select: none;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--emerald);
+}
+
+/* Search Bar */
+.search-container {
+  flex: 1;
+  max-width: 680px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 14px;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+#searchInput {
+  width: 100%;
+  height: 44px;
+  padding: 0 40px 0 42px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  transition: all 0.15s ease;
+}
+
+#searchInput:focus {
+  outline: none;
+  background-color: var(--bg-elevated);
+  border-color: var(--border-focus);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.search-clear {
+  position: absolute;
+  right: 6px;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.icon-btn:hover {
+  background-color: rgba(154, 160, 166, 0.15);
+  color: var(--text-primary);
+}
+
+.pin-btn.active {
+  color: var(--accent);
+  background-color: var(--accent-bg);
+}
+
+.danger-btn:hover {
+  color: var(--danger);
+  background-color: rgba(242, 139, 130, 0.15);
+}
+
+/* Layout */
+.app-layout {
+  display: flex;
+  flex: 1;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 250px;
+  padding: 12px 10px 24px 0;
+  flex-shrink: 0;
+  transition: width 0.2s ease, opacity 0.2s ease;
+}
+
+.sidebar.collapsed {
+  width: 0;
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px 10px 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  font-weight: 500;
+  border-radius: 0 24px 24px 0;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.nav-item:hover {
+  background-color: rgba(154, 160, 166, 0.1);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  background-color: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.nav-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.nav-item.active .nav-count {
+  color: var(--accent);
+}
+
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 16px 6px 22px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.sidebar-tags-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tag-delete-btn {
+  opacity: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.nav-item:hover .tag-delete-btn {
+  opacity: 1;
+}
+
+.tag-delete-btn:hover {
+  color: var(--danger);
+}
+
+.new-tag-form {
+  padding: 8px 12px 0 18px;
+}
+
+#newTagInput {
+  width: 100%;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--border-subtle);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+#newTagInput:focus {
+  outline: none;
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--bg-input);
+}
+
+/* Main Content */
+.main-content {
+  flex: 1;
+  padding: 28px 28px 64px;
+  max-width: 1240px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Quick Note Composer */
+.composer-wrapper {
+  max-width: 600px;
+  margin: 0 auto 32px;
+}
+
+.note-composer,
+.note-card,
+.note-modal {
+  background-color: var(--note-default);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+[data-color="default"] { background-color: var(--note-default); }
+[data-color="coral"]   { background-color: var(--note-coral); }
+[data-color="amber"]   { background-color: var(--note-amber); }
+[data-color="sage"]    { background-color: var(--note-sage); }
+[data-color="teal"]    { background-color: var(--note-teal); }
+[data-color="cobalt"]  { background-color: var(--note-cobalt); }
+[data-color="plum"]    { background-color: var(--note-plum); }
+
+.note-composer {
+  padding: 12px 16px;
+}
+
+.composer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.composer-title-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.composer-title-input:focus {
+  outline: none;
+}
+
+.composer-desc-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-family: inherit;
+  resize: none;
+  padding: 4px 0;
+  line-height: 1.5;
+}
+
+.composer-desc-input:focus {
+  outline: none;
+}
+
+.composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(154, 160, 166, 0.18);
+}
+
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(0, 0, 0, 0.12);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tool-btn:hover {
+  border-color: var(--accent);
+}
+
+.btn-primary {
+  padding: 7px 16px;
+  border-radius: 8px;
+  border: none;
+  background-color: var(--accent);
+  color: #111;
+  font-weight: 600;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+html[data-theme="light"] .btn-primary {
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background-color: var(--accent-strong);
+}
+
+.btn-ghost {
+  padding: 7px 13px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.btn-ghost:hover {
+  background: rgba(154, 160, 166, 0.15);
+  color: var(--text-primary);
+}
+
+.btn-link {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+/* Color Picker */
+.color-picker {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.color-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+html[data-theme="light"] .color-dot {
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+.color-dot:hover {
+  transform: scale(1.15);
+}
+
+.color-dot.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-bg);
+}
+
+/* Tag Popover */
+.popover-anchor {
+  position: relative;
+}
+
+.popover-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 80;
+  width: 220px;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: var(--shadow-modal);
+}
+
+.popover-title {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.popover-input {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  margin-bottom: 8px;
+}
+
+.popover-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.popover-options {
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.popover-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  user-select: none;
+}
+
+.popover-option:hover {
+  background: rgba(154, 160, 166, 0.12);
+}
+
+/* Active Filter Banner */
+.active-filter-banner {
+  max-width: 600px;
+  margin: 0 auto 22px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background-color: var(--accent-bg);
+  border: 1px solid rgba(138, 180, 248, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.88rem;
+}
+
+/* Notes Sections & Grid/List View */
+.notes-section {
+  margin-bottom: 32px;
+}
+
+.section-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  padding-left: 4px;
+}
+
+/* Card View (Grid) */
+.view-grid .notes-collection {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(245px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+/* List View */
+.view-list {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.view-list .notes-collection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Note Card */
+.note-card {
+  position: relative;
+  padding: 14px 16px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  word-break: break-word;
+}
+
+.note-card:hover {
+  border-color: var(--text-secondary);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.note-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.note-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.note-card-pin {
+  opacity: 0;
+  flex-shrink: 0;
+  margin: -4px -6px 0 0;
+  transition: opacity 0.15s ease;
+}
+
+.note-card:hover .note-card-pin,
+.note-card-pin.active {
+  opacity: 1;
+}
+
+.note-card-desc {
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  opacity: 0.9;
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow: hidden;
+}
+
+.note-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background-color: rgba(0, 0, 0, 0.22);
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+html[data-theme="light"] .tag-chip {
+  background-color: rgba(0, 0, 0, 0.07);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+.tag-chip-remove {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.tag-chip-remove:hover {
+  opacity: 1;
+}
+
+.note-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  padding-top: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.note-card:hover .note-card-footer {
+  opacity: 1;
+}
+
+.note-card-date {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+/* Search Match Highlight */
+mark.search-highlight {
+  background-color: rgba(251, 188, 4, 0.38);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 64px 20px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.empty-state h3 {
+  font-size: 1.15rem;
+  color: var(--text-primary);
+}
+
+.empty-state p {
+  font-size: 0.9rem;
+  max-width: 380px;
+}
+
+/* Modals */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background-color: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 600px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  box-shadow: var(--shadow-modal);
+}
+
+.modal-desc-input {
+  min-height: 130px;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.modal-meta {
+  display: flex;
+  justify-content: flex-end;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+/* Vault Modal */
+.vault-modal {
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.vault-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vault-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.vault-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.vault-pass-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vault-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.vault-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.vault-inspector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.ciphertext-preview {
+  background-color: #111214;
+  color: #7ee787;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Lock Screen Overlay */
+.lock-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background-color: var(--bg-app);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.lock-card {
+  width: 100%;
+  max-width: 400px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 32px 28px;
+  text-align: center;
+  box-shadow: var(--shadow-modal);
+}
+
+.lock-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+
+.lock-card p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 8px 0 20px;
+}
+
+.unlock-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.unlock-error {
+  color: var(--danger) !important;
+  font-size: 0.82rem !important;
+  margin: 0 !important;
+}
+
+.unlock-btn {
+  width: 100%;
+  padding: 10px;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 64px;
+    bottom: 0;
+    left: 0;
+    z-index: 45;
+    background-color: var(--bg-surface);
+    border-right: 1px solid var(--border-subtle);
+  }
+  .brand-name {
+    display: none;
+  }
+  .topbar-left {
+    min-width: auto;
+  }
+}
+
+
+/* Cloud Setup Pill & Reconnect Banner */
+.cloud-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cloud-pill-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.cloud-pill-btn.synced {
+  border-color: rgba(52, 168, 83, 0.45);
+  background: rgba(52, 168, 83, 0.12);
+  color: var(--emerald);
+}
+
+.reconnect-banner {
+  background-color: var(--accent-bg);
+  border-bottom: 1px solid rgba(138, 180, 248, 0.3);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.88rem;
+}
+
+.reconnect-banner-text {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-primary);
+}
+
+.reconnect-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Cloud Onboarding Wizard Modal */
+.onboarding-modal {
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  max-width: 660px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.onboarding-eyebrow {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.wizard-steps {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background-color: var(--bg-input);
+}
+
+.wizard-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.wizard-step.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+}
+
+.wizard-step.active .step-num {
+  background-color: var(--accent);
+  color: #111;
+  border-color: var(--accent);
+}
+
+.wizard-step-line {
+  flex: 1;
+  height: 1px;
+  background-color: var(--border-subtle);
+}
+
+.wizard-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wizard-instruction {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+  gap: 10px;
+}
+
+.provider-card {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.provider-card:hover {
+  border-color: var(--text-secondary);
+}
+
+.provider-card.active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.provider-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.provider-sub {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.cli-installer-callout {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(154, 160, 166, 0.08);
+  border: 1px dashed var(--border-subtle);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.cli-installer-callout strong {
+  color: var(--text-primary);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.cli-installer-callout code {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.path-guidance-box {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.path-guidance-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.path-code {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #111214;
+  color: #7ee787;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.path-hint-sub {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.provision-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.checkbox-row input[type="checkbox"] {
+  margin-top: 3px;
+}
+
+.checkbox-row strong {
+  font-size: 0.86rem;
+  display: block;
+}
+
+.checkbox-row p {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.wizard-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.success-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(52, 168, 83, 0.14);
+  border: 1px solid rgba(52, 168, 83, 0.35);
+}
+
+.success-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--emerald);
+  color: #fff;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.success-banner p {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.provisioned-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.provisioned-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.84rem;
+}
+
+.provisioned-file-item code {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.file-badge {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.danger-text {
+  color: var(--danger) !important;
+}
+
+</style>
+</head>
+<body>
+  <!-- Top Navigation Header -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <button id="sidebarToggleBtn" class="icon-btn" title="Toggle sidebar" aria-label="Toggle sidebar">
+        <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        </div>
+        <span class="brand-name">Crypsy</span>
+        <span id="appVersionBadge" class="version-badge" title="Crypsy Note v1.0.0 — First Public Release">v1.0.0</span>
+        <span id="encryptionBadge" class="crypto-badge" title="Click to inspect encrypted cloud payload or manage vault key">
+          <span class="status-dot"></span>
+          AES-256-GCM
+        </span>
+      </div>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="search-container">
+      <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input
+        type="text"
+        id="searchInput"
+        placeholder="Search notes by title, description, or #tag... (Press /)"
+        autocomplete="off"
+      />
+      <button id="clearSearchBtn" class="icon-btn search-clear hidden" title="Clear search" aria-label="Clear search">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Right Actions: Cloud Setup, View Mode, Vault Inspector, Theme -->
+    <div class="topbar-right">
+      <button id="cloudSetupBtn" class="cloud-pill-btn" title="Connect or manage synced cloud provider folder">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+        </svg>
+        <span id="cloudSetupBtnLabel">Setup Cloud Folder</span>
+      </button>
+
+      <button id="viewToggleBtn" class="icon-btn" title="Switch to List view" aria-label="Toggle Card or List view">
+        <svg id="viewIconList" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <rect x="3" y="4" width="18" height="6" rx="1"></rect>
+          <rect x="3" y="14" width="18" height="6" rx="1"></rect>
+        </svg>
+        <svg id="viewIconGrid" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+          <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+          <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+          <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+        </svg>
+      </button>
+
+      <button id="vaultBtn" class="icon-btn" title="Cloud Ciphertext Inspector & Vault Lock" aria-label="Encryption Inspector">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+        </svg>
+      </button>
+
+      <button id="themeToggleBtn" class="icon-btn" title="Toggle Dark/Light theme" aria-label="Toggle theme">
+        <svg id="themeIconSun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Reconnect Permission Banner (Shown when browser restarts with a remembered cloud folder) -->
+  <div id="reconnectCloudBanner" class="reconnect-banner hidden">
+    <div class="reconnect-banner-text">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+      </svg>
+      <span id="reconnectBannerMsg">Cloud folder linked. Click to resume live auto-sync with your cloud drive.</span>
+    </div>
+    <div class="reconnect-banner-actions">
+      <button id="resumeCloudSyncBtn" class="btn-primary">Resume Cloud Sync</button>
+      <button id="changeCloudFolderBtn" class="btn-ghost">Change Folder</button>
+    </div>
+  </div>
+
+  <!-- Main Layout -->
+  <div class="app-layout">
+    <!-- Sidebar Navigation -->
+    <aside id="sidebar" class="sidebar">
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-filter-type="all">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M9 18h6"></path>
+            <path d="M10 22h4"></path>
+            <path d="M12 2a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2z"></path>
+          </svg>
+          <span class="nav-label">All Notes</span>
+          <span id="countAll" class="nav-count">0</span>
+        </button>
+
+        <button class="nav-item" data-filter-type="pinned">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M12 17v5"></path>
+            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>
+          </svg>
+          <span class="nav-label">Pinned</span>
+          <span id="countPinned" class="nav-count">0</span>
+        </button>
+
+        <div class="sidebar-section-header">
+          <span>TAGS</span>
+        </div>
+
+        <div id="sidebarTagsList" class="sidebar-tags-list"></div>
+
+        <form id="newTagForm" class="new-tag-form">
+          <input
+            type="text"
+            id="newTagInput"
+            placeholder="+ Create new tag..."
+            maxlength="24"
+            autocomplete="off"
+          />
+        </form>
+      </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Quick Note Composer (Google Keep style) -->
+      <section class="composer-wrapper">
+        <div id="noteComposer" class="note-composer" data-color="default">
+          <div id="composerHeader" class="composer-header hidden">
+            <input
+              type="text"
+              id="composerTitle"
+              class="composer-title-input"
+              placeholder="Title"
+              autocomplete="off"
+            />
+            <button
+              type="button"
+              id="composerPinBtn"
+              class="icon-btn pin-btn"
+              title="Pin note"
+              aria-label="Pin note"
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M12 17v5"></path>
+                <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>
+              </svg>
+            </button>
+          </div>
+
+          <textarea
+            id="composerDescription"
+            class="composer-desc-input"
+            placeholder="Take an encrypted note..."
+            rows="1"
+          ></textarea>
+
+          <div id="composerTagsRow" class="note-tags-row hidden"></div>
+
+          <div id="composerFooter" class="composer-footer hidden">
+            <div class="composer-tools">
+              <div class="popover-anchor">
+                <button type="button" id="composerTagBtn" class="tool-btn" title="Add tags">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                    <line x1="7" y1="7" x2="7.01" y2="7"></line>
+                  </svg>
+                  <span>Tags</span>
+                </button>
+                <div id="composerTagPopover" class="popover-menu hidden">
+                  <div class="popover-title">Add or create tag</div>
+                  <input type="text" id="composerTagSearch" class="popover-input" placeholder="Enter tag name..." autocomplete="off" />
+                  <div id="composerTagOptions" class="popover-options"></div>
+                </div>
+              </div>
+
+              <div class="color-picker" id="composerColorPicker" aria-label="Note color">
+                <button type="button" class="color-dot active" data-color="default" title="Default"></button>
+                <button type="button" class="color-dot" data-color="coral" title="Coral"></button>
+                <button type="button" class="color-dot" data-color="amber" title="Amber"></button>
+                <button type="button" class="color-dot" data-color="sage" title="Sage"></button>
+                <button type="button" class="color-dot" data-color="teal" title="Teal"></button>
+                <button type="button" class="color-dot" data-color="cobalt" title="Cobalt"></button>
+                <button type="button" class="color-dot" data-color="plum" title="Plum"></button>
+              </div>
+            </div>
+
+            <div class="composer-actions">
+              <button type="button" id="composerCancelBtn" class="btn-ghost">Close</button>
+              <button type="button" id="composerSaveBtn" class="btn-primary">Add Note</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Active Filter Banner -->
+      <div id="activeFilterBanner" class="active-filter-banner hidden">
+        <span id="activeFilterText"></span>
+        <button id="resetFilterBtn" class="btn-link">Show all notes</button>
+      </div>
+
+      <!-- Notes Container (switches between .view-grid and .view-list) -->
+      <div id="notesWorkspace" class="notes-workspace view-grid">
+        <section id="pinnedSection" class="notes-section hidden">
+          <h2 class="section-label">PINNED</h2>
+          <div id="pinnedGrid" class="notes-collection"></div>
+        </section>
+
+        <section id="othersSection" class="notes-section hidden">
+          <h2 id="othersSectionLabel" class="section-label">OTHERS</h2>
+          <div id="othersGrid" class="notes-collection"></div>
+        </section>
+
+        <div id="emptyState" class="empty-state hidden">
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <h3 id="emptyStateTitle">No encrypted notes found</h3>
+          <p id="emptyStateSubtitle">Create a note above or try adjusting your search or tag filter.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Edit Note Modal -->
+  <div id="editModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div id="editModalCard" class="modal-card note-modal" data-color="default">
+      <div class="composer-header">
+        <input
+          type="text"
+          id="editModalTitle"
+          class="composer-title-input"
+          placeholder="Title"
+          autocomplete="off"
+        />
+        <button
+          type="button"
+          id="editModalPinBtn"
+          class="icon-btn pin-btn"
+          title="Pin or unpin note"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M12 17v5"></path>
+            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>
+          </svg>
+        </button>
+      </div>
+
+      <textarea
+        id="editModalDescription"
+        class="composer-desc-input modal-desc-input"
+        placeholder="Note description..."
+        rows="5"
+      ></textarea>
+
+      <div id="editModalTagsRow" class="note-tags-row"></div>
+
+      <div class="modal-meta">
+        <span id="editModalTimestamp"></span>
+      </div>
+
+      <div class="composer-footer">
+        <div class="composer-tools">
+          <div class="popover-anchor">
+            <button type="button" id="editModalTagBtn" class="tool-btn" title="Manage tags">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                <line x1="7" y1="7" x2="7.01" y2="7"></line>
+              </svg>
+              <span>Tags</span>
+            </button>
+            <div id="editModalTagPopover" class="popover-menu hidden">
+              <div class="popover-title">Toggle or create tag</div>
+              <input type="text" id="editModalTagSearch" class="popover-input" placeholder="Enter tag name..." autocomplete="off" />
+              <div id="editModalTagOptions" class="popover-options"></div>
+            </div>
+          </div>
+
+          <div class="color-picker" id="editModalColorPicker">
+            <button type="button" class="color-dot" data-color="default" title="Default"></button>
+            <button type="button" class="color-dot" data-color="coral" title="Coral"></button>
+            <button type="button" class="color-dot" data-color="amber" title="Amber"></button>
+            <button type="button" class="color-dot" data-color="sage" title="Sage"></button>
+            <button type="button" class="color-dot" data-color="teal" title="Teal"></button>
+            <button type="button" class="color-dot" data-color="cobalt" title="Cobalt"></button>
+            <button type="button" class="color-dot" data-color="plum" title="Plum"></button>
+          </div>
+
+          <button type="button" id="editModalDeleteBtn" class="icon-btn danger-btn" title="Delete note">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="composer-actions">
+          <button type="button" id="editModalSaveBtn" class="btn-primary">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cloud Folder Onboarding & Provisioning Wizard Modal -->
+  <div id="cloudOnboardingBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card onboarding-modal">
+      <div class="vault-modal-header">
+        <div>
+          <span class="onboarding-eyebrow">BYOC — BRING YOUR OWN CLOUD</span>
+          <h3>Place Crypsy in Your Cloud Drive</h3>
+          <p class="vault-subtitle">
+            Walk through placing the encrypted vault and portable app inside your synced cloud folder—zero servers or API keys needed.
+          </p>
+        </div>
+        <button id="closeOnboardingBtn" class="icon-btn" aria-label="Close wizard">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Step Indicator -->
+      <div class="wizard-steps">
+        <div class="wizard-step active" data-step-indicator="1">
+          <span class="step-num">1</span>
+          <span>Choose Provider</span>
+        </div>
+        <div class="wizard-step-line"></div>
+        <div class="wizard-step" data-step-indicator="2">
+          <span class="step-num">2</span>
+          <span>Place Files in Cloud</span>
+        </div>
+        <div class="wizard-step-line"></div>
+        <div class="wizard-step" data-step-indicator="3">
+          <span class="step-num">3</span>
+          <span>Live Sync Active</span>
+        </div>
+      </div>
+
+      <!-- STEP 1: Select Cloud Provider -->
+      <div id="wizardStep1" class="wizard-pane">
+        <p class="wizard-instruction">
+          Which cloud storage client do you have installed on this device?
+        </p>
+        <div class="provider-grid" id="providerSelectionGrid">
+          <button type="button" class="provider-card active" data-provider="onedrive">
+            <div class="provider-title">Microsoft OneDrive</div>
+            <div class="provider-sub">Windows &amp; macOS built-in sync</div>
+          </button>
+          <button type="button" class="provider-card" data-provider="gdrive">
+            <div class="provider-title">Google Drive</div>
+            <div class="provider-sub">Google Drive for Desktop</div>
+          </button>
+          <button type="button" class="provider-card" data-provider="dropbox">
+            <div class="provider-title">Dropbox</div>
+            <div class="provider-sub">Dropbox Desktop folder</div>
+          </button>
+          <button type="button" class="provider-card" data-provider="icloud">
+            <div class="provider-title">iCloud Drive</div>
+            <div class="provider-sub">Apple iCloud Drive folder</div>
+          </button>
+          <button type="button" class="provider-card" data-provider="custom">
+            <div class="provider-title">Nextcloud / Syncthing / Custom</div>
+            <div class="provider-sub">Any synced folder or USB drive</div>
+          </button>
+        </div>
+
+        <div class="cli-installer-callout">
+          <div>
+            <strong>Prefer a 1-click native installer?</strong>
+            <span>Run <code>.\install.ps1</code> (Windows) or <code>./install.sh</code> (macOS/Linux) in the project folder to auto-detect your cloud drive and create shortcuts.</span>
+          </div>
+        </div>
+
+        <div class="wizard-footer">
+          <button type="button" id="downloadPortableBtn" class="btn-ghost">
+            Download Portable Crypsy.html
+          </button>
+          <button type="button" id="wizardToStep2Btn" class="btn-primary">
+            Continue &rarr;
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 2: Locate & Provision Cloud Folder -->
+      <div id="wizardStep2" class="wizard-pane hidden">
+        <div class="path-guidance-box">
+          <div class="path-guidance-header">
+            <span id="selectedProviderTitle">Typical OneDrive Location on Your OS:</span>
+            <button type="button" id="copyPathHintBtn" class="btn-link">Copy Path</button>
+          </div>
+          <code id="osPathHintCode" class="path-code">%UserProfile%\OneDrive\Crypsy</code>
+          <p id="folderPickerHintText" class="path-hint-sub">
+            When the folder dialog opens, select your cloud folder and Crypsy will place the encrypted vault and portable app inside it.
+          </p>
+        </div>
+
+        <div class="provision-options">
+          <label class="checkbox-row">
+            <input type="checkbox" id="createCrypsySubfolderCb" checked />
+            <div>
+              <strong>Create a dedicated <code>Crypsy/</code> subfolder</strong>
+              <p>Keeps your encrypted vault and portable app neatly organized inside your cloud drive.</p>
+            </div>
+          </label>
+
+          <label class="checkbox-row">
+            <input type="checkbox" id="provisionPortableHtmlCb" checked />
+            <div>
+              <strong>Copy portable <code>Crypsy-Portable.html</code> into cloud folder</strong>
+              <p>Allows you to open Crypsy directly from your cloud folder on any other synced computer without installing anything.</p>
+            </div>
+          </label>
+        </div>
+
+        <p id="wizardStep2Error" class="unlock-error hidden"></p>
+
+        <div class="wizard-footer">
+          <button type="button" id="wizardBackToStep1Btn" class="btn-ghost">&larr; Back</button>
+          <button type="button" id="pickAndProvisionBtn" class="btn-primary">
+            Select Cloud Folder &amp; Place Files
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 3: Connected & Provisioned -->
+      <div id="wizardStep3" class="wizard-pane hidden">
+        <div class="success-banner">
+          <div class="success-icon">&#10003;</div>
+          <div>
+            <h4 id="connectedProviderHeading">Connected to Cloud Folder</h4>
+            <p id="connectedFolderDetails">Live AES-256-GCM auto-sync is active.</p>
+          </div>
+        </div>
+
+        <div class="provisioned-files-list">
+          <div class="provisioned-file-item">
+            <code>vault.crypsy.json</code>
+            <span class="file-badge">Encrypted Vault (Auto-synced on every edit)</span>
+          </div>
+          <div class="provisioned-file-item">
+            <code>Crypsy-Portable.html</code>
+            <span class="file-badge">Self-Contained App for Other Devices</span>
+          </div>
+          <div class="provisioned-file-item">
+            <code>README-CRYPSY.txt</code>
+            <span class="file-badge">Recovery &amp; Usage Instructions</span>
+          </div>
+        </div>
+
+        <div class="wizard-footer">
+          <button type="button" id="unlinkCloudFolderBtn" class="btn-ghost danger-text">
+            Unlink Cloud Folder
+          </button>
+          <div style="display:flex;gap:8px;">
+            <button type="button" id="reprovisionAssetsBtn" class="btn-ghost">
+              Re-write Portable Files
+            </button>
+            <button type="button" id="finishOnboardingBtn" class="btn-primary">
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cloud Ciphertext Inspector & Vault Modal -->
+  <div id="vaultModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card vault-modal">
+      <div class="vault-modal-header">
+        <div>
+          <h3>Transparent Encryption &amp; Cloud Payload Inspector</h3>
+          <p class="vault-subtitle">
+            Notes are decrypted in memory on your device and stored as AES-256-GCM ciphertext blobs.
+          </p>
+        </div>
+        <button id="closeVaultModalBtn" class="icon-btn" aria-label="Close modal">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="vault-controls">
+        <label for="vaultPassphraseInput" class="vault-label">Vault Passphrase (PBKDF2-SHA256 Key Derivation)</label>
+        <div class="vault-pass-row">
+          <input
+            type="password"
+            id="vaultPassphraseInput"
+            class="vault-input"
+            placeholder="Enter custom vault passphrase..."
+          />
+          <button id="updatePassphraseBtn" class="btn-primary">Re-key &amp; Encrypt</button>
+          <button id="lockVaultNowBtn" class="btn-ghost">Lock Screen</button>
+        </div>
+      </div>
+
+      <div class="vault-inspector">
+        <div class="vault-inspector-header">
+          <span>What Cloud Providers See (Encrypted Envelope)</span>
+          <div style="display:flex;gap:12px;">
+            <label class="btn-link" style="cursor:pointer;">
+              Import .crypsy File
+              <input type="file" id="importEncryptedInput" accept=".json,.crypsy" class="hidden" />
+            </label>
+            <button id="exportEncryptedBtn" class="btn-link">Download Encrypted .crypsy File</button>
+          </div>
+        </div>
+        <pre id="ciphertextPreview" class="ciphertext-preview"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Locked Vault Overlay -->
+  <div id="lockScreenOverlay" class="lock-overlay hidden">
+    <div class="lock-card">
+      <div class="lock-icon">
+        <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>
+      <h2>Crypsy Vault Locked</h2>
+      <p>Your notes are encrypted with AES-256-GCM. Enter your vault passphrase to decrypt locally.</p>
+      <form id="unlockVaultForm" class="unlock-form">
+        <input
+          type="password"
+          id="unlockPassphraseInput"
+          class="vault-input"
+          placeholder="Vault passphrase..."
+          required
+        />
+        <p id="unlockErrorMsg" class="unlock-error hidden">Incorrect passphrase — AES-GCM authentication tag verification failed.</p>
+        <button type="submit" class="btn-primary unlock-btn">Decrypt &amp; Unlock</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+/**
+ * Crypsy WebCrypto Engine
+ * Provides transparent client-side AES-256-GCM encryption for notes.
+ * Cloud / storage layer only ever stores encrypted ciphertext blobs when a vault passphrase is set,
+ * or wraps payloads with an auto-generated local key for frictionless default usage.
+ */
+
+const CrypsyCrypto = (() => {
+  const PBKDF2_ITERATIONS = 150000;
+  const SALT_BYTES = 16;
+  const IV_BYTES = 12;
+
+  function bufToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  function base64ToBuf(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+
+  async function deriveKey(passphrase, saltBuffer) {
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      enc.encode(passphrase),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveKey']
+    );
+
+    return crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: saltBuffer,
+        iterations: PBKDF2_ITERATIONS,
+        hash: 'SHA-256',
+      },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  async function encryptPayload(plaintextObj, passphrase) {
+    const enc = new TextEncoder();
+    const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
+    const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+    const key = await deriveKey(passphrase, salt.buffer);
+
+    const plaintextBytes = enc.encode(JSON.stringify(plaintextObj));
+    const ciphertextBuffer = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      plaintextBytes
+    );
+
+    return {
+      version: 1,
+      appVersion: '1.0.0',
+      cipher: 'AES-256-GCM',
+      kdf: 'PBKDF2-SHA256',
+      iterations: PBKDF2_ITERATIONS,
+      salt: bufToBase64(salt.buffer),
+      iv: bufToBase64(iv.buffer),
+      ciphertext: bufToBase64(ciphertextBuffer),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  async function decryptPayload(envelope, passphrase) {
+    const dec = new TextDecoder();
+    const saltBuffer = base64ToBuf(envelope.salt);
+    const ivBuffer = base64ToBuf(envelope.iv);
+    const ciphertextBuffer = base64ToBuf(envelope.ciphertext);
+
+    const key = await deriveKey(passphrase, saltBuffer);
+    const plaintextBuffer = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: new Uint8Array(ivBuffer) },
+      key,
+      ciphertextBuffer
+    );
+
+    return JSON.parse(dec.decode(plaintextBuffer));
+  }
+
+  return {
+    encryptPayload,
+    decryptPayload,
+  };
+})();
+
+</script>
+  <script>
+/**
+ * Crypsy Cloud Folder Sync & Provisioning Engine
+ *
+ * Uses the Browser File System Access API + IndexedDB handle persistence
+ * to read/write the encrypted `vault.crypsy.json` directly inside a user's
+ * synced Google Drive, OneDrive, Dropbox, or iCloud Drive folder.
+ * Also supports provisioning a self-contained portable `Crypsy-Portable.html`
+ * and `README-CRYPSY.txt` into the selected cloud directory.
+ */
+
+const CrypsyCloudSync = (() => {
+  const IDB_NAME = 'crypsy_cloud_sync_db_v1';
+  const IDB_STORE = 'handles';
+  const HANDLE_KEY = 'active_cloud_dir_handle';
+  const META_STORAGE_KEY = 'crypsy_cloud_provider_meta_v1';
+  const VAULT_FILENAME = 'vault.crypsy.json';
+  const README_FILENAME = 'README-CRYPSY.txt';
+  const PORTABLE_HTML_FILENAME = 'Crypsy-Portable.html';
+
+  const PROVIDERS = {
+    gdrive: {
+      id: 'gdrive',
+      name: 'Google Drive',
+      tagline: 'Sync via Google Drive for Desktop',
+      paths: {
+        windows: 'G:\\My Drive\\Crypsy   or   %UserProfile%\\Google Drive\\Crypsy',
+        mac: '~/Library/CloudStorage/GoogleDrive/My Drive/Crypsy',
+        linux: '~/GoogleDrive/Crypsy',
+      },
+      folderHint: 'Select your "My Drive" folder (or a "Crypsy" folder inside it)',
+    },
+    onedrive: {
+      id: 'onedrive',
+      name: 'Microsoft OneDrive',
+      tagline: 'Sync via Windows / macOS OneDrive Client',
+      paths: {
+        windows: '%UserProfile%\\OneDrive\\Crypsy',
+        mac: '~/Library/CloudStorage/OneDrive-Personal/Crypsy',
+        linux: '~/OneDrive/Crypsy',
+      },
+      folderHint: 'Select your "OneDrive" folder (or a "Crypsy" folder inside it)',
+    },
+    dropbox: {
+      id: 'dropbox',
+      name: 'Dropbox',
+      tagline: 'Sync via Dropbox Desktop Client',
+      paths: {
+        windows: '%UserProfile%\\Dropbox\\Crypsy',
+        mac: '~/Library/CloudStorage/Dropbox/Crypsy',
+        linux: '~/Dropbox/Crypsy',
+      },
+      folderHint: 'Select your "Dropbox" folder (or a "Crypsy" folder inside it)',
+    },
+    icloud: {
+      id: 'icloud',
+      name: 'iCloud Drive',
+      tagline: 'Sync via Apple iCloud Drive',
+      paths: {
+        windows: '%UserProfile%\\iCloudDrive\\Crypsy',
+        mac: '~/Library/Mobile Documents/com~apple~CloudDocs/Crypsy',
+        linux: '~/iCloud/Crypsy',
+      },
+      folderHint: 'Select your "iCloud Drive" folder (or a "Crypsy" folder inside it)',
+    },
+    custom: {
+      id: 'custom',
+      name: 'Nextcloud / Syncthing / Custom',
+      tagline: 'Any local synced folder or USB drive',
+      paths: {
+        windows: 'C:\\Users\\You\\Sync\\Crypsy',
+        mac: '~/Sync/Crypsy',
+        linux: '~/Sync/Crypsy',
+      },
+      folderHint: 'Select any folder synced by your preferred tool',
+    },
+  };
+
+  let activeDirHandle = null;
+  let lastKnownFileModified = 0;
+  let pollIntervalId = null;
+  let onExternalVaultUpdateCallback = null;
+
+  function isFileSystemAccessSupported() {
+    return typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+  }
+
+  function detectOS() {
+    const ua = navigator.userAgent.toLowerCase();
+    const platform = (navigator.platform || '').toLowerCase();
+    if (ua.includes('win') || platform.includes('win')) return 'windows';
+    if (ua.includes('mac') || platform.includes('mac')) return 'mac';
+    return 'linux';
+  }
+
+  function getProviderPathHint(providerId) {
+    const os = detectOS();
+    const provider = PROVIDERS[providerId] || PROVIDERS.custom;
+    return provider.paths[os] || provider.paths.windows;
+  }
+
+  // IndexedDB helpers for persisting FileSystemDirectoryHandle across browser restarts
+  function openHandleDB() {
+    return new Promise((resolve, reject) => {
+      if (!('indexedDB' in window)) {
+        return reject(new Error('IndexedDB not supported'));
+      }
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) {
+          db.createObjectStore(IDB_STORE);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function saveDirHandleToIDB(handle) {
+    try {
+      const db = await openHandleDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).put(handle, HANDLE_KEY);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) {
+      console.warn('Could not persist directory handle:', e);
+    }
+  }
+
+  async function loadDirHandleFromIDB() {
+    try {
+      const db = await openHandleDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, 'readonly');
+        const req = tx.objectStore(IDB_STORE).get(HANDLE_KEY);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function clearDirHandleFromIDB() {
+    try {
+      const db = await openHandleDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).delete(HANDLE_KEY);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function getSavedProviderMeta() {
+    try {
+      const raw = localStorage.getItem(META_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveProviderMeta(meta) {
+    localStorage.setItem(META_STORAGE_KEY, JSON.stringify(meta));
+  }
+
+  function clearProviderMeta() {
+    localStorage.removeItem(META_STORAGE_KEY);
+  }
+
+  async function verifyPermission(fileHandle, readWrite = true) {
+    if (!fileHandle) return false;
+    const opts = readWrite ? { mode: 'readwrite' } : {};
+    if ((await fileHandle.queryPermission(opts)) === 'granted') {
+      return true;
+    }
+    return false;
+  }
+
+  async function requestPermission(fileHandle, readWrite = true) {
+    if (!fileHandle) return false;
+    const opts = readWrite ? { mode: 'readwrite' } : {};
+    if ((await fileHandle.queryPermission(opts)) === 'granted') {
+      return true;
+    }
+    if ((await fileHandle.requestPermission(opts)) === 'granted') {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Prompts user to pick a cloud directory via native OS folder picker.
+   * Optionally creates a `Crypsy` subfolder or uses the selected folder directly.
+   */
+  async function pickCloudFolder(providerId, createSubfolder = true) {
+    if (!isFileSystemAccessSupported()) {
+      throw new Error(
+        'Your browser does not support direct folder linking (File System Access API). Use Chrome, Edge, or Brave, or run the local Crypsy installer script.'
+      );
+    }
+
+    const pickedHandle = await window.showDirectoryPicker({
+      mode: 'readwrite',
+    });
+
+    let targetHandle = pickedHandle;
+    // If the user selected the root of "OneDrive" or "My Drive" and asked for a subfolder, create/open "Crypsy"
+    if (
+      createSubfolder &&
+      pickedHandle.name.toLowerCase() !== 'crypsy'
+    ) {
+      targetHandle = await pickedHandle.getDirectoryHandle('Crypsy', {
+        create: true,
+      });
+    }
+
+    activeDirHandle = targetHandle;
+    await saveDirHandleToIDB(targetHandle);
+
+    const provider = PROVIDERS[providerId] || PROVIDERS.custom;
+    const meta = {
+      providerId: provider.id,
+      providerName: provider.name,
+      folderName: targetHandle.name,
+      parentFolderName: pickedHandle.name,
+      linkedAt: new Date().toISOString(),
+      lastSyncedAt: null,
+    };
+    saveProviderMeta(meta);
+    startSyncPolling();
+    return meta;
+  }
+
+  /**
+   * Restores a previously saved directory handle on startup.
+   * Returns { status: 'connected' | 'needs_permission' | 'unlinked', meta, handle }
+   */
+  async function restoreSavedConnection() {
+    const meta = getSavedProviderMeta();
+    const handle = await loadDirHandleFromIDB();
+    if (!handle || !meta) {
+      return { status: 'unlinked', meta: null };
+    }
+
+    activeDirHandle = handle;
+    const hasPerm = await verifyPermission(handle, true);
+    if (hasPerm) {
+      startSyncPolling();
+      return { status: 'connected', meta };
+    }
+    return { status: 'needs_permission', meta };
+  }
+
+  async function reconnectSavedHandle() {
+    if (!activeDirHandle) {
+      activeDirHandle = await loadDirHandleFromIDB();
+    }
+    if (!activeDirHandle) return false;
+    const granted = await requestPermission(activeDirHandle, true);
+    if (granted) {
+      startSyncPolling();
+    }
+    return granted;
+  }
+
+  async function unlinkCloudFolder() {
+    stopSyncPolling();
+    activeDirHandle = null;
+    await clearDirHandleFromIDB();
+    clearProviderMeta();
+  }
+
+  /**
+   * Reads `vault.crypsy.json` from the active cloud directory if it exists.
+   */
+  async function readVaultFromCloudFolder() {
+    if (!activeDirHandle) return null;
+    try {
+      const fileHandle = await activeDirHandle.getFileHandle(VAULT_FILENAME, {
+        create: false,
+      });
+      const file = await fileHandle.getFile();
+      lastKnownFileModified = file.lastModified;
+      const text = await file.text();
+      return JSON.parse(text);
+    } catch (e) {
+      // File does not exist yet in the folder
+      return null;
+    }
+  }
+
+  /**
+   * Writes the encrypted AES-256-GCM envelope to `vault.crypsy.json` in the active cloud folder.
+   */
+  async function writeVaultToCloudFolder(envelope) {
+    if (!activeDirHandle) return false;
+    const hasPerm = await verifyPermission(activeDirHandle, true);
+    if (!hasPerm) return false;
+
+    const fileHandle = await activeDirHandle.getFileHandle(VAULT_FILENAME, {
+      create: true,
+    });
+    const writable = await fileHandle.createWritable();
+    await writable.write(JSON.stringify(envelope, null, 2));
+    await writable.close();
+
+    const updatedFile = await fileHandle.getFile();
+    lastKnownFileModified = updatedFile.lastModified;
+
+    const meta = getSavedProviderMeta();
+    if (meta) {
+      meta.lastSyncedAt = new Date().toISOString();
+      saveProviderMeta(meta);
+    }
+    return true;
+  }
+
+  /**
+   * Provisions `README-CRYPSY.txt` and optionally a self-contained `Crypsy-Portable.html`
+   * directly into the user's cloud folder so they can open Crypsy on any other synced computer.
+   */
+  async function provisionCloudFolderAssets(includePortableHtml = true) {
+    if (!activeDirHandle) {
+      throw new Error('No cloud folder linked yet.');
+    }
+
+    const readmeText = [
+      '===================================================================',
+      '  CRYPSY — TRANSPARENTLY ENCRYPTED CLOUD VAULT',
+      '===================================================================',
+      '',
+      'This folder is managed by Crypsy and synced via your cloud provider.',
+      '',
+      'FILES IN THIS FOLDER:',
+      `  1. ${VAULT_FILENAME}`,
+      '     Your encrypted notes & tags payload (Cipher: AES-256-GCM,',
+      '     Key Derivation: PBKDF2-SHA256, 150,000 iterations).',
+      '     Do NOT delete or manually edit this file.',
+      '',
+      `  2. ${PORTABLE_HTML_FILENAME}`,
+      '     Self-contained portable Crypsy web application.',
+      '     On any computer where this cloud folder is synced, simply',
+      `     open ${PORTABLE_HTML_FILENAME} in Chrome, Edge, or Brave and`,
+      '     link this folder to read and edit your encrypted notes.',
+      '',
+      `Provisioned at: ${new Date().toISOString()}`,
+      '===================================================================',
+    ].join('\r\n');
+
+    const readmeHandle = await activeDirHandle.getFileHandle(README_FILENAME, {
+      create: true,
+    });
+    const readmeWritable = await readmeHandle.createWritable();
+    await readmeWritable.write(readmeText);
+    await readmeWritable.close();
+
+    if (includePortableHtml) {
+      const portableHtml = await buildSelfContainedHtmlInBrowser();
+      const htmlHandle = await activeDirHandle.getFileHandle(
+        PORTABLE_HTML_FILENAME,
+        { create: true }
+      );
+      const htmlWritable = await htmlHandle.createWritable();
+      await htmlWritable.write(portableHtml);
+      await htmlWritable.close();
+    }
+
+    return true;
+  }
+
+  /**
+   * Assembles a single self-contained HTML file right in the browser
+   * so users can drop `Crypsy-Portable.html` into their cloud drive even without Node.js.
+   */
+  async function buildSelfContainedHtmlInBrowser() {
+    try {
+      const [cssRes, cryptoRes, syncRes, appRes] = await Promise.all([
+        fetch('styles.css').then((r) => (r.ok ? r.text() : '')),
+        fetch('crypto.js').then((r) => (r.ok ? r.text() : '')),
+        fetch('cloud-sync.js').then((r) => (r.ok ? r.text() : '')),
+        fetch('app.js').then((r) => (r.ok ? r.text() : '')),
+      ]);
+
+      if (cssRes && cryptoRes && appRes) {
+        const docClone = document.documentElement.outerHTML;
+        return docClone
+          .replace(
+            /<link\s+rel="stylesheet"\s+href="styles\.css"\s*\/?>/i,
+            `<style>\n${cssRes}\n</style>`
+          )
+          .replace(
+            /<script\s+src="crypto\.js"><\/script>/i,
+            `<script>\n${cryptoRes}\n</script>`
+          )
+          .replace(
+            /<script\s+src="cloud-sync\.js"><\/script>/i,
+            `<script>\n${syncRes}\n</script>`
+          )
+          .replace(
+            /<script\s+src="app\.js"><\/script>/i,
+            `<script>\n${appRes}\n</script>`
+          );
+      }
+    } catch (e) {
+      // Fallback if running from a single-file bundle already (`file://` where fetch isn't needed)
+    }
+    return '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  }
+
+  /**
+   * Polls `vault.crypsy.json` in the cloud directory to detect changes synced from other devices.
+   */
+  function startSyncPolling() {
+    stopSyncPolling();
+    pollIntervalId = setInterval(async () => {
+      if (!activeDirHandle || !onExternalVaultUpdateCallback) return;
+      try {
+        const hasPerm = await verifyPermission(activeDirHandle, false);
+        if (!hasPerm) return;
+        const fileHandle = await activeDirHandle.getFileHandle(VAULT_FILENAME, {
+          create: false,
+        });
+        const file = await fileHandle.getFile();
+        if (
+          lastKnownFileModified > 0 &&
+          file.lastModified > lastKnownFileModified
+        ) {
+          lastKnownFileModified = file.lastModified;
+          const text = await file.text();
+          const envelope = JSON.parse(text);
+          onExternalVaultUpdateCallback(envelope);
+        }
+      } catch (e) {
+        // Ignore if file hasn't been created yet
+      }
+    }, 3500);
+  }
+
+  function stopSyncPolling() {
+    if (pollIntervalId) {
+      clearInterval(pollIntervalId);
+      pollIntervalId = null;
+    }
+  }
+
+  function onExternalUpdate(cb) {
+    onExternalVaultUpdateCallback = cb;
+  }
+
+  function isConnected() {
+    return Boolean(activeDirHandle);
+  }
+
+  return {
+    PROVIDERS,
+    VAULT_FILENAME,
+    PORTABLE_HTML_FILENAME,
+    isFileSystemAccessSupported,
+    detectOS,
+    getProviderPathHint,
+    getSavedProviderMeta,
+    pickCloudFolder,
+    restoreSavedConnection,
+    reconnectSavedHandle,
+    unlinkCloudFolder,
+    readVaultFromCloudFolder,
+    writeVaultToCloudFolder,
+    provisionCloudFolderAssets,
+    buildSelfContainedHtmlInBrowser,
+    onExternalUpdate,
+    isConnected,
+  };
+})();
+
+</script>
+  <script>
+/**
+ * Crypsy — Main Application Logic
+ * Implements Google Keep-style UX + Cloud Folder Onboarding & Live File Sync:
+ * - Search (title, description, tags) with live highlight
+ * - Tags (create, filter, assign/remove per note)
+ * - Pins (PINNED vs OTHERS sections)
+ * - Card (Grid) / List view toggle
+ * - Note Title & Description with color themes
+ * - Transparent client-side AES-256-GCM encryption
+ * - Cloud Folder Provisioning Wizard & Live Auto-Sync (`vault.crypsy.json`)
+ */
+
+(() => {
+  const APP_VERSION = '1.0.0';
+  const VAULT_SCHEMA_VERSION = 1;
+  const STORAGE_KEY_VAULT = 'crypsy_encrypted_vault_v1';
+  const STORAGE_KEY_PREFS = 'crypsy_ui_prefs_v1';
+  const DEFAULT_DEVICE_SECRET = 'crypsy-local-device-default-key-v1';
+
+  window.CRYPSY_VERSION = APP_VERSION;
+
+  // Application State
+  let state = {
+    notes: [],
+    tags: ['security', 'ideas', 'work', 'personal'],
+    searchQuery: '',
+    activeFilter: { type: 'all', tag: null },
+    viewMode: 'grid',
+    theme: 'dark',
+    passphrase: DEFAULT_DEVICE_SECRET,
+    lastEncryptedEnvelope: null,
+    selectedProviderId: 'onedrive',
+    composer: {
+      expanded: false,
+      pinned: false,
+      color: 'default',
+      tags: [],
+    },
+    editingNoteId: null,
+    editingDraft: null,
+  };
+
+  // Seed notes for first-time launch
+  const SEED_NOTES = [
+    {
+      id: 'note-1',
+      title: 'Welcome to Crypsy',
+      description:
+        'Your notes are decrypted on-device and encrypted with AES-256-GCM before touching storage.\n\nClick "Setup Cloud Folder" in the top bar to walk through placing your encrypted vault and portable app directly inside OneDrive, Google Drive, Dropbox, or iCloud!',
+      tags: ['security', 'ideas'],
+      pinned: true,
+      color: 'teal',
+      createdAt: Date.now() - 3600000 * 24,
+      updatedAt: Date.now() - 3600000 * 2,
+    },
+    {
+      id: 'note-2',
+      title: 'Product Roadmap & Architecture',
+      description:
+        '1. BYOC Cloud Sync via local cloud folder (vault.crypsy.json + Crypsy-Portable.html)\n2. WebAuthn PRF hardware passkey unlock\n3. Desktop on-demand virtual filesystem hydration\n4. Android SAF DocumentsProvider biometric prompt',
+      tags: ['work', 'security'],
+      pinned: true,
+      color: 'cobalt',
+      createdAt: Date.now() - 3600000 * 18,
+      updatedAt: Date.now() - 3600000 * 1,
+    },
+    {
+      id: 'note-3',
+      title: 'Quick Keyboard Shortcuts',
+      description:
+        '• Press "/" or Ctrl+K to jump to search\n• Click any note card to open the full editor\n• Toggle between Card Grid and List view in the top-right toolbar\n• Click any #tag chip to filter immediately',
+      tags: ['ideas'],
+      pinned: false,
+      color: 'amber',
+      createdAt: Date.now() - 3600000 * 12,
+      updatedAt: Date.now() - 3600000 * 5,
+    },
+    {
+      id: 'note-4',
+      title: 'Weekend Grocery & Errands',
+      description:
+        '- Espresso beans (whole bean, medium roast)\n- Sparkling water\n- Olive oil & garlic\n- Pick up hardware security key backup (YubiKey 5C NFC)',
+      tags: ['personal'],
+      pinned: false,
+      color: 'sage',
+      createdAt: Date.now() - 3600000 * 6,
+      updatedAt: Date.now() - 3600000 * 3,
+    },
+  ];
+
+  // DOM Elements
+  const els = {
+    sidebar: document.getElementById('sidebar'),
+    sidebarToggleBtn: document.getElementById('sidebarToggleBtn'),
+    sidebarTagsList: document.getElementById('sidebarTagsList'),
+    newTagForm: document.getElementById('newTagForm'),
+    newTagInput: document.getElementById('newTagInput'),
+    countAll: document.getElementById('countAll'),
+    countPinned: document.getElementById('countPinned'),
+
+    searchInput: document.getElementById('searchInput'),
+    clearSearchBtn: document.getElementById('clearSearchBtn'),
+    cloudSetupBtn: document.getElementById('cloudSetupBtn'),
+    cloudSetupBtnLabel: document.getElementById('cloudSetupBtnLabel'),
+    viewToggleBtn: document.getElementById('viewToggleBtn'),
+    viewIconList: document.getElementById('viewIconList'),
+    viewIconGrid: document.getElementById('viewIconGrid'),
+    themeToggleBtn: document.getElementById('themeToggleBtn'),
+    encryptionBadge: document.getElementById('encryptionBadge'),
+    vaultBtn: document.getElementById('vaultBtn'),
+
+    reconnectCloudBanner: document.getElementById('reconnectCloudBanner'),
+    reconnectBannerMsg: document.getElementById('reconnectBannerMsg'),
+    resumeCloudSyncBtn: document.getElementById('resumeCloudSyncBtn'),
+    changeCloudFolderBtn: document.getElementById('changeCloudFolderBtn'),
+
+    noteComposer: document.getElementById('noteComposer'),
+    composerHeader: document.getElementById('composerHeader'),
+    composerTitle: document.getElementById('composerTitle'),
+    composerDescription: document.getElementById('composerDescription'),
+    composerPinBtn: document.getElementById('composerPinBtn'),
+    composerTagsRow: document.getElementById('composerTagsRow'),
+    composerFooter: document.getElementById('composerFooter'),
+    composerTagBtn: document.getElementById('composerTagBtn'),
+    composerTagPopover: document.getElementById('composerTagPopover'),
+    composerTagSearch: document.getElementById('composerTagSearch'),
+    composerTagOptions: document.getElementById('composerTagOptions'),
+    composerColorPicker: document.getElementById('composerColorPicker'),
+    composerCancelBtn: document.getElementById('composerCancelBtn'),
+    composerSaveBtn: document.getElementById('composerSaveBtn'),
+
+    activeFilterBanner: document.getElementById('activeFilterBanner'),
+    activeFilterText: document.getElementById('activeFilterText'),
+    resetFilterBtn: document.getElementById('resetFilterBtn'),
+
+    notesWorkspace: document.getElementById('notesWorkspace'),
+    pinnedSection: document.getElementById('pinnedSection'),
+    pinnedGrid: document.getElementById('pinnedGrid'),
+    othersSection: document.getElementById('othersSection'),
+    othersSectionLabel: document.getElementById('othersSectionLabel'),
+    othersGrid: document.getElementById('othersGrid'),
+    emptyState: document.getElementById('emptyState'),
+
+    editModalBackdrop: document.getElementById('editModalBackdrop'),
+    editModalCard: document.getElementById('editModalCard'),
+    editModalTitle: document.getElementById('editModalTitle'),
+    editModalDescription: document.getElementById('editModalDescription'),
+    editModalPinBtn: document.getElementById('editModalPinBtn'),
+    editModalTagsRow: document.getElementById('editModalTagsRow'),
+    editModalTimestamp: document.getElementById('editModalTimestamp'),
+    editModalTagBtn: document.getElementById('editModalTagBtn'),
+    editModalTagPopover: document.getElementById('editModalTagPopover'),
+    editModalTagSearch: document.getElementById('editModalTagSearch'),
+    editModalTagOptions: document.getElementById('editModalTagOptions'),
+    editModalColorPicker: document.getElementById('editModalColorPicker'),
+    editModalDeleteBtn: document.getElementById('editModalDeleteBtn'),
+    editModalSaveBtn: document.getElementById('editModalSaveBtn'),
+
+    // Cloud Onboarding Wizard
+    cloudOnboardingBackdrop: document.getElementById('cloudOnboardingBackdrop'),
+    closeOnboardingBtn: document.getElementById('closeOnboardingBtn'),
+    providerSelectionGrid: document.getElementById('providerSelectionGrid'),
+    downloadPortableBtn: document.getElementById('downloadPortableBtn'),
+    wizardToStep2Btn: document.getElementById('wizardToStep2Btn'),
+    wizardBackToStep1Btn: document.getElementById('wizardBackToStep1Btn'),
+    selectedProviderTitle: document.getElementById('selectedProviderTitle'),
+    osPathHintCode: document.getElementById('osPathHintCode'),
+    copyPathHintBtn: document.getElementById('copyPathHintBtn'),
+    folderPickerHintText: document.getElementById('folderPickerHintText'),
+    createCrypsySubfolderCb: document.getElementById('createCrypsySubfolderCb'),
+    provisionPortableHtmlCb: document.getElementById('provisionPortableHtmlCb'),
+    wizardStep2Error: document.getElementById('wizardStep2Error'),
+    pickAndProvisionBtn: document.getElementById('pickAndProvisionBtn'),
+    connectedProviderHeading: document.getElementById('connectedProviderHeading'),
+    connectedFolderDetails: document.getElementById('connectedFolderDetails'),
+    unlinkCloudFolderBtn: document.getElementById('unlinkCloudFolderBtn'),
+    reprovisionAssetsBtn: document.getElementById('reprovisionAssetsBtn'),
+    finishOnboardingBtn: document.getElementById('finishOnboardingBtn'),
+    wizardStep1: document.getElementById('wizardStep1'),
+    wizardStep2: document.getElementById('wizardStep2'),
+    wizardStep3: document.getElementById('wizardStep3'),
+
+    // Vault Inspector Modal
+    vaultModalBackdrop: document.getElementById('vaultModalBackdrop'),
+    closeVaultModalBtn: document.getElementById('closeVaultModalBtn'),
+    vaultPassphraseInput: document.getElementById('vaultPassphraseInput'),
+    updatePassphraseBtn: document.getElementById('updatePassphraseBtn'),
+    lockVaultNowBtn: document.getElementById('lockVaultNowBtn'),
+    ciphertextPreview: document.getElementById('ciphertextPreview'),
+    exportEncryptedBtn: document.getElementById('exportEncryptedBtn'),
+    importEncryptedInput: document.getElementById('importEncryptedInput'),
+
+    lockScreenOverlay: document.getElementById('lockScreenOverlay'),
+    unlockVaultForm: document.getElementById('unlockVaultForm'),
+    unlockPassphraseInput: document.getElementById('unlockPassphraseInput'),
+    unlockErrorMsg: document.getElementById('unlockErrorMsg'),
+  };
+
+  // Utility helpers
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function highlightText(text, query) {
+    const safe = escapeHtml(text);
+    if (!query || !query.trim()) return safe;
+    const cleanQ = query.trim().replace(/^#/, '');
+    if (!cleanQ) return safe;
+    const escapedRegex = cleanQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedRegex})`, 'gi');
+    return safe.replace(regex, '<mark class="search-highlight">$1</mark>');
+  }
+
+  function formatTimestamp(ms) {
+    const d = new Date(ms);
+    return d.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  function autoResizeTextarea(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.max(textarea.scrollHeight, 32)}px`;
+  }
+
+  // Preferences
+  function loadPreferences() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_PREFS);
+      if (!raw) return;
+      const prefs = JSON.parse(raw);
+      if (prefs.viewMode === 'list' || prefs.viewMode === 'grid') {
+        state.viewMode = prefs.viewMode;
+      }
+      if (prefs.theme === 'light' || prefs.theme === 'dark') {
+        state.theme = prefs.theme;
+      }
+    } catch (e) {
+      console.warn('Failed to load UI prefs:', e);
+    }
+  }
+
+  function savePreferences() {
+    localStorage.setItem(
+      STORAGE_KEY_PREFS,
+      JSON.stringify({
+        viewMode: state.viewMode,
+        theme: state.theme,
+      })
+    );
+  }
+
+  // Persistence & Cloud Sync
+  async function persistEncryptedVault() {
+    const payload = {
+      notes: state.notes,
+      tags: state.tags,
+    };
+    const envelope = await CrypsyCrypto.encryptPayload(payload, state.passphrase);
+    state.lastEncryptedEnvelope = envelope;
+    localStorage.setItem(STORAGE_KEY_VAULT, JSON.stringify(envelope));
+
+    if (CrypsyCloudSync.isConnected()) {
+      try {
+        await CrypsyCloudSync.writeVaultToCloudFolder(envelope);
+        updateCloudStatusUI();
+      } catch (e) {
+        console.warn('Failed writing vault to cloud folder:', e);
+      }
+    }
+
+    updateVaultInspectorUI();
+  }
+
+  async function tryLoadEnvelope(envelope) {
+    state.lastEncryptedEnvelope = envelope;
+    localStorage.setItem(STORAGE_KEY_VAULT, JSON.stringify(envelope));
+    try {
+      const decrypted = await CrypsyCrypto.decryptPayload(envelope, state.passphrase);
+      state.notes = Array.isArray(decrypted.notes) ? decrypted.notes : [];
+      state.tags = Array.isArray(decrypted.tags) ? decrypted.tags : [];
+      renderAll();
+      return true;
+    } catch (err) {
+      els.lockScreenOverlay.classList.remove('hidden');
+      els.unlockPassphraseInput.focus();
+      return false;
+    }
+  }
+
+  async function initVault() {
+    loadPreferences();
+    applyThemeUI();
+    applyViewModeUI();
+
+    // Listen for external cloud folder updates (e.g. synced from another device)
+    CrypsyCloudSync.onExternalUpdate(async (externalEnvelope) => {
+      await tryLoadEnvelope(externalEnvelope);
+      updateCloudStatusUI();
+    });
+
+    // Check if a cloud folder was previously linked
+    const cloudState = await CrypsyCloudSync.restoreSavedConnection();
+    updateCloudStatusUI(cloudState);
+
+    if (cloudState.status === 'connected') {
+      const cloudEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
+      if (cloudEnvelope) {
+        await tryLoadEnvelope(cloudEnvelope);
+        return;
+      }
+    }
+
+    const storedRaw = localStorage.getItem(STORAGE_KEY_VAULT);
+    if (!storedRaw) {
+      state.notes = SEED_NOTES;
+      await persistEncryptedVault();
+      renderAll();
+      return;
+    }
+
+    try {
+      const envelope = JSON.parse(storedRaw);
+      await tryLoadEnvelope(envelope);
+    } catch (e) {
+      state.notes = SEED_NOTES;
+      await persistEncryptedVault();
+      renderAll();
+    }
+  }
+
+  function updateCloudStatusUI(restoredState) {
+    const meta = CrypsyCloudSync.getSavedProviderMeta();
+    const isConnected = CrypsyCloudSync.isConnected() && (!restoredState || restoredState.status === 'connected');
+
+    if (restoredState && restoredState.status === 'needs_permission' && meta) {
+      els.reconnectBannerMsg.innerHTML = `Linked to <strong>${escapeHtml(meta.providerName)} (${escapeHtml(meta.folderName)})</strong>. Click to resume live auto-sync.`;
+      els.reconnectCloudBanner.classList.remove('hidden');
+      els.cloudSetupBtn.classList.remove('synced');
+      els.cloudSetupBtnLabel.textContent = `Resume ${meta.providerName}`;
+      return;
+    }
+
+    els.reconnectCloudBanner.classList.add('hidden');
+
+    if (isConnected && meta) {
+      els.cloudSetupBtn.classList.add('synced');
+      els.cloudSetupBtnLabel.textContent = `${meta.providerName}: /${meta.folderName}`;
+    } else {
+      els.cloudSetupBtn.classList.remove('synced');
+      els.cloudSetupBtnLabel.textContent = 'Setup Cloud Folder';
+    }
+  }
+
+  // Theme & View Mode UI
+  function applyThemeUI() {
+    document.documentElement.setAttribute('data-theme', state.theme);
+  }
+
+  function applyViewModeUI() {
+    if (state.viewMode === 'list') {
+      els.notesWorkspace.classList.remove('view-grid');
+      els.notesWorkspace.classList.add('view-list');
+      els.viewIconList.classList.add('hidden');
+      els.viewIconGrid.classList.remove('hidden');
+      els.viewToggleBtn.title = 'Switch to Card Grid view';
+    } else {
+      els.notesWorkspace.classList.remove('view-list');
+      els.notesWorkspace.classList.add('view-grid');
+      els.viewIconGrid.classList.add('hidden');
+      els.viewIconList.classList.remove('hidden');
+      els.viewToggleBtn.title = 'Switch to List view';
+    }
+  }
+
+  // Filtering & Search
+  function getFilteredNotes() {
+    const q = state.searchQuery.trim().toLowerCase();
+    const cleanTagQuery = q.startsWith('#') ? q.slice(1) : q;
+
+    return state.notes
+      .filter((note) => {
+        if (state.activeFilter.type === 'pinned' && !note.pinned) return false;
+        if (
+          state.activeFilter.type === 'tag' &&
+          state.activeFilter.tag &&
+          !note.tags.includes(state.activeFilter.tag)
+        ) {
+          return false;
+        }
+
+        if (!q) return true;
+
+        const titleMatch = (note.title || '').toLowerCase().includes(q);
+        const descMatch = (note.description || '').toLowerCase().includes(q);
+        const tagMatch = (note.tags || []).some((t) =>
+          t.toLowerCase().includes(cleanTagQuery)
+        );
+        return titleMatch || descMatch || tagMatch;
+      })
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  // Render Functions
+  function renderSidebar() {
+    els.countAll.textContent = state.notes.length;
+    els.countPinned.textContent = state.notes.filter((n) => n.pinned).length;
+
+    document.querySelectorAll('.sidebar-nav > .nav-item').forEach((btn) => {
+      const filterType = btn.getAttribute('data-filter-type');
+      const isActive =
+        state.activeFilter.type === filterType && !state.activeFilter.tag;
+      btn.classList.toggle('active', isActive);
+    });
+
+    els.sidebarTagsList.innerHTML = state.tags
+      .map((tag) => {
+        const count = state.notes.filter((n) => n.tags.includes(tag)).length;
+        const isActive =
+          state.activeFilter.type === 'tag' && state.activeFilter.tag === tag;
+        return `
+          <div class="nav-item ${isActive ? 'active' : ''}" data-tag="${escapeHtml(tag)}">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+              <line x1="7" y1="7" x2="7.01" y2="7"></line>
+            </svg>
+            <span class="nav-label">#${escapeHtml(tag)}</span>
+            <span class="nav-count">${count}</span>
+            <button type="button" class="tag-delete-btn" data-delete-tag="${escapeHtml(tag)}" title="Delete tag">&times;</button>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  function renderFilterBanner() {
+    const parts = [];
+    if (state.activeFilter.type === 'pinned') {
+      parts.push('Filtered by: <strong>Pinned</strong>');
+    } else if (state.activeFilter.type === 'tag' && state.activeFilter.tag) {
+      parts.push(`Filtered by tag: <strong>#${escapeHtml(state.activeFilter.tag)}</strong>`);
+    }
+    if (state.searchQuery.trim()) {
+      parts.push(`Search: <strong>"${escapeHtml(state.searchQuery.trim())}"</strong>`);
+    }
+
+    if (parts.length > 0) {
+      els.activeFilterText.innerHTML = parts.join(' &bull; ');
+      els.activeFilterBanner.classList.remove('hidden');
+    } else {
+      els.activeFilterBanner.classList.add('hidden');
+    }
+  }
+
+  function createNoteCardHtml(note) {
+    const q = state.searchQuery;
+    const titleHtml = note.title ? highlightText(note.title, q) : '';
+    const descHtml = note.description ? highlightText(note.description, q) : '';
+
+    const tagsHtml = (note.tags || [])
+      .map(
+        (tag) =>
+          `<span class="tag-chip" data-filter-tag="${escapeHtml(tag)}" title="Filter by #${escapeHtml(tag)}">#${highlightText(tag, q)}</span>`
+      )
+      .join('');
+
+    return `
+      <article class="note-card" data-note-id="${escapeHtml(note.id)}" data-color="${escapeHtml(note.color || 'default')}">
+        <div class="note-card-header">
+          <h3 class="note-card-title">${titleHtml || '<span style="color:var(--text-muted);font-weight:400">Untitled</span>'}</h3>
+          <button
+            type="button"
+            class="icon-btn pin-btn note-card-pin ${note.pinned ? 'active' : ''}"
+            data-toggle-pin="${escapeHtml(note.id)}"
+            title="${note.pinned ? 'Unpin note' : 'Pin note'}"
+            aria-label="${note.pinned ? 'Unpin note' : 'Pin note'}"
+          >
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M12 17v5"></path>
+              <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>
+            </svg>
+          </button>
+        </div>
+
+        ${descHtml ? `<div class="note-card-desc">${descHtml}</div>` : ''}
+
+        ${tagsHtml ? `<div class="note-tags-row">${tagsHtml}</div>` : ''}
+
+        <div class="note-card-footer">
+          <span class="note-card-date">Edited ${formatTimestamp(note.updatedAt)}</span>
+          <button
+            type="button"
+            class="icon-btn danger-btn"
+            data-delete-note="${escapeHtml(note.id)}"
+            title="Delete note"
+            aria-label="Delete note"
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        </div>
+      </article>
+    `;
+  }
+
+  function renderNotes() {
+    const filtered = getFilteredNotes();
+    const pinnedNotes = filtered.filter((n) => n.pinned);
+    const otherNotes = filtered.filter((n) => !n.pinned);
+
+    if (filtered.length === 0) {
+      els.pinnedSection.classList.add('hidden');
+      els.othersSection.classList.add('hidden');
+      els.emptyState.classList.remove('hidden');
+      return;
+    }
+
+    els.emptyState.classList.add('hidden');
+
+    if (pinnedNotes.length > 0) {
+      els.pinnedSection.classList.remove('hidden');
+      els.pinnedGrid.innerHTML = pinnedNotes.map(createNoteCardHtml).join('');
+    } else {
+      els.pinnedSection.classList.add('hidden');
+      els.pinnedGrid.innerHTML = '';
+    }
+
+    if (otherNotes.length > 0) {
+      els.othersSection.classList.remove('hidden');
+      els.othersSectionLabel.classList.toggle('hidden', pinnedNotes.length === 0);
+      els.othersGrid.innerHTML = otherNotes.map(createNoteCardHtml).join('');
+    } else {
+      els.othersSection.classList.add('hidden');
+      els.othersGrid.innerHTML = '';
+    }
+  }
+
+  function renderAll() {
+    renderSidebar();
+    renderFilterBanner();
+    renderNotes();
+    updateVaultInspectorUI();
+  }
+
+  // Composer Functions
+  function expandComposer() {
+    if (state.composer.expanded) return;
+    state.composer.expanded = true;
+    els.composerHeader.classList.remove('hidden');
+    els.composerFooter.classList.remove('hidden');
+    if (
+      state.activeFilter.type === 'tag' &&
+      state.activeFilter.tag &&
+      !state.composer.tags.includes(state.activeFilter.tag)
+    ) {
+      state.composer.tags.push(state.activeFilter.tag);
+    }
+    renderComposerTags();
+  }
+
+  function resetComposer() {
+    state.composer = {
+      expanded: false,
+      pinned: false,
+      color: 'default',
+      tags: [],
+    };
+    els.composerTitle.value = '';
+    els.composerDescription.value = '';
+    els.composerDescription.style.height = 'auto';
+    els.noteComposer.setAttribute('data-color', 'default');
+    els.composerPinBtn.classList.remove('active');
+    els.composerHeader.classList.add('hidden');
+    els.composerFooter.classList.add('hidden');
+    els.composerTagsRow.classList.add('hidden');
+    els.composerTagPopover.classList.add('hidden');
+    updateColorDots(els.composerColorPicker, 'default');
+  }
+
+  function renderComposerTags() {
+    if (state.composer.tags.length === 0) {
+      els.composerTagsRow.classList.add('hidden');
+      els.composerTagsRow.innerHTML = '';
+      return;
+    }
+    els.composerTagsRow.classList.remove('hidden');
+    els.composerTagsRow.innerHTML = state.composer.tags
+      .map(
+        (t) => `
+        <span class="tag-chip">
+          #${escapeHtml(t)}
+          <button type="button" class="tag-chip-remove" data-remove-composer-tag="${escapeHtml(t)}">&times;</button>
+        </span>
+      `
+      )
+      .join('');
+  }
+
+  async function saveComposerNote() {
+    const title = els.composerTitle.value.trim();
+    const description = els.composerDescription.value.trim();
+    if (!title && !description) {
+      resetComposer();
+      return;
+    }
+
+    const now = Date.now();
+    const newNote = {
+      id: `note-${now}-${Math.random().toString(36).slice(2, 7)}`,
+      title,
+      description,
+      tags: [...state.composer.tags],
+      pinned: state.composer.pinned,
+      color: state.composer.color,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    state.notes.unshift(newNote);
+    resetComposer();
+    await persistEncryptedVault();
+    renderAll();
+  }
+
+  function updateColorDots(pickerEl, activeColor) {
+    pickerEl.querySelectorAll('.color-dot').forEach((dot) => {
+      dot.classList.toggle('active', dot.getAttribute('data-color') === activeColor);
+    });
+  }
+
+  // Tag Popover Helper
+  function renderTagPopoverOptions(optionsContainer, searchValue, selectedTags, onToggleTag) {
+    const q = searchValue.trim().toLowerCase().replace(/^#/, '');
+    const matchingTags = state.tags.filter((t) => t.toLowerCase().includes(q));
+
+    let html = matchingTags
+      .map((tag) => {
+        const checked = selectedTags.includes(tag) ? 'checked' : '';
+        return `
+          <label class="popover-option">
+            <input type="checkbox" value="${escapeHtml(tag)}" ${checked} />
+            <span>#${escapeHtml(tag)}</span>
+          </label>
+        `;
+      })
+      .join('');
+
+    if (q && !state.tags.some((t) => t.toLowerCase() === q)) {
+      html += `
+        <div class="popover-option" data-create-tag="${escapeHtml(q)}" style="color:var(--accent);font-weight:600">
+          + Create "#${escapeHtml(q)}"
+        </div>
+      `;
+    }
+
+    optionsContainer.innerHTML =
+      html || '<div style="font-size:0.8rem;color:var(--text-muted);padding:4px;">No tags yet</div>';
+
+    optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        onToggleTag(cb.value);
+      });
+    });
+
+    const createEl = optionsContainer.querySelector('[data-create-tag]');
+    if (createEl) {
+      createEl.addEventListener('click', () => {
+        const newTag = createEl.getAttribute('data-create-tag');
+        if (!state.tags.includes(newTag)) {
+          state.tags.push(newTag);
+        }
+        onToggleTag(newTag);
+      });
+    }
+  }
+
+  // Edit Note Modal
+  function openEditModal(noteId) {
+    const note = state.notes.find((n) => n.id === noteId);
+    if (!note) return;
+
+    state.editingNoteId = noteId;
+    state.editingDraft = {
+      title: note.title,
+      description: note.description,
+      pinned: note.pinned,
+      color: note.color || 'default',
+      tags: [...(note.tags || [])],
+    };
+
+    els.editModalTitle.value = state.editingDraft.title;
+    els.editModalDescription.value = state.editingDraft.description;
+    els.editModalCard.setAttribute('data-color', state.editingDraft.color);
+    els.editModalPinBtn.classList.toggle('active', state.editingDraft.pinned);
+    els.editModalTimestamp.textContent = `Edited ${formatTimestamp(note.updatedAt)}`;
+    updateColorDots(els.editModalColorPicker, state.editingDraft.color);
+    renderEditModalTags();
+
+    els.editModalTagPopover.classList.add('hidden');
+    els.editModalBackdrop.classList.remove('hidden');
+    autoResizeTextarea(els.editModalDescription);
+    els.editModalDescription.focus();
+  }
+
+  function renderEditModalTags() {
+    if (!state.editingDraft) return;
+    els.editModalTagsRow.innerHTML = state.editingDraft.tags
+      .map(
+        (t) => `
+        <span class="tag-chip">
+          #${escapeHtml(t)}
+          <button type="button" class="tag-chip-remove" data-remove-modal-tag="${escapeHtml(t)}">&times;</button>
+        </span>
+      `
+      )
+      .join('');
+  }
+
+  async function saveAndCloseEditModal() {
+    if (!state.editingNoteId || !state.editingDraft) {
+      els.editModalBackdrop.classList.add('hidden');
+      return;
+    }
+
+    const idx = state.notes.findIndex((n) => n.id === state.editingNoteId);
+    if (idx !== -1) {
+      const newTitle = els.editModalTitle.value.trim();
+      const newDesc = els.editModalDescription.value.trim();
+      const existing = state.notes[idx];
+
+      const changed =
+        existing.title !== newTitle ||
+        existing.description !== newDesc ||
+        existing.pinned !== state.editingDraft.pinned ||
+        existing.color !== state.editingDraft.color ||
+        JSON.stringify(existing.tags) !== JSON.stringify(state.editingDraft.tags);
+
+      if (changed) {
+        state.notes[idx] = {
+          ...existing,
+          title: newTitle,
+          description: newDesc,
+          pinned: state.editingDraft.pinned,
+          color: state.editingDraft.color,
+          tags: [...state.editingDraft.tags],
+          updatedAt: Date.now(),
+        };
+        await persistEncryptedVault();
+      }
+    }
+
+    state.editingNoteId = null;
+    state.editingDraft = null;
+    els.editModalBackdrop.classList.add('hidden');
+    renderAll();
+  }
+
+  // Cloud Onboarding Wizard Logic
+  function setWizardStep(stepNum) {
+    document.querySelectorAll('[data-step-indicator]').forEach((el) => {
+      const n = Number(el.getAttribute('data-step-indicator'));
+      el.classList.toggle('active', n === stepNum);
+    });
+
+    els.wizardStep1.classList.toggle('hidden', stepNum !== 1);
+    els.wizardStep2.classList.toggle('hidden', stepNum !== 2);
+    els.wizardStep3.classList.toggle('hidden', stepNum !== 3);
+    els.wizardStep2Error.classList.add('hidden');
+
+    if (stepNum === 2) {
+      const provider =
+        CrypsyCloudSync.PROVIDERS[state.selectedProviderId] ||
+        CrypsyCloudSync.PROVIDERS.custom;
+      els.selectedProviderTitle.textContent = `Typical ${provider.name} Location on Your OS:`;
+      els.osPathHintCode.textContent = CrypsyCloudSync.getProviderPathHint(
+        state.selectedProviderId
+      );
+      els.folderPickerHintText.textContent = provider.folderHint;
+    }
+
+    if (stepNum === 3) {
+      const meta = CrypsyCloudSync.getSavedProviderMeta();
+      if (meta) {
+        els.connectedProviderHeading.textContent = `Connected to ${meta.providerName} (/${meta.folderName})`;
+        els.connectedFolderDetails.textContent = `Your encrypted vault and portable app files are placed inside "${meta.parentFolderName}/${meta.folderName}".`;
+      }
+    }
+  }
+
+  function openCloudOnboardingModal() {
+    const meta = CrypsyCloudSync.getSavedProviderMeta();
+    if (CrypsyCloudSync.isConnected() && meta) {
+      state.selectedProviderId = meta.providerId || 'onedrive';
+      setWizardStep(3);
+    } else {
+      setWizardStep(1);
+    }
+    els.cloudOnboardingBackdrop.classList.remove('hidden');
+  }
+
+  function updateVaultInspectorUI() {
+    if (!state.lastEncryptedEnvelope) return;
+    els.ciphertextPreview.textContent = JSON.stringify(
+      state.lastEncryptedEnvelope,
+      null,
+      2
+    );
+  }
+
+  // Event Listeners
+  function bindEvents() {
+    // Sidebar toggle
+    els.sidebarToggleBtn.addEventListener('click', () => {
+      els.sidebar.classList.toggle('collapsed');
+    });
+
+    // Sidebar navigation (All / Pinned)
+    document.querySelectorAll('.sidebar-nav > .nav-item').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const type = btn.getAttribute('data-filter-type');
+        state.activeFilter = { type, tag: null };
+        renderAll();
+      });
+    });
+
+    // Sidebar tags click & delete
+    els.sidebarTagsList.addEventListener('click', async (e) => {
+      const deleteBtn = e.target.closest('[data-delete-tag]');
+      if (deleteBtn) {
+        e.stopPropagation();
+        const tagToDelete = deleteBtn.getAttribute('data-delete-tag');
+        state.tags = state.tags.filter((t) => t !== tagToDelete);
+        state.notes.forEach((n) => {
+          n.tags = (n.tags || []).filter((t) => t !== tagToDelete);
+        });
+        if (state.activeFilter.tag === tagToDelete) {
+          state.activeFilter = { type: 'all', tag: null };
+        }
+        await persistEncryptedVault();
+        renderAll();
+        return;
+      }
+
+      const tagItem = e.target.closest('[data-tag]');
+      if (tagItem) {
+        const tag = tagItem.getAttribute('data-tag');
+        state.activeFilter = { type: 'tag', tag };
+        renderAll();
+      }
+    });
+
+    // Create new tag in sidebar
+    els.newTagForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const raw = els.newTagInput.value.trim().toLowerCase().replace(/^#/, '');
+      if (!raw) return;
+      if (!state.tags.includes(raw)) {
+        state.tags.push(raw);
+        await persistEncryptedVault();
+      }
+      els.newTagInput.value = '';
+      state.activeFilter = { type: 'tag', tag: raw };
+      renderAll();
+    });
+
+    // Search input
+    els.searchInput.addEventListener('input', () => {
+      state.searchQuery = els.searchInput.value;
+      els.clearSearchBtn.classList.toggle('hidden', !state.searchQuery);
+      renderFilterBanner();
+      renderNotes();
+    });
+
+    els.clearSearchBtn.addEventListener('click', () => {
+      state.searchQuery = '';
+      els.searchInput.value = '';
+      els.clearSearchBtn.classList.add('hidden');
+      renderFilterBanner();
+      renderNotes();
+      els.searchInput.focus();
+    });
+
+    // Reset filter banner
+    els.resetFilterBtn.addEventListener('click', () => {
+      state.activeFilter = { type: 'all', tag: null };
+      state.searchQuery = '';
+      els.searchInput.value = '';
+      els.clearSearchBtn.classList.add('hidden');
+      renderAll();
+    });
+
+    // View toggle
+    els.viewToggleBtn.addEventListener('click', () => {
+      state.viewMode = state.viewMode === 'grid' ? 'list' : 'grid';
+      applyViewModeUI();
+      savePreferences();
+    });
+
+    // Theme toggle
+    els.themeToggleBtn.addEventListener('click', () => {
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      applyThemeUI();
+      savePreferences();
+    });
+
+    // Cloud Setup & Reconnect Banner
+    els.cloudSetupBtn.addEventListener('click', () => {
+      openCloudOnboardingModal();
+    });
+
+    els.resumeCloudSyncBtn.addEventListener('click', async () => {
+      const ok = await CrypsyCloudSync.reconnectSavedHandle();
+      if (ok) {
+        const existingCloudVault = await CrypsyCloudSync.readVaultFromCloudFolder();
+        if (existingCloudVault) {
+          await tryLoadEnvelope(existingCloudVault);
+        } else {
+          await persistEncryptedVault();
+        }
+        updateCloudStatusUI({ status: 'connected' });
+      }
+    });
+
+    els.changeCloudFolderBtn.addEventListener('click', () => {
+      setWizardStep(1);
+      els.cloudOnboardingBackdrop.classList.remove('hidden');
+    });
+
+    // Cloud Onboarding Wizard events
+    els.closeOnboardingBtn.addEventListener('click', () => {
+      els.cloudOnboardingBackdrop.classList.add('hidden');
+    });
+
+    els.cloudOnboardingBackdrop.addEventListener('click', (e) => {
+      if (e.target === els.cloudOnboardingBackdrop) {
+        els.cloudOnboardingBackdrop.classList.add('hidden');
+      }
+    });
+
+    els.providerSelectionGrid.addEventListener('click', (e) => {
+      const card = e.target.closest('[data-provider]');
+      if (!card) return;
+      state.selectedProviderId = card.getAttribute('data-provider');
+      els.providerSelectionGrid.querySelectorAll('.provider-card').forEach((c) => {
+        c.classList.toggle('active', c === card);
+      });
+    });
+
+    els.wizardToStep2Btn.addEventListener('click', () => {
+      setWizardStep(2);
+    });
+
+    els.wizardBackToStep1Btn.addEventListener('click', () => {
+      setWizardStep(1);
+    });
+
+    els.copyPathHintBtn.addEventListener('click', async () => {
+      const rawPath = els.osPathHintCode.textContent.split('   or   ')[0].trim();
+      try {
+        await navigator.clipboard.writeText(rawPath);
+        els.copyPathHintBtn.textContent = 'Copied!';
+        setTimeout(() => {
+          els.copyPathHintBtn.textContent = 'Copy Path';
+        }, 1500);
+      } catch (e) {
+        // ignore clipboard failure
+      }
+    });
+
+    els.pickAndProvisionBtn.addEventListener('click', async () => {
+      els.wizardStep2Error.classList.add('hidden');
+      const createSub = els.createCrypsySubfolderCb.checked;
+      const includeHtml = els.provisionPortableHtmlCb.checked;
+
+      try {
+        await CrypsyCloudSync.pickCloudFolder(state.selectedProviderId, createSub);
+
+        // Check if an encrypted vault already exists in that cloud folder
+        const existingEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
+        if (existingEnvelope) {
+          await tryLoadEnvelope(existingEnvelope);
+        } else {
+          await persistEncryptedVault();
+        }
+
+        await CrypsyCloudSync.provisionCloudFolderAssets(includeHtml);
+        updateCloudStatusUI({ status: 'connected' });
+        setWizardStep(3);
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+        els.wizardStep2Error.textContent =
+          err.message || 'Could not link cloud folder.';
+        els.wizardStep2Error.classList.remove('hidden');
+      }
+    });
+
+    els.reprovisionAssetsBtn.addEventListener('click', async () => {
+      try {
+        await CrypsyCloudSync.provisionCloudFolderAssets(true);
+        await persistEncryptedVault();
+        els.reprovisionAssetsBtn.textContent = 'Files Updated!';
+        setTimeout(() => {
+          els.reprovisionAssetsBtn.textContent = 'Re-write Portable Files';
+        }, 1600);
+      } catch (e) {
+        console.warn('Re-provision failed:', e);
+      }
+    });
+
+    els.unlinkCloudFolderBtn.addEventListener('click', async () => {
+      await CrypsyCloudSync.unlinkCloudFolder();
+      updateCloudStatusUI({ status: 'unlinked' });
+      setWizardStep(1);
+    });
+
+    els.finishOnboardingBtn.addEventListener('click', () => {
+      els.cloudOnboardingBackdrop.classList.add('hidden');
+    });
+
+    els.downloadPortableBtn.addEventListener('click', async () => {
+      const html = await CrypsyCloudSync.buildSelfContainedHtmlInBrowser();
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Crypsy-Portable.html';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // Composer expand & auto-resize
+    els.composerDescription.addEventListener('focus', () => {
+      expandComposer();
+    });
+
+    els.composerDescription.addEventListener('input', () => {
+      autoResizeTextarea(els.composerDescription);
+    });
+
+    els.composerPinBtn.addEventListener('click', () => {
+      state.composer.pinned = !state.composer.pinned;
+      els.composerPinBtn.classList.toggle('active', state.composer.pinned);
+    });
+
+    els.composerColorPicker.addEventListener('click', (e) => {
+      const dot = e.target.closest('.color-dot');
+      if (!dot) return;
+      const color = dot.getAttribute('data-color');
+      state.composer.color = color;
+      els.noteComposer.setAttribute('data-color', color);
+      updateColorDots(els.composerColorPicker, color);
+    });
+
+    // Composer Tag Popover
+    const toggleComposerTag = (tag) => {
+      if (state.composer.tags.includes(tag)) {
+        state.composer.tags = state.composer.tags.filter((t) => t !== tag);
+      } else {
+        state.composer.tags.push(tag);
+      }
+      renderComposerTags();
+      renderSidebar();
+      renderTagPopoverOptions(
+        els.composerTagOptions,
+        els.composerTagSearch.value,
+        state.composer.tags,
+        toggleComposerTag
+      );
+    };
+
+    els.composerTagBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isHidden = els.composerTagPopover.classList.contains('hidden');
+      if (isHidden) {
+        els.composerTagSearch.value = '';
+        renderTagPopoverOptions(
+          els.composerTagOptions,
+          '',
+          state.composer.tags,
+          toggleComposerTag
+        );
+        els.composerTagPopover.classList.remove('hidden');
+        els.composerTagSearch.focus();
+      } else {
+        els.composerTagPopover.classList.add('hidden');
+      }
+    });
+
+    els.composerTagSearch.addEventListener('input', () => {
+      renderTagPopoverOptions(
+        els.composerTagOptions,
+        els.composerTagSearch.value,
+        state.composer.tags,
+        toggleComposerTag
+      );
+    });
+
+    els.composerTagsRow.addEventListener('click', (e) => {
+      const rmBtn = e.target.closest('[data-remove-composer-tag]');
+      if (!rmBtn) return;
+      const tag = rmBtn.getAttribute('data-remove-composer-tag');
+      state.composer.tags = state.composer.tags.filter((t) => t !== tag);
+      renderComposerTags();
+    });
+
+    els.composerSaveBtn.addEventListener('click', () => {
+      saveComposerNote();
+    });
+
+    els.composerCancelBtn.addEventListener('click', () => {
+      resetComposer();
+    });
+
+    // Click outside composer to auto-save
+    document.addEventListener('click', (e) => {
+      if (state.composer.expanded && !els.noteComposer.contains(e.target)) {
+        saveComposerNote();
+      }
+      if (!els.composerTagPopover.contains(e.target) && e.target !== els.composerTagBtn) {
+        els.composerTagPopover.classList.add('hidden');
+      }
+      if (!els.editModalTagPopover.contains(e.target) && e.target !== els.editModalTagBtn) {
+        els.editModalTagPopover.classList.add('hidden');
+      }
+    });
+
+    // Card interactions
+    els.notesWorkspace.addEventListener('click', async (e) => {
+      const pinBtn = e.target.closest('[data-toggle-pin]');
+      if (pinBtn) {
+        e.stopPropagation();
+        const id = pinBtn.getAttribute('data-toggle-pin');
+        const note = state.notes.find((n) => n.id === id);
+        if (note) {
+          note.pinned = !note.pinned;
+          note.updatedAt = Date.now();
+          await persistEncryptedVault();
+          renderAll();
+        }
+        return;
+      }
+
+      const deleteBtn = e.target.closest('[data-delete-note]');
+      if (deleteBtn) {
+        e.stopPropagation();
+        const id = deleteBtn.getAttribute('data-delete-note');
+        state.notes = state.notes.filter((n) => n.id !== id);
+        await persistEncryptedVault();
+        renderAll();
+        return;
+      }
+
+      const tagChip = e.target.closest('[data-filter-tag]');
+      if (tagChip) {
+        e.stopPropagation();
+        const tag = tagChip.getAttribute('data-filter-tag');
+        state.activeFilter = { type: 'tag', tag };
+        renderAll();
+        return;
+      }
+
+      const card = e.target.closest('.note-card');
+      if (card) {
+        openEditModal(card.getAttribute('data-note-id'));
+      }
+    });
+
+    // Edit Modal interactions
+    els.editModalDescription.addEventListener('input', () => {
+      autoResizeTextarea(els.editModalDescription);
+    });
+
+    els.editModalPinBtn.addEventListener('click', () => {
+      if (!state.editingDraft) return;
+      state.editingDraft.pinned = !state.editingDraft.pinned;
+      els.editModalPinBtn.classList.toggle('active', state.editingDraft.pinned);
+    });
+
+    els.editModalColorPicker.addEventListener('click', (e) => {
+      const dot = e.target.closest('.color-dot');
+      if (!dot || !state.editingDraft) return;
+      const color = dot.getAttribute('data-color');
+      state.editingDraft.color = color;
+      els.editModalCard.setAttribute('data-color', color);
+      updateColorDots(els.editModalColorPicker, color);
+    });
+
+    const toggleModalTag = (tag) => {
+      if (!state.editingDraft) return;
+      if (state.editingDraft.tags.includes(tag)) {
+        state.editingDraft.tags = state.editingDraft.tags.filter((t) => t !== tag);
+      } else {
+        state.editingDraft.tags.push(tag);
+      }
+      renderEditModalTags();
+      renderSidebar();
+      renderTagPopoverOptions(
+        els.editModalTagOptions,
+        els.editModalTagSearch.value,
+        state.editingDraft.tags,
+        toggleModalTag
+      );
+    };
+
+    els.editModalTagBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!state.editingDraft) return;
+      const isHidden = els.editModalTagPopover.classList.contains('hidden');
+      if (isHidden) {
+        els.editModalTagSearch.value = '';
+        renderTagPopoverOptions(
+          els.editModalTagOptions,
+          '',
+          state.editingDraft.tags,
+          toggleModalTag
+        );
+        els.editModalTagPopover.classList.remove('hidden');
+        els.editModalTagSearch.focus();
+      } else {
+        els.editModalTagPopover.classList.add('hidden');
+      }
+    });
+
+    els.editModalTagSearch.addEventListener('input', () => {
+      if (!state.editingDraft) return;
+      renderTagPopoverOptions(
+        els.editModalTagOptions,
+        els.editModalTagSearch.value,
+        state.editingDraft.tags,
+        toggleModalTag
+      );
+    });
+
+    els.editModalTagsRow.addEventListener('click', (e) => {
+      const rmBtn = e.target.closest('[data-remove-modal-tag]');
+      if (!rmBtn || !state.editingDraft) return;
+      const tag = rmBtn.getAttribute('data-remove-modal-tag');
+      state.editingDraft.tags = state.editingDraft.tags.filter((t) => t !== tag);
+      renderEditModalTags();
+    });
+
+    els.editModalDeleteBtn.addEventListener('click', async () => {
+      if (!state.editingNoteId) return;
+      state.notes = state.notes.filter((n) => n.id !== state.editingNoteId);
+      state.editingNoteId = null;
+      state.editingDraft = null;
+      els.editModalBackdrop.classList.add('hidden');
+      await persistEncryptedVault();
+      renderAll();
+    });
+
+    els.editModalSaveBtn.addEventListener('click', () => {
+      saveAndCloseEditModal();
+    });
+
+    els.editModalBackdrop.addEventListener('click', (e) => {
+      if (e.target === els.editModalBackdrop) {
+        saveAndCloseEditModal();
+      }
+    });
+
+    // Vault Inspector Modal
+    const openVaultModal = () => {
+      updateVaultInspectorUI();
+      els.vaultModalBackdrop.classList.remove('hidden');
+    };
+    els.encryptionBadge.addEventListener('click', openVaultModal);
+    els.vaultBtn.addEventListener('click', openVaultModal);
+
+    els.closeVaultModalBtn.addEventListener('click', () => {
+      els.vaultModalBackdrop.classList.add('hidden');
+    });
+
+    els.vaultModalBackdrop.addEventListener('click', (e) => {
+      if (e.target === els.vaultModalBackdrop) {
+        els.vaultModalBackdrop.classList.add('hidden');
+      }
+    });
+
+    els.updatePassphraseBtn.addEventListener('click', async () => {
+      const nextPass = els.vaultPassphraseInput.value.trim();
+      if (!nextPass) return;
+      state.passphrase = nextPass;
+      els.vaultPassphraseInput.value = '';
+      await persistEncryptedVault();
+    });
+
+    els.lockVaultNowBtn.addEventListener('click', () => {
+      els.vaultModalBackdrop.classList.add('hidden');
+      els.unlockErrorMsg.classList.add('hidden');
+      els.unlockPassphraseInput.value = '';
+      els.lockScreenOverlay.classList.remove('hidden');
+      els.unlockPassphraseInput.focus();
+    });
+
+    els.unlockVaultForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const attempt = els.unlockPassphraseInput.value;
+      try {
+        const storedRaw = localStorage.getItem(STORAGE_KEY_VAULT);
+        const envelope = JSON.parse(storedRaw);
+        const decrypted = await CrypsyCrypto.decryptPayload(envelope, attempt);
+        state.passphrase = attempt;
+        state.notes = decrypted.notes || [];
+        state.tags = decrypted.tags || [];
+        els.lockScreenOverlay.classList.add('hidden');
+        els.unlockErrorMsg.classList.add('hidden');
+        renderAll();
+      } catch (err) {
+        els.unlockErrorMsg.classList.remove('hidden');
+      }
+    });
+
+    els.exportEncryptedBtn.addEventListener('click', () => {
+      if (!state.lastEncryptedEnvelope) return;
+      const blob = new Blob(
+        [JSON.stringify(state.lastEncryptedEnvelope, null, 2)],
+        { type: 'application/json' }
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `crypsy-vault-${new Date().toISOString().slice(0, 10)}.crypsy.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    els.importEncryptedInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const envelope = JSON.parse(text);
+        const ok = await tryLoadEnvelope(envelope);
+        if (ok && CrypsyCloudSync.isConnected()) {
+          await CrypsyCloudSync.writeVaultToCloudFolder(envelope);
+        }
+        els.vaultModalBackdrop.classList.add('hidden');
+      } catch (err) {
+        alert('Invalid .crypsy vault file.');
+      } finally {
+        els.importEncryptedInput.value = '';
+      }
+    });
+
+    // Global keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (!els.editModalBackdrop.classList.contains('hidden')) {
+          saveAndCloseEditModal();
+        } else if (!els.cloudOnboardingBackdrop.classList.contains('hidden')) {
+          els.cloudOnboardingBackdrop.classList.add('hidden');
+        } else if (!els.vaultModalBackdrop.classList.contains('hidden')) {
+          els.vaultModalBackdrop.classList.add('hidden');
+        } else if (state.composer.expanded) {
+          saveComposerNote();
+        }
+      }
+
+      const tag = document.activeElement ? document.activeElement.tagName : '';
+      const isTyping = tag === 'INPUT' || tag === 'TEXTAREA';
+      if (
+        (e.key === '/' && !isTyping) ||
+        ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')
+      ) {
+        e.preventDefault();
+        els.searchInput.focus();
+      }
+    });
+  }
+
+  // Boot
+  bindEvents();
+  initVault();
+})();
+
+</script>
+</body>
+</html>

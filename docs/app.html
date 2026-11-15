@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crypsy — Transparently Encrypted Notes</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Top Navigation Header -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <button id="sidebarToggleBtn" class="icon-btn" title="Toggle sidebar" aria-label="Toggle sidebar">
+        <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        </div>
+        <span class="brand-name">Crypsy</span>
+        <span id="appVersionBadge" class="version-badge" title="Crypsy Note v1.0.0 — First Public Release">v1.0.0</span>
+        <span id="encryptionBadge" class="crypto-badge" title="Click to inspect encrypted cloud payload or manage vault key">
+          <span class="status-dot"></span>
+          AES-256-GCM
+        </span>
+      </div>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="search-container">
+      <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input
+        type="text"
+        id="searchInput"
+        placeholder="Search notes by title, description, or #tag... (Press /)"
+        autocomplete="off"
+      />
+      <button id="clearSearchBtn" class="icon-btn search-clear hidden" title="Clear search" aria-label="Clear search">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Right Actions: Cloud Setup, View Mode, Vault Inspector, Theme -->
+    <div class="topbar-right">
+      <button id="cloudSetupBtn" class="cloud-pill-btn" title="Connect or manage synced cloud provider folder">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+        </svg>
+        <span id="cloudSetupBtnLabel">Setup Cloud Folder</span>
+      </button>
+
+      <button id="viewToggleBtn" class="icon-btn" title="Switch to List view" aria-label="Toggle Card or List view">
+        <svg id="viewIconList" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <rect x="3" y="4" width="18" height="6" rx="1"></rect>
+          <rect x="3" y="14" width="18" height="6" rx="1"></rect>
+        </svg>
+        <svg id="viewIconGrid" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+          <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+          <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+          <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+        </svg>
+      </button>
+
+      <button id="vaultBtn" class="icon-btn" title="Cloud Ciphertext Inspector & Vault Lock" aria-label="Encryption Inspector">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+        </svg>
+      </button>
+
+      <button id="themeToggleBtn" class="icon-btn" title="Toggle Dark/Light theme" aria-label="Toggle theme">
+        <svg id="themeIconSun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Reconnect Permission Banner (Shown when browser restarts with a remembered cloud folder) -->
+  <div id="reconnectCloudBanner" class="reconnect-banner hidden">
+    <div class="reconnect-banner-text">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+      </svg>
+      <span id="reconnectBannerMsg">Cloud folder linked. Click to resume live auto-sync with your cloud drive.</span>
+    </div>
+    <div class="reconnect-banner-actions">
+      <button id="resumeCloudSyncBtn" class="btn-primary">Resume Cloud Sync</button>
+      <button id="changeCloudFolderBtn" class="btn-ghost">Change Folder</button>
+    </div>
+  </div>
+
+  <!-- Main Layout -->
+  <div class="app-layout">
+    <!-- Sidebar Navigation -->
+    <aside id="sidebar" class="sidebar">
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-filter-type="all">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M9 18h6"></path>
+            <path d="M10 22h4"></path>
+            <path d="M12 2a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2z"></path>
+          </svg>
+          <span class="nav-label">All Notes</span>
+          <span id="countAll" class="nav-count">0</span>
+        </button>
+
+        <button class="nav-item" data-filter-type="pinned">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M12 17v5"></path>
+            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>
+          </svg>
+          <span class="nav-label">Pinned</span>
+          <span id="countPinned" class="nav-count">0</span>
+        </button>
+
+        <div class="sidebar-section-header">
+          <span>TAGS</span>
+        </div>
+
+        <div id="sidebarTagsList" class="sidebar-tags-list"></div>
+
+        <form id="newTagForm" class="new-tag-form">
+          <input
+            type="text"
+            id="newTagInput"
+            placeholder="+ Create new tag..."
+            maxlength="24"
+            autocomplete="off"
+          />
+        </form>
+      </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Quick Note Composer (Google Keep style) -->
+      <section class="composer-wrapper">
+        <div id="noteComposer" class="note-composer" data-color="default">
+          <div id="composerHeader" class="composer-header hidden">
+            <input
+              type="text"
+              id="composerTitle"
+              class="composer-title-input"
+              placeholder="Title"
+              autocomplete="off"
+            />
+            <button
+              type="button"
+              id="composerPinBtn"
+              class="icon-btn pin-btn"
+              title="Pin note"
+              aria-label="Pin note"
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M12 17v5"></path>
+                <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>
+              </svg>
+            </button>
+          </div>
+
+          <textarea
+            id="composerDescription"
+            class="composer-desc-input"
+            placeholder="Take an encrypted note..."
+            rows="1"
+          ></textarea>
+
+          <div id="composerTagsRow" class="note-tags-row hidden"></div>
+
+          <div id="composerFooter" class="composer-footer hidden">
+            <div class="composer-tools">
+              <div class="popover-anchor">
+                <button type="button" id="composerTagBtn" class="tool-btn" title="Add tags">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                    <line x1="7" y1="7" x2="7.01" y2="7"></line>
+                  </svg>
+                  <span>Tags</span>
+                </button>
+                <div id="composerTagPopover" class="popover-menu hidden">
+                  <div class="popover-title">Add or create tag</div>
+                  <input type="text" id="composerTagSearch" class="popover-input" placeholder="Enter tag name..." autocomplete="off" />
+                  <div id="composerTagOptions" class="popover-options"></div>
+                </div>
+              </div>
+
+              <div class="color-picker" id="composerColorPicker" aria-label="Note color">
+                <button type="button" class="color-dot active" data-color="default" title="Default"></button>
+                <button type="button" class="color-dot" data-color="coral" title="Coral"></button>
+                <button type="button" class="color-dot" data-color="amber" title="Amber"></button>
+                <button type="button" class="color-dot" data-color="sage" title="Sage"></button>
+                <button type="button" class="color-dot" data-color="teal" title="Teal"></button>
+                <button type="button" class="color-dot" data-color="cobalt" title="Cobalt"></button>
+                <button type="button" class="color-dot" data-color="plum" title="Plum"></button>
+              </div>
+            </div>
+
+            <div class="composer-actions">
+              <button type="button" id="composerCancelBtn" class="btn-ghost">Close</button>
+              <button type="button" id="composerSaveBtn" class="btn-primary">Add Note</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Active Filter Banner -->
+      <div id="activeFilterBanner" class="active-filter-banner hidden">
+        <span id="activeFilterText"></span>
+        <button id="resetFilterBtn" class="btn-link">Show all notes</button>
+      </div>
+
+      <!-- Notes Container (switches between .view-grid and .view-list) -->
+      <div id="notesWorkspace" class="notes-workspace view-grid">
+        <section id="pinnedSection" class="notes-section hidden">
+          <h2 class="section-label">PINNED</h2>
+          <div id="pinnedGrid" class="notes-collection"></div>
+        </section>
+
+        <section id="othersSection" class="notes-section hidden">
+          <h2 id="othersSectionLabel" class="section-label">OTHERS</h2>
+          <div id="othersGrid" class="notes-collection"></div>
+        </section>
+
+        <div id="emptyState" class="empty-state hidden">
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <h3 id="emptyStateTitle">No encrypted notes found</h3>
+          <p id="emptyStateSubtitle">Create a note above or try adjusting your search or tag filter.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Edit Note Modal -->
+  <div id="editModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div id="editModalCard" class="modal-card note-modal" data-color="default">
+      <div class="composer-header">
+        <input
+          type="text"
+          id="editModalTitle"
+          class="composer-title-input"
+          placeholder="Title"
+          autocomplete="off"
+        />
+        <button
+          type="button"
+          id="editModalPinBtn"
+          class="icon-btn pin-btn"
+          title="Pin or unpin note"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M12 17v5"></path>
+            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>
+          </svg>
+        </button>
+      </div>
+
+      <textarea
+        id="editModalDescription"
+        class="composer-desc-input modal-desc-input"
+        placeholder="Note description..."
+        rows="5"
+      ></textarea>
+
+      <div id="editModalTagsRow" class="note-tags-row"></div>
+
+      <div class="modal-meta">
+        <span id="editModalTimestamp"></span>
+      </div>
+
+      <div class="composer-footer">
+        <div class="composer-tools">
+          <div class="popover-anchor">
+            <button type="button" id="editModalTagBtn" class="tool-btn" title="Manage tags">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                <line x1="7" y1="7" x2="7.01" y2="7"></line>
+              </svg>
+              <span>Tags</span>
+            </button>
+            <div id="editModalTagPopover" class="popover-menu hidden">
+              <div class="popover-title">Toggle or create tag</div>
+              <input type="text" id="editModalTagSearch" class="popover-input" placeholder="Enter tag name..." autocomplete="off" />
+              <div id="editModalTagOptions" class="popover-options"></div>
+            </div>
+          </div>
+
+          <div class="color-picker" id="editModalColorPicker">
+            <button type="button" class="color-dot" data-color="default" title="Default"></button>
+            <button type="button" class="color-dot" data-color="coral" title="Coral"></button>
+            <button type="button" class="color-dot" data-color="amber" title="Amber"></button>
+            <button type="button" class="color-dot" data-color="sage" title="Sage"></button>
+            <button type="button" class="color-dot" data-color="teal" title="Teal"></button>
+            <button type="button" class="color-dot" data-color="cobalt" title="Cobalt"></button>
+            <button type="button" class="color-dot" data-color="plum" title="Plum"></button>
+          </div>
+
+          <button type="button" id="editModalDeleteBtn" class="icon-btn danger-btn" title="Delete note">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="composer-actions">
+          <button type="button" id="editModalSaveBtn" class="btn-primary">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cloud Folder Onboarding & Provisioning Wizard Modal -->
+  <div id="cloudOnboardingBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card onboarding-modal">
+      <div class="vault-modal-header">
+        <div>
+          <span class="onboarding-eyebrow">BYOC — BRING YOUR OWN CLOUD</span>
+          <h3>Place Crypsy in Your Cloud Drive</h3>
+          <p class="vault-subtitle">
+            Walk through placing the encrypted vault and portable app inside your synced cloud folder—zero servers or API keys needed.
+          </p>
+        </div>
+        <button id="closeOnboardingBtn" class="icon-btn" aria-label="Close wizard">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Step Indicator -->
+      <div class="wizard-steps">
+        <div class="wizard-step active" data-step-indicator="1">
+          <span class="step-num">1</span>
+          <span>Choose Provider</span>
+        </div>
+        <div class="wizard-step-line"></div>
+        <div class="wizard-step" data-step-indicator="2">
+          <span class="step-num">2</span>
+          <span>Place Files in Cloud</span>
+        </div>
+        <div class="wizard-step-line"></div>
+        <div class="wizard-step" data-step-indicator="3">
+          <span class="step-num">3</span>
+          <span>Live Sync Active</span>
+        </div>
+      </div>
+
+      <!-- STEP 1: Select Cloud Provider -->
+      <div id="wizardStep1" class="wizard-pane">
+        <p class="wizard-instruction">
+          Which cloud storage client do you have installed on this device?
+        </p>
+        <div class="provider-grid" id="providerSelectionGrid">
+          <button type="button" class="provider-card active" data-provider="onedrive">
+            <div class="provider-title">Microsoft OneDrive</div>
+            <div class="provider-sub">Windows &amp; macOS built-in sync</div>
+          </button>
+          <button type="button" class="provider-card" data-provider="gdrive">
+            <div class="provider-title">Google Drive</div>
+            <div class="provider-sub">Google Drive for Desktop</div>
+          </button>
+          <button type="button" class="provider-card" data-provider="dropbox">
+            <div class="provider-title">Dropbox</div>
+            <div class="provider-sub">Dropbox Desktop folder</div>
+          </button>
+          <button type="button" class="provider-card" data-provider="icloud">
+            <div class="provider-title">iCloud Drive</div>
+            <div class="provider-sub">Apple iCloud Drive folder</div>
+          </button>
+          <button type="button" class="provider-card" data-provider="custom">
+            <div class="provider-title">Nextcloud / Syncthing / Custom</div>
+            <div class="provider-sub">Any synced folder or USB drive</div>
+          </button>
+        </div>
+
+        <div class="cli-installer-callout">
+          <div>
+            <strong>Prefer a 1-click native installer?</strong>
+            <span>Run <code>.\install.ps1</code> (Windows) or <code>./install.sh</code> (macOS/Linux) in the project folder to auto-detect your cloud drive and create shortcuts.</span>
+          </div>
+        </div>
+
+        <div class="wizard-footer">
+          <button type="button" id="downloadPortableBtn" class="btn-ghost">
+            Download Portable Crypsy.html
+          </button>
+          <button type="button" id="wizardToStep2Btn" class="btn-primary">
+            Continue &rarr;
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 2: Locate & Provision Cloud Folder -->
+      <div id="wizardStep2" class="wizard-pane hidden">
+        <div class="path-guidance-box">
+          <div class="path-guidance-header">
+            <span id="selectedProviderTitle">Typical OneDrive Location on Your OS:</span>
+            <button type="button" id="copyPathHintBtn" class="btn-link">Copy Path</button>
+          </div>
+          <code id="osPathHintCode" class="path-code">%UserProfile%\OneDrive\Crypsy</code>
+          <p id="folderPickerHintText" class="path-hint-sub">
+            When the folder dialog opens, select your cloud folder and Crypsy will place the encrypted vault and portable app inside it.
+          </p>
+        </div>
+
+        <div class="provision-options">
+          <label class="checkbox-row">
+            <input type="checkbox" id="createCrypsySubfolderCb" checked />
+            <div>
+              <strong>Create a dedicated <code>Crypsy/</code> subfolder</strong>
+              <p>Keeps your encrypted vault and portable app neatly organized inside your cloud drive.</p>
+            </div>
+          </label>
+
+          <label class="checkbox-row">
+            <input type="checkbox" id="provisionPortableHtmlCb" checked />
+            <div>
+              <strong>Copy portable <code>Crypsy-Portable.html</code> into cloud folder</strong>
+              <p>Allows you to open Crypsy directly from your cloud folder on any other synced computer without installing anything.</p>
+            </div>
+          </label>
+        </div>
+
+        <p id="wizardStep2Error" class="unlock-error hidden"></p>
+
+        <div class="wizard-footer">
+          <button type="button" id="wizardBackToStep1Btn" class="btn-ghost">&larr; Back</button>
+          <button type="button" id="pickAndProvisionBtn" class="btn-primary">
+            Select Cloud Folder &amp; Place Files
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 3: Connected & Provisioned -->
+      <div id="wizardStep3" class="wizard-pane hidden">
+        <div class="success-banner">
+          <div class="success-icon">&#10003;</div>
+          <div>
+            <h4 id="connectedProviderHeading">Connected to Cloud Folder</h4>
+            <p id="connectedFolderDetails">Live AES-256-GCM auto-sync is active.</p>
+          </div>
+        </div>
+
+        <div class="provisioned-files-list">
+          <div class="provisioned-file-item">
+            <code>vault.crypsy.json</code>
+            <span class="file-badge">Encrypted Vault (Auto-synced on every edit)</span>
+          </div>
+          <div class="provisioned-file-item">
+            <code>Crypsy-Portable.html</code>
+            <span class="file-badge">Self-Contained App for Other Devices</span>
+          </div>
+          <div class="provisioned-file-item">
+            <code>README-CRYPSY.txt</code>
+            <span class="file-badge">Recovery &amp; Usage Instructions</span>
+          </div>
+        </div>
+
+        <div class="wizard-footer">
+          <button type="button" id="unlinkCloudFolderBtn" class="btn-ghost danger-text">
+            Unlink Cloud Folder
+          </button>
+          <div style="display:flex;gap:8px;">
+            <button type="button" id="reprovisionAssetsBtn" class="btn-ghost">
+              Re-write Portable Files
+            </button>
+            <button type="button" id="finishOnboardingBtn" class="btn-primary">
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cloud Ciphertext Inspector & Vault Modal -->
+  <div id="vaultModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card vault-modal">
+      <div class="vault-modal-header">
+        <div>
+          <h3>Transparent Encryption &amp; Cloud Payload Inspector</h3>
+          <p class="vault-subtitle">
+            Notes are decrypted in memory on your device and stored as AES-256-GCM ciphertext blobs.
+          </p>
+        </div>
+        <button id="closeVaultModalBtn" class="icon-btn" aria-label="Close modal">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="vault-controls">
+        <label for="vaultPassphraseInput" class="vault-label">Vault Passphrase (PBKDF2-SHA256 Key Derivation)</label>
+        <div class="vault-pass-row">
+          <input
+            type="password"
+            id="vaultPassphraseInput"
+            class="vault-input"
+            placeholder="Enter custom vault passphrase..."
+          />
+          <button id="updatePassphraseBtn" class="btn-primary">Re-key &amp; Encrypt</button>
+          <button id="lockVaultNowBtn" class="btn-ghost">Lock Screen</button>
+        </div>
+      </div>
+
+      <div class="vault-inspector">
+        <div class="vault-inspector-header">
+          <span>What Cloud Providers See (Encrypted Envelope)</span>
+          <div style="display:flex;gap:12px;">
+            <label class="btn-link" style="cursor:pointer;">
+              Import .crypsy File
+              <input type="file" id="importEncryptedInput" accept=".json,.crypsy" class="hidden" />
+            </label>
+            <button id="exportEncryptedBtn" class="btn-link">Download Encrypted .crypsy File</button>
+          </div>
+        </div>
+        <pre id="ciphertextPreview" class="ciphertext-preview"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Locked Vault Overlay -->
+  <div id="lockScreenOverlay" class="lock-overlay hidden">
+    <div class="lock-card">
+      <div class="lock-icon">
+        <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>
+      <h2>Crypsy Vault Locked</h2>
+      <p>Your notes are encrypted with AES-256-GCM. Enter your vault passphrase to decrypt locally.</p>
+      <form id="unlockVaultForm" class="unlock-form">
+        <input
+          type="password"
+          id="unlockPassphraseInput"
+          class="vault-input"
+          placeholder="Vault passphrase..."
+          required
+        />
+        <p id="unlockErrorMsg" class="unlock-error hidden">Incorrect passphrase — AES-GCM authentication tag verification failed.</p>
+        <button type="submit" class="btn-primary unlock-btn">Decrypt &amp; Unlock</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="crypto.js"></script>
+  <script src="cloud-sync.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

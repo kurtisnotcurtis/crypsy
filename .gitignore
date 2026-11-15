@@ -1,6 +1,6 @@
 node_modules/
 dist/
-Crypsy-Portable.html
+/Crypsy-Portable.html
 *.crypsy.json
 .DS_Store
 Thumbs.db
