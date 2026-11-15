@@ -1,4 +1,4 @@
-# <img src="./logo.svg" width="28" height="28" align="top" alt="Crypsy logo" /> Crypsy
+# Crypsy <img src="./logo.svg" width="28" height="28" align="top" alt="Crypsy logo" />
 
 A lightweight, Google Keep-style encrypted notes web application with transparent client-side **AES-256-GCM** encryption and **Bring Your Own Cloud (BYOC)** folder syncing.
 
