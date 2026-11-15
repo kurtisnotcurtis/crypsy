@@ -1,8 +1,6 @@
-# Crypsy (`v1.0.0`)
+# Crypsy
 
 A lightweight, Google Keep-style encrypted notes web application with transparent client-side **AES-256-GCM** encryption and **Bring Your Own Cloud (BYOC)** folder syncing.
-
-> **Version `1.0.0` (First Public Release)** — See [`CHANGELOG.md`](./CHANGELOG.md) for the milestone history from the initial 2019 prototype to `1.0.0`.
 
 ## Core Features
 
