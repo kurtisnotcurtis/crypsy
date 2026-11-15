@@ -382,7 +382,8 @@ const CrypsyCloudSync = (() => {
    */
   async function buildSelfContainedHtmlInBrowser() {
     try {
-      const [cssRes, cryptoRes, syncRes, appRes] = await Promise.all([
+      const [htmlRes, cssRes, cryptoRes, syncRes, appRes] = await Promise.all([
+        fetch(window.location.href).then((r) => (r.ok ? r.text() : '')),
         fetch('styles.css').then((r) => (r.ok ? r.text() : '')),
         fetch('crypto.js').then((r) => (r.ok ? r.text() : '')),
         fetch('cloud-sync.js').then((r) => (r.ok ? r.text() : '')),
@@ -390,23 +391,26 @@ const CrypsyCloudSync = (() => {
       ]);
 
       if (cssRes && cryptoRes && appRes) {
-        const docClone = document.documentElement.outerHTML;
-        return docClone
+        const baseHtml =
+          htmlRes && /<link\s+rel="stylesheet"\s+href="styles\.css"\s*\/?>/i.test(htmlRes)
+            ? htmlRes
+            : '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+        return baseHtml
           .replace(
             /<link\s+rel="stylesheet"\s+href="styles\.css"\s*\/?>/i,
-            `<style>\n${cssRes}\n</style>`
+            () => `<style>\n${cssRes}\n</` + 'style>'
           )
           .replace(
             /<script\s+src="crypto\.js"><\/script>/i,
-            `<script>\n${cryptoRes}\n</script>`
+            () => `<script>\n${cryptoRes}\n</` + 'script>'
           )
           .replace(
             /<script\s+src="cloud-sync\.js"><\/script>/i,
-            `<script>\n${syncRes}\n</script>`
+            () => `<script>\n${syncRes}\n</` + 'script>'
           )
           .replace(
             /<script\s+src="app\.js"><\/script>/i,
-            `<script>\n${appRes}\n</script>`
+            () => `<script>\n${appRes}\n</` + 'script>'
           );
       }
     } catch (e) {
