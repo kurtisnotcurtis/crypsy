@@ -11,7 +11,7 @@
  */
 
 (() => {
-  const APP_VERSION = '1.0.0';
+  const APP_VERSION = '1.1.0';
   const VAULT_SCHEMA_VERSION = 1;
   const STORAGE_KEY_VAULT = 'crypsy_encrypted_vault_v1';
   const STORAGE_KEY_PREFS = 'crypsy_ui_prefs_v1';
@@ -110,7 +110,6 @@
     viewIconGrid: document.getElementById('viewIconGrid'),
     themeToggleBtn: document.getElementById('themeToggleBtn'),
     encryptionBadge: document.getElementById('encryptionBadge'),
-    vaultBtn: document.getElementById('vaultBtn'),
 
     reconnectCloudBanner: document.getElementById('reconnectCloudBanner'),
     reconnectBannerMsg: document.getElementById('reconnectBannerMsg'),
@@ -195,7 +194,7 @@
 
     // Updates Modal
     appVersionBadge: document.getElementById('appVersionBadge'),
-    sidebarUpdatesBtn: document.getElementById('sidebarUpdatesBtn'),
+    topbarUpdatesBtn: document.getElementById('topbarUpdatesBtn'),
     updatesModalBackdrop: document.getElementById('updatesModalBackdrop'),
     closeUpdatesModalBtn: document.getElementById('closeUpdatesModalBtn'),
     installedVersionLabel: document.getElementById('installedVersionLabel'),
@@ -253,6 +252,58 @@
   function autoResizeTextarea(textarea) {
     textarea.style.height = 'auto';
     textarea.style.height = `${Math.max(textarea.scrollHeight, 32)}px`;
+  }
+
+  function handleListEnterKeydown(e) {
+    if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.isComposing) {
+      return;
+    }
+
+    const textarea = e.currentTarget;
+    const value = textarea.value;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+    const lineEndIdx = value.indexOf('\n', end);
+    const lineEnd = lineEndIdx === -1 ? value.length : lineEndIdx;
+    const lineBeforeCursor = value.slice(lineStart, start);
+    const lineAfterCursor = value.slice(end, lineEnd);
+
+    let nextPrefix = null;
+    let isEmptyItem = false;
+
+    const taskMatch = lineBeforeCursor.match(/^(\s*)([-*+])\s+\[([ xX])\]\s*(.*)$/);
+    if (taskMatch) {
+      isEmptyItem = taskMatch[4].trim() === '' && lineAfterCursor.trim() === '';
+      nextPrefix = `${taskMatch[1]}${taskMatch[2]} [ ] `;
+    } else {
+      const ulMatch = lineBeforeCursor.match(/^(\s*)([-*+•])\s+(.*)$/);
+      if (ulMatch) {
+        isEmptyItem = ulMatch[3].trim() === '' && lineAfterCursor.trim() === '';
+        nextPrefix = `${ulMatch[1]}${ulMatch[2]} `;
+      } else {
+        const olMatch = lineBeforeCursor.match(/^(\s*)(\d+)([.)])\s+(.*)$/);
+        if (olMatch) {
+          isEmptyItem = olMatch[4].trim() === '' && lineAfterCursor.trim() === '';
+          const nextNum = parseInt(olMatch[2], 10) + 1;
+          nextPrefix = `${olMatch[1]}${nextNum}${olMatch[3]} `;
+        }
+      }
+    }
+
+    if (nextPrefix === null) return;
+
+    e.preventDefault();
+    if (isEmptyItem) {
+      textarea.value = value.slice(0, lineStart) + value.slice(lineEnd);
+      textarea.selectionStart = textarea.selectionEnd = lineStart;
+    } else {
+      const insertion = `\n${nextPrefix}`;
+      textarea.value = value.slice(0, start) + insertion + value.slice(end);
+      const nextPos = start + insertion.length;
+      textarea.selectionStart = textarea.selectionEnd = nextPos;
+    }
+    autoResizeTextarea(textarea);
   }
 
   // Preferences
@@ -1308,6 +1359,7 @@
     els.composerDescription.addEventListener('input', () => {
       autoResizeTextarea(els.composerDescription);
     });
+    els.composerDescription.addEventListener('keydown', handleListEnterKeydown);
 
     els.composerPinBtn.addEventListener('click', () => {
       state.composer.pinned = !state.composer.pinned;
@@ -1450,6 +1502,7 @@
     els.editModalDescription.addEventListener('input', () => {
       autoResizeTextarea(els.editModalDescription);
     });
+    els.editModalDescription.addEventListener('keydown', handleListEnterKeydown);
 
     els.editModalPinBtn.addEventListener('click', () => {
       if (!state.editingDraft) return;
@@ -1546,7 +1599,6 @@
       els.vaultModalBackdrop.classList.remove('hidden');
     };
     els.encryptionBadge.addEventListener('click', openVaultModal);
-    els.vaultBtn.addEventListener('click', openVaultModal);
 
     els.closeVaultModalBtn.addEventListener('click', () => {
       els.vaultModalBackdrop.classList.add('hidden');
@@ -1637,8 +1689,8 @@
     if (els.appVersionBadge) {
       els.appVersionBadge.addEventListener('click', openUpdatesModal);
     }
-    if (els.sidebarUpdatesBtn) {
-      els.sidebarUpdatesBtn.addEventListener('click', openUpdatesModal);
+    if (els.topbarUpdatesBtn) {
+      els.topbarUpdatesBtn.addEventListener('click', openUpdatesModal);
     }
     if (els.closeUpdatesModalBtn) {
       els.closeUpdatesModalBtn.addEventListener('click', () => {

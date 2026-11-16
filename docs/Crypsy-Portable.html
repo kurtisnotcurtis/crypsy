@@ -1562,7 +1562,7 @@ mark.search-highlight {
           </svg>
         </div>
         <span class="brand-name">Crypsy</span>
-        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.0.0 — Click to check for updates">v1.0.0</button>
+        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.1.0 — Click to check for updates">v1.1.0</button>
         <span id="encryptionBadge" class="crypto-badge" title="Click to inspect encrypted cloud payload or manage vault key">
           <span class="status-dot"></span>
           AES-256-GCM
@@ -1590,7 +1590,7 @@ mark.search-highlight {
       </button>
     </div>
 
-    <!-- Right Actions: Cloud Setup, Last Updated, View Mode, Vault Inspector, Theme -->
+    <!-- Right Actions: Cloud Setup, Last Updated, Theme, View Mode, Updates -->
     <div class="topbar-right">
       <button id="cloudSetupBtn" class="cloud-pill-btn" title="Connect or manage synced cloud provider folder">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -1603,6 +1603,20 @@ mark.search-highlight {
         <span class="last-updated-dot"></span>
         <span id="lastUpdatedText">Updated just now</span>
       </span>
+
+      <button id="themeToggleBtn" class="icon-btn" title="Toggle Dark/Light theme" aria-label="Toggle theme">
+        <svg id="themeIconSun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+      </button>
 
       <button id="viewToggleBtn" class="icon-btn" title="Switch to List view" aria-label="Toggle Card or List view">
         <svg id="viewIconList" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -1617,23 +1631,10 @@ mark.search-highlight {
         </svg>
       </button>
 
-      <button id="vaultBtn" class="icon-btn" title="Cloud Ciphertext Inspector & Vault Lock" aria-label="Encryption Inspector">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-        </svg>
-      </button>
-
-      <button id="themeToggleBtn" class="icon-btn" title="Toggle Dark/Light theme" aria-label="Toggle theme">
-        <svg id="themeIconSun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <circle cx="12" cy="12" r="5"></circle>
-          <line x1="12" y1="1" x2="12" y2="3"></line>
-          <line x1="12" y1="21" x2="12" y2="23"></line>
-          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-          <line x1="1" y1="12" x2="3" y2="12"></line>
-          <line x1="21" y1="12" x2="23" y2="12"></line>
-          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+      <button id="topbarUpdatesBtn" class="icon-btn" title="Check for Updates & Releases" aria-label="Check for Updates">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
         </svg>
       </button>
     </div>
@@ -1714,17 +1715,6 @@ mark.search-highlight {
               <li><kbd>Esc</kbd> Save &amp; close</li>
             </ul>
           </div>
-
-          <div class="guide-block">
-            <div class="guide-title">Cloud Sync</div>
-            <p class="guide-text">
-              Save <code>Crypsy-Portable.html</code> in your cloud drive and click <strong>Link Sync</strong> to auto-save <code>vault.crypsy.json</code>.
-            </p>
-          </div>
-
-          <button type="button" id="sidebarUpdatesBtn" class="guide-update-btn">
-            Check for Updates
-          </button>
         </div>
       </nav>
     </aside>
@@ -2132,7 +2122,7 @@ mark.search-highlight {
         <div>
           <h3>Crypsy Updates &amp; Releases</h3>
           <p class="vault-subtitle">
-            Installed version: <strong id="installedVersionLabel">v1.0.0</strong>
+            Installed version: <strong id="installedVersionLabel">v1.1.0</strong>
           </p>
         </div>
         <button id="closeUpdatesModalBtn" class="icon-btn" aria-label="Close updates modal">
@@ -2268,7 +2258,7 @@ const CrypsyCrypto = (() => {
 
     return {
       version: 1,
-      appVersion: '1.0.0',
+      appVersion: '1.1.0',
       cipher: 'AES-256-GCM',
       kdf: 'PBKDF2-SHA256',
       iterations: PBKDF2_ITERATIONS,
@@ -2866,7 +2856,7 @@ const CrypsyCloudSync = (() => {
  */
 
 (() => {
-  const APP_VERSION = '1.0.0';
+  const APP_VERSION = '1.1.0';
   const VAULT_SCHEMA_VERSION = 1;
   const STORAGE_KEY_VAULT = 'crypsy_encrypted_vault_v1';
   const STORAGE_KEY_PREFS = 'crypsy_ui_prefs_v1';
@@ -2965,7 +2955,6 @@ const CrypsyCloudSync = (() => {
     viewIconGrid: document.getElementById('viewIconGrid'),
     themeToggleBtn: document.getElementById('themeToggleBtn'),
     encryptionBadge: document.getElementById('encryptionBadge'),
-    vaultBtn: document.getElementById('vaultBtn'),
 
     reconnectCloudBanner: document.getElementById('reconnectCloudBanner'),
     reconnectBannerMsg: document.getElementById('reconnectBannerMsg'),
@@ -3050,7 +3039,7 @@ const CrypsyCloudSync = (() => {
 
     // Updates Modal
     appVersionBadge: document.getElementById('appVersionBadge'),
-    sidebarUpdatesBtn: document.getElementById('sidebarUpdatesBtn'),
+    topbarUpdatesBtn: document.getElementById('topbarUpdatesBtn'),
     updatesModalBackdrop: document.getElementById('updatesModalBackdrop'),
     closeUpdatesModalBtn: document.getElementById('closeUpdatesModalBtn'),
     installedVersionLabel: document.getElementById('installedVersionLabel'),
@@ -3108,6 +3097,58 @@ const CrypsyCloudSync = (() => {
   function autoResizeTextarea(textarea) {
     textarea.style.height = 'auto';
     textarea.style.height = `${Math.max(textarea.scrollHeight, 32)}px`;
+  }
+
+  function handleListEnterKeydown(e) {
+    if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.isComposing) {
+      return;
+    }
+
+    const textarea = e.currentTarget;
+    const value = textarea.value;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+    const lineEndIdx = value.indexOf('\n', end);
+    const lineEnd = lineEndIdx === -1 ? value.length : lineEndIdx;
+    const lineBeforeCursor = value.slice(lineStart, start);
+    const lineAfterCursor = value.slice(end, lineEnd);
+
+    let nextPrefix = null;
+    let isEmptyItem = false;
+
+    const taskMatch = lineBeforeCursor.match(/^(\s*)([-*+])\s+\[([ xX])\]\s*(.*)$/);
+    if (taskMatch) {
+      isEmptyItem = taskMatch[4].trim() === '' && lineAfterCursor.trim() === '';
+      nextPrefix = `${taskMatch[1]}${taskMatch[2]} [ ] `;
+    } else {
+      const ulMatch = lineBeforeCursor.match(/^(\s*)([-*+•])\s+(.*)$/);
+      if (ulMatch) {
+        isEmptyItem = ulMatch[3].trim() === '' && lineAfterCursor.trim() === '';
+        nextPrefix = `${ulMatch[1]}${ulMatch[2]} `;
+      } else {
+        const olMatch = lineBeforeCursor.match(/^(\s*)(\d+)([.)])\s+(.*)$/);
+        if (olMatch) {
+          isEmptyItem = olMatch[4].trim() === '' && lineAfterCursor.trim() === '';
+          const nextNum = parseInt(olMatch[2], 10) + 1;
+          nextPrefix = `${olMatch[1]}${nextNum}${olMatch[3]} `;
+        }
+      }
+    }
+
+    if (nextPrefix === null) return;
+
+    e.preventDefault();
+    if (isEmptyItem) {
+      textarea.value = value.slice(0, lineStart) + value.slice(lineEnd);
+      textarea.selectionStart = textarea.selectionEnd = lineStart;
+    } else {
+      const insertion = `\n${nextPrefix}`;
+      textarea.value = value.slice(0, start) + insertion + value.slice(end);
+      const nextPos = start + insertion.length;
+      textarea.selectionStart = textarea.selectionEnd = nextPos;
+    }
+    autoResizeTextarea(textarea);
   }
 
   // Preferences
@@ -4163,6 +4204,7 @@ const CrypsyCloudSync = (() => {
     els.composerDescription.addEventListener('input', () => {
       autoResizeTextarea(els.composerDescription);
     });
+    els.composerDescription.addEventListener('keydown', handleListEnterKeydown);
 
     els.composerPinBtn.addEventListener('click', () => {
       state.composer.pinned = !state.composer.pinned;
@@ -4305,6 +4347,7 @@ const CrypsyCloudSync = (() => {
     els.editModalDescription.addEventListener('input', () => {
       autoResizeTextarea(els.editModalDescription);
     });
+    els.editModalDescription.addEventListener('keydown', handleListEnterKeydown);
 
     els.editModalPinBtn.addEventListener('click', () => {
       if (!state.editingDraft) return;
@@ -4401,7 +4444,6 @@ const CrypsyCloudSync = (() => {
       els.vaultModalBackdrop.classList.remove('hidden');
     };
     els.encryptionBadge.addEventListener('click', openVaultModal);
-    els.vaultBtn.addEventListener('click', openVaultModal);
 
     els.closeVaultModalBtn.addEventListener('click', () => {
       els.vaultModalBackdrop.classList.add('hidden');
@@ -4492,8 +4534,8 @@ const CrypsyCloudSync = (() => {
     if (els.appVersionBadge) {
       els.appVersionBadge.addEventListener('click', openUpdatesModal);
     }
-    if (els.sidebarUpdatesBtn) {
-      els.sidebarUpdatesBtn.addEventListener('click', openUpdatesModal);
+    if (els.topbarUpdatesBtn) {
+      els.topbarUpdatesBtn.addEventListener('click', openUpdatesModal);
     }
     if (els.closeUpdatesModalBtn) {
       els.closeUpdatesModalBtn.addEventListener('click', () => {

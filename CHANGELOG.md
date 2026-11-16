@@ -3,6 +3,11 @@
 All notable changes to **Crypsy Note** are documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-11-15
+### Added
+- **Smart List & Checkbox Continuation**: Pressing `Enter` inside a bullet list, numbered list, or task checkbox (`- [ ]` / `- [x]`) automatically continues the list (incrementing numbers and creating unchecked `[ ]` tasks), and pressing `Enter` on an empty list item exits the list.
+- **Topbar Polish**: Replaced the duplicate shield icon with a dedicated **Check for Updates** icon button and moved the theme toggle to the left of the view toggle.
+
 ## [1.0.0] - 2026-11-15 — First Public Release
 ### Added
 - **First Public Release (`v1.0.0`)**: Promoted Crypsy Note from experimental pre-release to `v1.0.0`.

@@ -24,7 +24,7 @@
           </svg>
         </div>
         <span class="brand-name">Crypsy</span>
-        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.0.0 — Click to check for updates">v1.0.0</button>
+        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.1.0 — Click to check for updates">v1.1.0</button>
         <span id="encryptionBadge" class="crypto-badge" title="Click to inspect encrypted cloud payload or manage vault key">
           <span class="status-dot"></span>
           AES-256-GCM
@@ -52,7 +52,7 @@
       </button>
     </div>
 
-    <!-- Right Actions: Cloud Setup, Last Updated, View Mode, Vault Inspector, Theme -->
+    <!-- Right Actions: Cloud Setup, Last Updated, Theme, View Mode, Updates -->
     <div class="topbar-right">
       <button id="cloudSetupBtn" class="cloud-pill-btn" title="Connect or manage synced cloud provider folder">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -65,6 +65,20 @@
         <span class="last-updated-dot"></span>
         <span id="lastUpdatedText">Updated just now</span>
       </span>
+
+      <button id="themeToggleBtn" class="icon-btn" title="Toggle Dark/Light theme" aria-label="Toggle theme">
+        <svg id="themeIconSun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+      </button>
 
       <button id="viewToggleBtn" class="icon-btn" title="Switch to List view" aria-label="Toggle Card or List view">
         <svg id="viewIconList" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -79,23 +93,10 @@
         </svg>
       </button>
 
-      <button id="vaultBtn" class="icon-btn" title="Cloud Ciphertext Inspector & Vault Lock" aria-label="Encryption Inspector">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-        </svg>
-      </button>
-
-      <button id="themeToggleBtn" class="icon-btn" title="Toggle Dark/Light theme" aria-label="Toggle theme">
-        <svg id="themeIconSun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <circle cx="12" cy="12" r="5"></circle>
-          <line x1="12" y1="1" x2="12" y2="3"></line>
-          <line x1="12" y1="21" x2="12" y2="23"></line>
-          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-          <line x1="1" y1="12" x2="3" y2="12"></line>
-          <line x1="21" y1="12" x2="23" y2="12"></line>
-          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+      <button id="topbarUpdatesBtn" class="icon-btn" title="Check for Updates & Releases" aria-label="Check for Updates">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
         </svg>
       </button>
     </div>
@@ -176,17 +177,6 @@
               <li><kbd>Esc</kbd> Save &amp; close</li>
             </ul>
           </div>
-
-          <div class="guide-block">
-            <div class="guide-title">Cloud Sync</div>
-            <p class="guide-text">
-              Save <code>Crypsy-Portable.html</code> in your cloud drive and click <strong>Link Sync</strong> to auto-save <code>vault.crypsy.json</code>.
-            </p>
-          </div>
-
-          <button type="button" id="sidebarUpdatesBtn" class="guide-update-btn">
-            Check for Updates
-          </button>
         </div>
       </nav>
     </aside>
@@ -594,7 +584,7 @@
         <div>
           <h3>Crypsy Updates &amp; Releases</h3>
           <p class="vault-subtitle">
-            Installed version: <strong id="installedVersionLabel">v1.0.0</strong>
+            Installed version: <strong id="installedVersionLabel">v1.1.0</strong>
           </p>
         </div>
         <button id="closeUpdatesModalBtn" class="icon-btn" aria-label="Close updates modal">
