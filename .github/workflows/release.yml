@@ -25,8 +25,11 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Install devDependencies
+        run: npm install --no-audit --no-fund
+
       - name: Build Crypsy-Portable.html
-        run: node install.js --build-only
+        run: npm run build
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

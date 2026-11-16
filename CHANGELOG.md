@@ -3,6 +3,10 @@
 All notable changes to **Crypsy Note** are documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-11-15
+### Changed
+- **TypeScript + esbuild Pipeline**: Migrated `crypto.js`, `cloud-sync.js`, and `app.js` to strict TypeScript modules under `src/` (`types.ts`, `crypto.ts`, `cloud-sync.ts`, `app.ts`) bundled via `esbuild` into `dist/app.bundle.js`, shrinking `Crypsy-Portable.html` from ~144 KB to ~107 KB.
+
 ## [1.1.1] - 2026-11-15
 ### Changed
 - Replaced the refresh icon on the **Check for Updates** topbar button with a gear icon.

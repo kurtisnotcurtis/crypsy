@@ -23,15 +23,13 @@ const ROOT_DIR = __dirname;
 const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8')).version || '1.0.0';
 
 /**
- * Bundles index.html + styles.css + crypto.js + cloud-sync.js + app.js
+ * Bundles index.html + styles.css + dist/app.bundle.js
  * into a single self-contained HTML string.
  */
 function buildPortableHtml() {
   const indexHtml = fs.readFileSync(path.join(ROOT_DIR, 'index.html'), 'utf8');
   const stylesCss = fs.readFileSync(path.join(ROOT_DIR, 'styles.css'), 'utf8');
-  const cryptoJs = fs.readFileSync(path.join(ROOT_DIR, 'crypto.js'), 'utf8');
-  const cloudSyncJs = fs.readFileSync(path.join(ROOT_DIR, 'cloud-sync.js'), 'utf8');
-  const appJs = fs.readFileSync(path.join(ROOT_DIR, 'app.js'), 'utf8');
+  const bundleJs = fs.readFileSync(path.join(ROOT_DIR, 'dist', 'app.bundle.js'), 'utf8');
 
   return indexHtml
     .replace(
@@ -39,16 +37,8 @@ function buildPortableHtml() {
       () => `<style>\n${stylesCss}\n</style>`
     )
     .replace(
-      /<script\s+src="crypto\.js"><\/script>/i,
-      () => `<script>\n${cryptoJs}\n</script>`
-    )
-    .replace(
-      /<script\s+src="cloud-sync\.js"><\/script>/i,
-      () => `<script>\n${cloudSyncJs}\n</script>`
-    )
-    .replace(
-      /<script\s+src="app\.js"><\/script>/i,
-      () => `<script>\n${appJs}\n</script>`
+      /<script\s+src="dist\/app\.bundle\.js"><\/script>/i,
+      () => `<script>\n${bundleJs}\n</script>`
     );
 }
 
