@@ -24,7 +24,7 @@
           </svg>
         </div>
         <span class="brand-name">Crypsy</span>
-        <span id="appVersionBadge" class="version-badge" title="Crypsy Note v1.0.0 — First Public Release">v1.0.0</span>
+        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.0.0 — Click to check for updates">v1.0.0</button>
         <span id="encryptionBadge" class="crypto-badge" title="Click to inspect encrypted cloud payload or manage vault key">
           <span class="status-dot"></span>
           AES-256-GCM
@@ -154,6 +154,40 @@
             autocomplete="off"
           />
         </form>
+
+        <div class="sidebar-section-header">
+          <span>QUICK GUIDE</span>
+        </div>
+
+        <div class="sidebar-guide">
+          <div class="guide-block">
+            <div class="guide-title">Markdown</div>
+            <ul class="guide-list">
+              <li><code>- [ ]</code> / <code>- [x]</code> Checkboxes</li>
+              <li><code>- item</code> or <code>* item</code> Bullet list</li>
+              <li><code>1. item</code> Numbered list</li>
+            </ul>
+          </div>
+
+          <div class="guide-block">
+            <div class="guide-title">Shortcuts</div>
+            <ul class="guide-list">
+              <li><kbd>/</kbd> or <kbd>Ctrl+K</kbd> Search</li>
+              <li><kbd>Esc</kbd> Save &amp; close</li>
+            </ul>
+          </div>
+
+          <div class="guide-block">
+            <div class="guide-title">Cloud Sync</div>
+            <p class="guide-text">
+              Save <code>Crypsy-Portable.html</code> in your cloud drive and click <strong>Link Sync</strong> to auto-save <code>vault.crypsy.json</code>.
+            </p>
+          </div>
+
+          <button type="button" id="sidebarUpdatesBtn" class="guide-update-btn">
+            Check for Updates
+          </button>
+        </div>
       </nav>
     </aside>
 
@@ -549,6 +583,52 @@
           </div>
         </div>
         <pre id="ciphertextPreview" class="ciphertext-preview"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Updates & Release Checker Modal -->
+  <div id="updatesModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card vault-modal updates-modal">
+      <div class="vault-modal-header">
+        <div>
+          <h3>Crypsy Updates &amp; Releases</h3>
+          <p class="vault-subtitle">
+            Installed version: <strong id="installedVersionLabel">v1.0.0</strong>
+          </p>
+        </div>
+        <button id="closeUpdatesModalBtn" class="icon-btn" aria-label="Close updates modal">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <label class="checkbox-row">
+        <input type="checkbox" id="autoCheckUpdatesCb" />
+        <div>
+          <strong>Auto-check GitHub Releases on startup (Opt-in)</strong>
+          <p>Disabled by default for zero network requests. When enabled, Crypsy checks <code>api.github.com</code> for newer releases.</p>
+        </div>
+      </label>
+
+      <div id="updateCheckStatus" class="update-status-box">
+        Click <strong>Check for Updates Now</strong> to query GitHub Releases.
+      </div>
+
+      <div class="wizard-footer">
+        <a
+          href="https://github.com/kurtisnotcurtis/crypsy/releases"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn-link"
+        >
+          View All Releases &rarr;
+        </a>
+        <button type="button" id="checkUpdatesNowBtn" class="btn-primary">
+          Check for Updates Now
+        </button>
       </div>
     </div>
   </div>

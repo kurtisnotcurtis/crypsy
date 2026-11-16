@@ -27,6 +27,7 @@
     activeFilter: { type: 'all', tag: null },
     viewMode: 'grid',
     theme: 'dark',
+    autoCheckUpdates: false,
     passphrase: DEFAULT_DEVICE_SECRET,
     lastEncryptedEnvelope: null,
     selectedProviderId: 'onedrive',
@@ -192,6 +193,16 @@
     exportEncryptedBtn: document.getElementById('exportEncryptedBtn'),
     importEncryptedInput: document.getElementById('importEncryptedInput'),
 
+    // Updates Modal
+    appVersionBadge: document.getElementById('appVersionBadge'),
+    sidebarUpdatesBtn: document.getElementById('sidebarUpdatesBtn'),
+    updatesModalBackdrop: document.getElementById('updatesModalBackdrop'),
+    closeUpdatesModalBtn: document.getElementById('closeUpdatesModalBtn'),
+    installedVersionLabel: document.getElementById('installedVersionLabel'),
+    autoCheckUpdatesCb: document.getElementById('autoCheckUpdatesCb'),
+    updateCheckStatus: document.getElementById('updateCheckStatus'),
+    checkUpdatesNowBtn: document.getElementById('checkUpdatesNowBtn'),
+
     lockScreenOverlay: document.getElementById('lockScreenOverlay'),
     unlockVaultForm: document.getElementById('unlockVaultForm'),
     unlockPassphraseInput: document.getElementById('unlockPassphraseInput'),
@@ -256,6 +267,9 @@
       if (prefs.theme === 'light' || prefs.theme === 'dark') {
         state.theme = prefs.theme;
       }
+      if (typeof prefs.autoCheckUpdates === 'boolean') {
+        state.autoCheckUpdates = prefs.autoCheckUpdates;
+      }
     } catch (e) {
       console.warn('Failed to load UI prefs:', e);
     }
@@ -267,8 +281,80 @@
       JSON.stringify({
         viewMode: state.viewMode,
         theme: state.theme,
+        autoCheckUpdates: state.autoCheckUpdates,
       })
     );
+  }
+
+  function compareSemver(a, b) {
+    const pa = String(a || '').replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+    const pb = String(b || '').replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(pa.length, pb.length, 3); i++) {
+      const na = pa[i] || 0;
+      const nb = pb[i] || 0;
+      if (na > nb) return 1;
+      if (na < nb) return -1;
+    }
+    return 0;
+  }
+
+  async function checkForUpdates(silent = false) {
+    if (!els.updateCheckStatus) return;
+    if (!silent) {
+      els.updateCheckStatus.className = 'update-status-box';
+      els.updateCheckStatus.textContent = 'Checking GitHub Releases...';
+    }
+
+    try {
+      const res = await fetch('https://api.github.com/repos/kurtisnotcurtis/crypsy/releases/latest', {
+        headers: { Accept: 'application/vnd.github+json' },
+      });
+      if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error('No published GitHub Releases found yet.');
+        }
+        throw new Error(`GitHub API returned ${res.status}`);
+      }
+
+      const release = await res.json();
+      const latestTag = release.tag_name || release.name || '';
+      const isNewer = compareSemver(latestTag, APP_VERSION) > 0;
+      const portableAsset = Array.isArray(release.assets)
+        ? release.assets.find((a) => a.name && a.name.toLowerCase().includes('portable'))
+        : null;
+      const downloadUrl =
+        (portableAsset && portableAsset.browser_download_url) ||
+        release.html_url ||
+        'https://github.com/kurtisnotcurtis/crypsy/releases/latest';
+
+      if (isNewer) {
+        if (els.appVersionBadge) {
+          els.appVersionBadge.classList.add('update-available');
+          els.appVersionBadge.textContent = `v${APP_VERSION} • Update`;
+          els.appVersionBadge.title = `Update available: ${latestTag}`;
+        }
+        els.updateCheckStatus.className = 'update-status-box has-update';
+        els.updateCheckStatus.innerHTML = `
+          <div><strong>Update available: ${escapeHtml(latestTag)}</strong> (installed: v${escapeHtml(APP_VERSION)})</div>
+          <div class="update-actions-row">
+            <a href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener noreferrer" class="btn-primary" style="text-decoration:none;">Download ${escapeHtml(latestTag)}</a>
+            <a href="${escapeHtml(release.html_url || downloadUrl)}" target="_blank" rel="noopener noreferrer" class="btn-link">Release Notes</a>
+          </div>
+        `;
+      } else {
+        if (els.appVersionBadge) {
+          els.appVersionBadge.classList.remove('update-available');
+          els.appVersionBadge.textContent = `v${APP_VERSION}`;
+        }
+        els.updateCheckStatus.className = 'update-status-box up-to-date';
+        els.updateCheckStatus.innerHTML = `You're up to date on <strong>v${escapeHtml(APP_VERSION)}</strong> (latest: ${escapeHtml(latestTag || `v${APP_VERSION}`)}).`;
+      }
+    } catch (err) {
+      if (!silent) {
+        els.updateCheckStatus.className = 'update-status-box error';
+        els.updateCheckStatus.textContent = `Could not check for updates: ${err.message || 'Network error'}`;
+      }
+    }
   }
 
   // Persistence & Cloud Sync
@@ -331,6 +417,16 @@
     updateCloudStatusUI(cloudState);
 
     setInterval(updateLastUpdatedUI, 30000);
+
+    if (els.autoCheckUpdatesCb) {
+      els.autoCheckUpdatesCb.checked = state.autoCheckUpdates;
+    }
+    if (els.installedVersionLabel) {
+      els.installedVersionLabel.textContent = `v${APP_VERSION}`;
+    }
+    if (state.autoCheckUpdates) {
+      checkForUpdates(true);
+    }
 
     if (cloudState.status === 'connected') {
       const cloudEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
@@ -1528,6 +1624,49 @@
       }
     });
 
+    // Updates Modal
+    const openUpdatesModal = () => {
+      if (els.autoCheckUpdatesCb) {
+        els.autoCheckUpdatesCb.checked = state.autoCheckUpdates;
+      }
+      if (els.installedVersionLabel) {
+        els.installedVersionLabel.textContent = `v${APP_VERSION}`;
+      }
+      els.updatesModalBackdrop.classList.remove('hidden');
+    };
+    if (els.appVersionBadge) {
+      els.appVersionBadge.addEventListener('click', openUpdatesModal);
+    }
+    if (els.sidebarUpdatesBtn) {
+      els.sidebarUpdatesBtn.addEventListener('click', openUpdatesModal);
+    }
+    if (els.closeUpdatesModalBtn) {
+      els.closeUpdatesModalBtn.addEventListener('click', () => {
+        els.updatesModalBackdrop.classList.add('hidden');
+      });
+    }
+    if (els.updatesModalBackdrop) {
+      els.updatesModalBackdrop.addEventListener('click', (e) => {
+        if (e.target === els.updatesModalBackdrop) {
+          els.updatesModalBackdrop.classList.add('hidden');
+        }
+      });
+    }
+    if (els.autoCheckUpdatesCb) {
+      els.autoCheckUpdatesCb.addEventListener('change', () => {
+        state.autoCheckUpdates = els.autoCheckUpdatesCb.checked;
+        savePreferences();
+        if (state.autoCheckUpdates) {
+          checkForUpdates(false);
+        }
+      });
+    }
+    if (els.checkUpdatesNowBtn) {
+      els.checkUpdatesNowBtn.addEventListener('click', () => {
+        checkForUpdates(false);
+      });
+    }
+
     // Global keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
@@ -1537,6 +1676,8 @@
           els.cloudOnboardingBackdrop.classList.add('hidden');
         } else if (!els.vaultModalBackdrop.classList.contains('hidden')) {
           els.vaultModalBackdrop.classList.add('hidden');
+        } else if (els.updatesModalBackdrop && !els.updatesModalBackdrop.classList.contains('hidden')) {
+          els.updatesModalBackdrop.classList.add('hidden');
         } else if (state.composer.expanded) {
           saveComposerNote();
         }

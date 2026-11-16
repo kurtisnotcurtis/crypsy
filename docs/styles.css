@@ -127,7 +127,20 @@ body {
   background: var(--bg-input);
   color: var(--text-secondary);
   border: 1px solid var(--border-subtle);
+  cursor: pointer;
   user-select: none;
+  transition: all 0.15s ease;
+}
+
+.version-badge:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.version-badge.update-available {
+  border-color: rgba(138, 180, 248, 0.55);
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 
 .crypto-badge {
@@ -353,6 +366,126 @@ body {
   border-style: solid;
   border-color: var(--accent);
   background: var(--bg-input);
+}
+
+/* Sidebar Quick Guide */
+.sidebar-guide {
+  margin: 4px 12px 0 18px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.guide-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.guide-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.guide-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.guide-list code,
+.guide-text code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--accent);
+}
+
+.guide-list kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.guide-text {
+  line-height: 1.4;
+}
+
+.guide-update-btn {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.guide-update-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+/* Updates Modal */
+.updates-modal {
+  max-width: 540px;
+}
+
+.update-status-box {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.update-status-box.has-update {
+  border-color: rgba(138, 180, 248, 0.45);
+  background: var(--accent-bg);
+  color: var(--text-primary);
+}
+
+.update-status-box.up-to-date {
+  border-color: rgba(52, 168, 83, 0.4);
+  background: rgba(52, 168, 83, 0.1);
+  color: var(--text-primary);
+}
+
+.update-status-box.error {
+  border-color: rgba(242, 139, 130, 0.4);
+  color: var(--danger);
+}
+
+.update-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 /* Main Content */
