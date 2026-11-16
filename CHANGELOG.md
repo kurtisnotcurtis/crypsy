@@ -3,6 +3,10 @@
 All notable changes to **Crypsy Note** are documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-11-15
+### Changed
+- Replaced the refresh icon on the **Check for Updates** topbar button with a gear icon.
+
 ## [1.1.0] - 2026-11-15
 ### Added
 - **Smart List & Checkbox Continuation**: Pressing `Enter` inside a bullet list, numbered list, or task checkbox (`- [ ]` / `- [x]`) automatically continues the list (incrementing numbers and creating unchecked `[ ]` tasks), and pressing `Enter` on an empty list item exits the list.

@@ -11,7 +11,7 @@
  */
 
 (() => {
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.1.1';
   const VAULT_SCHEMA_VERSION = 1;
   const STORAGE_KEY_VAULT = 'crypsy_encrypted_vault_v1';
   const STORAGE_KEY_PREFS = 'crypsy_ui_prefs_v1';
