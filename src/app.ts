@@ -19,12 +19,16 @@ import type {
   EncryptedEnvelope,
   Note,
   NoteColor,
+  NoteImage,
   RestoreConnectionResult,
 } from './types';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const STORAGE_KEY_VAULT = 'crypsy_encrypted_vault_v1';
 const STORAGE_KEY_PREFS = 'crypsy_ui_prefs_v1';
+const VAULT_IDB_NAME = 'crypsy_vault_cache_db_v1';
+const VAULT_IDB_STORE = 'vault';
+const VAULT_IDB_KEY = 'encrypted_envelope';
 const DEFAULT_DEVICE_SECRET = 'crypsy-local-device-default-key-v1';
 
 window.CRYPSY_VERSION = APP_VERSION;
@@ -48,6 +52,7 @@ const state: AppState = {
     pinned: false,
     color: 'default',
     tags: [],
+    images: [],
   },
   editingNoteId: null,
   editingDraft: null,
@@ -145,6 +150,7 @@ const els = {
   changeCloudFolderBtn: byId<HTMLButtonElement>('changeCloudFolderBtn'),
 
   noteComposer: byId('noteComposer'),
+  composerImagesRow: maybeById('composerImagesRow'),
   composerHeader: byId('composerHeader'),
   composerTitle: byId<HTMLInputElement>('composerTitle'),
   composerDescription: byId<HTMLTextAreaElement>('composerDescription'),
@@ -155,6 +161,13 @@ const els = {
   composerTagPopover: byId('composerTagPopover'),
   composerTagSearch: byId<HTMLInputElement>('composerTagSearch'),
   composerTagOptions: byId('composerTagOptions'),
+  composerImageBtn: maybeById<HTMLButtonElement>('composerImageBtn'),
+  composerImagePopover: maybeById('composerImagePopover'),
+  composerUploadImageBtn: maybeById<HTMLButtonElement>('composerUploadImageBtn'),
+  composerImageFileInput: maybeById<HTMLInputElement>('composerImageFileInput'),
+  composerImageUrlInput: maybeById<HTMLInputElement>('composerImageUrlInput'),
+  composerAddImageUrlBtn: maybeById<HTMLButtonElement>('composerAddImageUrlBtn'),
+  composerImageStatus: maybeById('composerImageStatus'),
   composerColorPicker: byId('composerColorPicker'),
   composerCancelBtn: byId<HTMLButtonElement>('composerCancelBtn'),
   composerSaveBtn: byId<HTMLButtonElement>('composerSaveBtn'),
@@ -173,6 +186,7 @@ const els = {
 
   editModalBackdrop: byId('editModalBackdrop'),
   editModalCard: byId('editModalCard'),
+  editModalImagesRow: maybeById('editModalImagesRow'),
   editModalTitle: byId<HTMLInputElement>('editModalTitle'),
   editModalDescription: byId<HTMLTextAreaElement>('editModalDescription'),
   editModalPinBtn: byId<HTMLButtonElement>('editModalPinBtn'),
@@ -182,6 +196,13 @@ const els = {
   editModalTagPopover: byId('editModalTagPopover'),
   editModalTagSearch: byId<HTMLInputElement>('editModalTagSearch'),
   editModalTagOptions: byId('editModalTagOptions'),
+  editModalImageBtn: maybeById<HTMLButtonElement>('editModalImageBtn'),
+  editModalImagePopover: maybeById('editModalImagePopover'),
+  editModalUploadImageBtn: maybeById<HTMLButtonElement>('editModalUploadImageBtn'),
+  editModalImageFileInput: maybeById<HTMLInputElement>('editModalImageFileInput'),
+  editModalImageUrlInput: maybeById<HTMLInputElement>('editModalImageUrlInput'),
+  editModalAddImageUrlBtn: maybeById<HTMLButtonElement>('editModalAddImageUrlBtn'),
+  editModalImageStatus: maybeById('editModalImageStatus'),
   editModalColorPicker: byId('editModalColorPicker'),
   editModalDeleteBtn: byId<HTMLButtonElement>('editModalDeleteBtn'),
   editModalSaveBtn: byId<HTMLButtonElement>('editModalSaveBtn'),
@@ -234,6 +255,10 @@ const els = {
   unlockVaultForm: byId<HTMLFormElement>('unlockVaultForm'),
   unlockPassphraseInput: byId<HTMLInputElement>('unlockPassphraseInput'),
   unlockErrorMsg: byId('unlockErrorMsg'),
+
+  imageLightboxBackdrop: maybeById('imageLightboxBackdrop'),
+  closeLightboxBtn: maybeById<HTMLButtonElement>('closeLightboxBtn'),
+  lightboxImage: maybeById<HTMLImageElement>('lightboxImage'),
 };
 
 // Utility helpers
@@ -466,6 +491,222 @@ async function checkForUpdates(silent = false): Promise<void> {
 }
 
 // Persistence & Cloud Sync
+const MAX_IMAGE_DIMENSION = 1440;
+const WEBP_QUALITY = 0.82;
+
+function createImageId(): string {
+  return `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+async function compressImageBlobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let { naturalWidth: width, naturalHeight: height } = img;
+      if (!width || !height) {
+        width = 800;
+        height = 600;
+      }
+      if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+        const scale = Math.min(MAX_IMAGE_DIMENSION / width, MAX_IMAGE_DIMENSION / height);
+        width = Math.max(1, Math.round(width * scale));
+        height = Math.max(1, Math.round(height * scale));
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Canvas context unavailable'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      const webp = canvas.toDataURL('image/webp', WEBP_QUALITY);
+      resolve(
+        webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/jpeg', WEBP_QUALITY)
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Could not decode image file'));
+    };
+    img.src = objectUrl;
+  });
+}
+
+async function noteImageFromFile(file: File | Blob, alt?: string): Promise<NoteImage> {
+  const dataUrl = await compressImageBlobToDataUrl(file);
+  return {
+    id: createImageId(),
+    src: dataUrl,
+    alt: alt || (file instanceof File ? file.name : 'Pasted image'),
+    sourceType: 'embedded',
+    createdAt: Date.now(),
+  };
+}
+
+/**
+ * Downloads an image from a URL and compresses it to an embedded WebP data URL
+ * so it is encrypted inside the vault. If the remote host blocks CORS fetch(),
+ * falls back to verifying via <img> load and storing as an external URL with
+ * referrerpolicy="no-referrer".
+ */
+async function noteImageFromUrl(rawUrl: string, alt?: string): Promise<NoteImage> {
+  const url = rawUrl.trim();
+  if (!url) throw new Error('Empty image URL');
+
+  if (url.startsWith('data:image/')) {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return noteImageFromFile(blob, alt || 'Embedded image');
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('Invalid URL format');
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error('Only http:// and https:// image URLs are supported');
+  }
+
+  // 1. Try CORS fetch to download & encrypt into vault offline
+  try {
+    const res = await fetch(parsed.href, {
+      mode: 'cors',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+    });
+    if (res.ok) {
+      const blob = await res.blob();
+      if (blob.type.startsWith('image/') || blob.size > 0) {
+        const dataUrl = await compressImageBlobToDataUrl(blob);
+        return {
+          id: createImageId(),
+          src: dataUrl,
+          alt: alt || parsed.pathname.split('/').pop() || 'Downloaded image',
+          sourceType: 'embedded',
+          createdAt: Date.now(),
+        };
+      }
+    }
+  } catch {
+    // CORS blocked or fetch failed; fall back to direct <img> verification
+  }
+
+  // 2. Fallback: verify the URL loads in an <img> element (bypasses CORS) and attach as external link
+  await new Promise<void>((resolve, reject) => {
+    const img = new Image();
+    img.referrerPolicy = 'no-referrer';
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error('Could not load image from URL'));
+    img.src = parsed.href;
+  });
+
+  return {
+    id: createImageId(),
+    src: parsed.href,
+    alt: alt || parsed.pathname.split('/').pop() || 'External image',
+    sourceType: 'external',
+    createdAt: Date.now(),
+  };
+}
+
+function extractStandaloneImageUrl(text: string): { url: string; alt?: string | undefined } | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const mdMatch = trimmed.match(/^!\[([^\]]*)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)$/i);
+  if (mdMatch && mdMatch[2]) {
+    return { url: mdMatch[2], alt: mdMatch[1] || undefined };
+  }
+  if (/\s/.test(trimmed)) return null;
+  if (trimmed.startsWith('data:image/')) {
+    return { url: trimmed };
+  }
+  if (/^https?:\/\/[^\s]+\.(?:png|jpe?g|gif|webp|svg|avif|bmp|ico)(?:[?#][^\s]*)?$/i.test(trimmed)) {
+    return { url: trimmed };
+  }
+  return null;
+}
+
+function extractImageUrlFromClipboardHtml(
+  html: string
+): { url: string; alt?: string | undefined } | null {
+  if (!html || !html.includes('<img')) return null;
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const img = doc.querySelector('img[src]');
+    const src = img?.getAttribute('src')?.trim();
+    if (src && (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:image/'))) {
+      return { url: src, alt: img?.getAttribute('alt') || undefined };
+    }
+  } catch {
+    // ignore parse failure
+  }
+  return null;
+}
+
+function openVaultCacheDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) {
+      reject(new Error('IndexedDB not supported'));
+      return;
+    }
+    const req = indexedDB.open(VAULT_IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(VAULT_IDB_STORE)) {
+        db.createObjectStore(VAULT_IDB_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveVaultEnvelopeToCache(envelope: EncryptedEnvelope): Promise<void> {
+  try {
+    localStorage.setItem(STORAGE_KEY_VAULT, JSON.stringify(envelope));
+  } catch {
+    // QuotaExceededError when vault has large images; IndexedDB stores full envelope below
+  }
+  try {
+    const db = await openVaultCacheDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(VAULT_IDB_STORE, 'readwrite');
+      tx.objectStore(VAULT_IDB_STORE).put(envelope, VAULT_IDB_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // Ignore IDB failure if localStorage succeeded
+  }
+}
+
+async function loadVaultEnvelopeFromCache(): Promise<EncryptedEnvelope | null> {
+  try {
+    const db = await openVaultCacheDB();
+    const fromIdb = await new Promise<EncryptedEnvelope | null>((resolve, reject) => {
+      const tx = db.transaction(VAULT_IDB_STORE, 'readonly');
+      const req = tx.objectStore(VAULT_IDB_STORE).get(VAULT_IDB_KEY);
+      req.onsuccess = () => resolve((req.result as EncryptedEnvelope | undefined) ?? null);
+      req.onerror = () => reject(req.error);
+    });
+    if (fromIdb) return fromIdb;
+  } catch {
+    // Fallback to localStorage
+  }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_VAULT);
+    return raw ? (JSON.parse(raw) as EncryptedEnvelope) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function persistEncryptedVault(): Promise<void> {
   const payload = {
     notes: state.notes,
@@ -473,7 +714,7 @@ async function persistEncryptedVault(): Promise<void> {
   };
   const envelope = await CrypsyCrypto.encryptPayload(payload, state.passphrase);
   state.lastEncryptedEnvelope = envelope;
-  localStorage.setItem(STORAGE_KEY_VAULT, JSON.stringify(envelope));
+  await saveVaultEnvelopeToCache(envelope);
 
   if (CrypsyCloudSync.isConnected()) {
     try {
@@ -489,7 +730,7 @@ async function persistEncryptedVault(): Promise<void> {
 
 async function tryLoadEnvelope(envelope: EncryptedEnvelope): Promise<boolean> {
   state.lastEncryptedEnvelope = envelope;
-  localStorage.setItem(STORAGE_KEY_VAULT, JSON.stringify(envelope));
+  await saveVaultEnvelopeToCache(envelope);
   try {
     const decrypted = await CrypsyCrypto.decryptPayload(envelope, state.passphrase);
     state.notes = Array.isArray(decrypted.notes) ? decrypted.notes : [];
@@ -546,22 +787,15 @@ async function initVault(): Promise<void> {
     }
   }
 
-  const storedRaw = localStorage.getItem(STORAGE_KEY_VAULT);
-  if (!storedRaw) {
+  const cachedEnvelope = await loadVaultEnvelopeFromCache();
+  if (!cachedEnvelope) {
     state.notes = SEED_NOTES;
     await persistEncryptedVault();
     renderAll();
     return;
   }
 
-  try {
-    const envelope = JSON.parse(storedRaw) as EncryptedEnvelope;
-    await tryLoadEnvelope(envelope);
-  } catch {
-    state.notes = SEED_NOTES;
-    await persistEncryptedVault();
-    renderAll();
-  }
+  await tryLoadEnvelope(cachedEnvelope);
 }
 
 function updateLastUpdatedUI(): void {
@@ -808,6 +1042,17 @@ function renderMarkdownDescription(noteId: string, text: string, query: string):
     }
 
     closeList();
+    const imgMatch = rawLine
+      .trim()
+      .match(/^!\[([^\]]*)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)$/i);
+    if (imgMatch && imgMatch[2]) {
+      const altText = imgMatch[1] ?? '';
+      const imgSrc = imgMatch[2];
+      out.push(
+        `<img class="md-inline-image" src="${escapeHtml(imgSrc)}" alt="${escapeHtml(altText || 'Inline note image')}" data-lightbox-src="${escapeHtml(imgSrc)}" referrerpolicy="no-referrer" loading="lazy" />`
+      );
+      return;
+    }
     if (rawLine.trim() === '') {
       out.push('<div class="md-spacer"></div>');
     } else {
@@ -842,6 +1087,22 @@ function createNoteCardHtml(note: Note): string {
   const q = state.searchQuery;
   const titleHtml = note.title ? highlightText(note.title, q) : '';
   const descHtml = note.description ? renderMarkdownDescription(note.id, note.description, q) : '';
+  const images = Array.isArray(note.images) ? note.images : [];
+  const imagesHtml =
+    images.length > 0
+      ? `<div class="note-card-images ${images.length === 1 ? 'single-image' : ''}">` +
+        images
+          .map(
+            (img) => `
+            <div class="note-image-item">
+              <img src="${escapeHtml(img.src)}" alt="${escapeHtml(img.alt || 'Note image')}" data-lightbox-src="${escapeHtml(img.src)}" referrerpolicy="no-referrer" loading="lazy" />
+              <span class="note-image-badge">${img.sourceType === 'external' ? 'External URL' : 'Encrypted WebP'}</span>
+            </div>
+          `
+          )
+          .join('') +
+        `</div>`
+      : '';
 
   const tagsHtml = (note.tags || [])
     .map(
@@ -852,6 +1113,7 @@ function createNoteCardHtml(note: Note): string {
 
   return `
     <article class="note-card" data-note-id="${escapeHtml(note.id)}" data-color="${escapeHtml(note.color || 'default')}">
+      ${imagesHtml}
       <div class="note-card-header">
         <h3 class="note-card-title">${titleHtml || '<span style="color:var(--text-muted);font-weight:400">Untitled</span>'}</h3>
         <button
@@ -953,6 +1215,7 @@ function resetComposer(): void {
     pinned: false,
     color: 'default',
     tags: [],
+    images: [],
   };
   els.composerTitle.value = '';
   els.composerDescription.value = '';
@@ -963,7 +1226,34 @@ function resetComposer(): void {
   els.composerFooter.classList.add('hidden');
   els.composerTagsRow.classList.add('hidden');
   els.composerTagPopover.classList.add('hidden');
+  els.composerImagePopover?.classList.add('hidden');
+  if (els.composerImagesRow) {
+    els.composerImagesRow.classList.add('hidden');
+    els.composerImagesRow.innerHTML = '';
+  }
   updateColorDots(els.composerColorPicker, 'default');
+}
+
+function renderComposerImages(): void {
+  if (!els.composerImagesRow) return;
+  if (state.composer.images.length === 0) {
+    els.composerImagesRow.classList.add('hidden');
+    els.composerImagesRow.innerHTML = '';
+    return;
+  }
+  els.composerImagesRow.classList.remove('hidden');
+  els.composerImagesRow.classList.toggle('single-image', state.composer.images.length === 1);
+  els.composerImagesRow.innerHTML = state.composer.images
+    .map(
+      (img) => `
+      <div class="note-edit-image-item">
+        <img src="${escapeHtml(img.src)}" alt="${escapeHtml(img.alt || 'Note image')}" data-lightbox-src="${escapeHtml(img.src)}" referrerpolicy="no-referrer" />
+        <span class="note-image-badge">${img.sourceType === 'external' ? 'External URL' : 'Encrypted WebP'}</span>
+        <button type="button" class="note-image-remove-btn" data-remove-composer-image="${escapeHtml(img.id)}" title="Remove image" aria-label="Remove image">&times;</button>
+      </div>
+    `
+    )
+    .join('');
 }
 
 function renderComposerTags(): void {
@@ -988,7 +1278,7 @@ function renderComposerTags(): void {
 async function saveComposerNote(): Promise<void> {
   const title = els.composerTitle.value.trim();
   const description = els.composerDescription.value.trim();
-  if (!title && !description) {
+  if (!title && !description && state.composer.images.length === 0) {
     resetComposer();
     return;
   }
@@ -998,6 +1288,7 @@ async function saveComposerNote(): Promise<void> {
     id: `note-${now}-${Math.random().toString(36).slice(2, 7)}`,
     title,
     description,
+    images: [...state.composer.images],
     tags: [...state.composer.tags],
     pinned: state.composer.pinned,
     color: state.composer.color,
@@ -1081,6 +1372,7 @@ function openEditModal(noteId: string): void {
     pinned: note.pinned,
     color: note.color || 'default',
     tags: [...(note.tags || [])],
+    images: [...(note.images || [])],
   };
 
   els.editModalTitle.value = state.editingDraft.title;
@@ -1089,12 +1381,36 @@ function openEditModal(noteId: string): void {
   els.editModalPinBtn.classList.toggle('active', state.editingDraft.pinned);
   els.editModalTimestamp.textContent = `Edited ${formatTimestamp(note.updatedAt)}`;
   updateColorDots(els.editModalColorPicker, state.editingDraft.color);
+  renderEditModalImages();
   renderEditModalTags();
 
   els.editModalTagPopover.classList.add('hidden');
+  els.editModalImagePopover?.classList.add('hidden');
   els.editModalBackdrop.classList.remove('hidden');
   autoResizeTextarea(els.editModalDescription);
   els.editModalDescription.focus();
+}
+
+function renderEditModalImages(): void {
+  if (!els.editModalImagesRow || !state.editingDraft) return;
+  if (state.editingDraft.images.length === 0) {
+    els.editModalImagesRow.classList.add('hidden');
+    els.editModalImagesRow.innerHTML = '';
+    return;
+  }
+  els.editModalImagesRow.classList.remove('hidden');
+  els.editModalImagesRow.classList.toggle('single-image', state.editingDraft.images.length === 1);
+  els.editModalImagesRow.innerHTML = state.editingDraft.images
+    .map(
+      (img) => `
+      <div class="note-edit-image-item">
+        <img src="${escapeHtml(img.src)}" alt="${escapeHtml(img.alt || 'Note image')}" data-lightbox-src="${escapeHtml(img.src)}" referrerpolicy="no-referrer" />
+        <span class="note-image-badge">${img.sourceType === 'external' ? 'External URL' : 'Encrypted WebP'}</span>
+        <button type="button" class="note-image-remove-btn" data-remove-modal-image="${escapeHtml(img.id)}" title="Remove image" aria-label="Remove image">&times;</button>
+      </div>
+    `
+    )
+    .join('');
 }
 
 function renderEditModalTags(): void {
@@ -1128,7 +1444,8 @@ async function saveAndCloseEditModal(): Promise<void> {
       existing.description !== newDesc ||
       existing.pinned !== state.editingDraft.pinned ||
       existing.color !== state.editingDraft.color ||
-      JSON.stringify(existing.tags) !== JSON.stringify(state.editingDraft.tags);
+      JSON.stringify(existing.tags) !== JSON.stringify(state.editingDraft.tags) ||
+      JSON.stringify(existing.images || []) !== JSON.stringify(state.editingDraft.images);
 
     if (changed) {
       state.notes[idx] = {
@@ -1138,6 +1455,7 @@ async function saveAndCloseEditModal(): Promise<void> {
         pinned: state.editingDraft.pinned,
         color: state.editingDraft.color,
         tags: [...state.editingDraft.tags],
+        images: [...state.editingDraft.images],
         updatedAt: Date.now(),
       };
       await persistEncryptedVault();
@@ -1192,7 +1510,27 @@ function openCloudOnboardingModal(): void {
 
 function updateVaultInspectorUI(): void {
   if (!state.lastEncryptedEnvelope) return;
-  els.ciphertextPreview.textContent = JSON.stringify(state.lastEncryptedEnvelope, null, 2);
+  const env = state.lastEncryptedEnvelope;
+  const displayEnvelope =
+    env.ciphertext && env.ciphertext.length > 1200
+      ? {
+          ...env,
+          ciphertext: `${env.ciphertext.slice(0, 600)}... [${env.ciphertext.length.toLocaleString()} base64 chars encrypted]`,
+        }
+      : env;
+  els.ciphertextPreview.textContent = JSON.stringify(displayEnvelope, null, 2);
+}
+
+function openLightbox(src: string): void {
+  if (!els.imageLightboxBackdrop || !els.lightboxImage || !src) return;
+  els.lightboxImage.src = src;
+  els.imageLightboxBackdrop.classList.remove('hidden');
+}
+
+function closeLightbox(): void {
+  if (!els.imageLightboxBackdrop || !els.lightboxImage) return;
+  els.imageLightboxBackdrop.classList.add('hidden');
+  els.lightboxImage.src = '';
 }
 
 // Event Listeners
@@ -1394,7 +1732,16 @@ function bindEvents(): void {
         await persistEncryptedVault();
       }
 
-      await CrypsyCloudSync.provisionCloudFolderAssets(includeHtml);
+      try {
+        await CrypsyCloudSync.provisionCloudFolderAssets(includeHtml);
+      } catch (assetErr) {
+        if (includeHtml) {
+          await CrypsyCloudSync.provisionCloudFolderAssets(false);
+          console.warn('Could not bundle Crypsy-Portable.html in browser:', assetErr);
+        } else {
+          throw assetErr;
+        }
+      }
       updateCloudStatusUI({ status: 'connected' });
       setWizardStep(3);
     } catch (err) {
@@ -1415,6 +1762,7 @@ function bindEvents(): void {
       }, 1600);
     } catch (e) {
       console.warn('Re-provision failed:', e);
+      alert(e instanceof Error ? e.message : 'Could not update Crypsy-Portable.html.');
     }
   });
 
@@ -1429,14 +1777,18 @@ function bindEvents(): void {
   });
 
   els.downloadPortableBtn.addEventListener('click', async () => {
-    const html = await CrypsyCloudSync.buildSelfContainedHtmlInBrowser();
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Crypsy-Portable.html';
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const html = await CrypsyCloudSync.buildSelfContainedHtmlInBrowser();
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Crypsy-Portable.html';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not build Crypsy-Portable.html.');
+    }
   });
 
   // Composer expand & auto-resize
@@ -1518,6 +1870,209 @@ function bindEvents(): void {
     renderComposerTags();
   });
 
+  // Image Attachment Helpers (Clipboard Paste, Drag & Drop, File Upload, URL Import)
+  const attachImageToTarget = (targetMode: 'composer' | 'modal', img: NoteImage): void => {
+    if (targetMode === 'modal' && state.editingDraft) {
+      state.editingDraft.images.push(img);
+      renderEditModalImages();
+    } else {
+      expandComposer();
+      state.composer.images.push(img);
+      renderComposerImages();
+    }
+  };
+
+  const setPopoverImageStatus = (
+    targetMode: 'composer' | 'modal',
+    msg: string,
+    isError = false
+  ): void => {
+    const statusEl = targetMode === 'modal' ? els.editModalImageStatus : els.composerImageStatus;
+    if (!statusEl) return;
+    statusEl.textContent = msg;
+    statusEl.style.color = isError ? 'var(--danger)' : 'var(--text-secondary)';
+  };
+
+  const handleImageFiles = async (
+    targetMode: 'composer' | 'modal',
+    files: Iterable<File>
+  ): Promise<void> => {
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) continue;
+      try {
+        const noteImg = await noteImageFromFile(file);
+        attachImageToTarget(targetMode, noteImg);
+      } catch (err) {
+        console.warn('Could not process image file:', err);
+      }
+    }
+  };
+
+  const handleClipboardPaste = async (
+    e: ClipboardEvent,
+    targetMode: 'composer' | 'modal'
+  ): Promise<boolean> => {
+    const cd = e.clipboardData;
+    if (!cd) return false;
+
+    const imageFiles: File[] = [];
+    for (let i = 0; i < cd.items.length; i++) {
+      const item = cd.items[i];
+      if (item && item.type.startsWith('image/')) {
+        const f = item.getAsFile();
+        if (f) imageFiles.push(f);
+      }
+    }
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      await handleImageFiles(targetMode, imageFiles);
+      return true;
+    }
+
+    const plainText = cd.getData('text/plain');
+    const extractedUrl = extractStandaloneImageUrl(plainText);
+    if (extractedUrl) {
+      e.preventDefault();
+      try {
+        const noteImg = await noteImageFromUrl(extractedUrl.url, extractedUrl.alt);
+        attachImageToTarget(targetMode, noteImg);
+        return true;
+      } catch {
+        const active = document.activeElement;
+        if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+          const start = active.selectionStart ?? active.value.length;
+          const end = active.selectionEnd ?? active.value.length;
+          active.value = active.value.slice(0, start) + plainText + active.value.slice(end);
+        }
+        return false;
+      }
+    }
+
+    if (!plainText.trim()) {
+      const htmlData = cd.getData('text/html');
+      const htmlImg = extractImageUrlFromClipboardHtml(htmlData);
+      if (htmlImg) {
+        e.preventDefault();
+        try {
+          const noteImg = await noteImageFromUrl(htmlImg.url, htmlImg.alt);
+          attachImageToTarget(targetMode, noteImg);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+    }
+
+    return false;
+  };
+
+  // Composer Image Popover & Controls
+  els.composerImageBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!els.composerImagePopover) return;
+    const isHidden = els.composerImagePopover.classList.contains('hidden');
+    els.composerTagPopover.classList.add('hidden');
+    if (isHidden) {
+      setPopoverImageStatus('composer', 'Tip: Paste images or URLs directly with Ctrl+V');
+      els.composerImagePopover.classList.remove('hidden');
+      els.composerImageUrlInput?.focus();
+    } else {
+      els.composerImagePopover.classList.add('hidden');
+    }
+  });
+
+  els.composerUploadImageBtn?.addEventListener('click', () => {
+    els.composerImageFileInput?.click();
+  });
+
+  els.composerImageFileInput?.addEventListener('change', async (e) => {
+    const input = e.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+      await handleImageFiles('composer', Array.from(input.files));
+      els.composerImagePopover?.classList.add('hidden');
+    }
+    input.value = '';
+  });
+
+  const submitComposerImageUrl = async (): Promise<void> => {
+    const raw = els.composerImageUrlInput?.value.trim() ?? '';
+    if (!raw) return;
+    setPopoverImageStatus('composer', 'Downloading & processing image...');
+    try {
+      const noteImg = await noteImageFromUrl(raw);
+      attachImageToTarget('composer', noteImg);
+      if (els.composerImageUrlInput) els.composerImageUrlInput.value = '';
+      setPopoverImageStatus(
+        'composer',
+        noteImg.sourceType === 'embedded'
+          ? 'Downloaded & encrypted as WebP!'
+          : 'Linked external image (CORS restricted download).'
+      );
+      setTimeout(() => {
+        els.composerImagePopover?.classList.add('hidden');
+      }, 700);
+    } catch (err) {
+      setPopoverImageStatus(
+        'composer',
+        err instanceof Error ? err.message : 'Could not load image URL.',
+        true
+      );
+    }
+  };
+
+  els.composerAddImageUrlBtn?.addEventListener('click', () => {
+    void submitComposerImageUrl();
+  });
+
+  els.composerImageUrlInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void submitComposerImageUrl();
+    }
+  });
+
+  els.composerImagesRow?.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    const rmBtn = target.closest('[data-remove-composer-image]');
+    if (rmBtn) {
+      e.stopPropagation();
+      const imgId = rmBtn.getAttribute('data-remove-composer-image');
+      state.composer.images = state.composer.images.filter((img) => img.id !== imgId);
+      renderComposerImages();
+      return;
+    }
+    const lightImg = target.closest('[data-lightbox-src]');
+    if (lightImg) {
+      e.stopPropagation();
+      openLightbox(lightImg.getAttribute('data-lightbox-src') ?? '');
+    }
+  });
+
+  els.noteComposer.addEventListener('paste', (e) => {
+    if (e.target === els.composerImageUrlInput) return;
+    void handleClipboardPaste(e, 'composer');
+  });
+
+  els.noteComposer.addEventListener('dragover', (e) => {
+    if (e.dataTransfer?.types.includes('Files')) {
+      e.preventDefault();
+      els.noteComposer.classList.add('drag-over');
+    }
+  });
+
+  els.noteComposer.addEventListener('dragleave', () => {
+    els.noteComposer.classList.remove('drag-over');
+  });
+
+  els.noteComposer.addEventListener('drop', async (e) => {
+    els.noteComposer.classList.remove('drag-over');
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      e.preventDefault();
+      await handleImageFiles('composer', Array.from(e.dataTransfer.files));
+    }
+  });
+
   els.composerSaveBtn.addEventListener('click', () => {
     void saveComposerNote();
   });
@@ -1541,10 +2096,28 @@ function bindEvents(): void {
     }
     if (
       target &&
+      els.composerImagePopover &&
+      !els.composerImagePopover.contains(target) &&
+      target !== els.composerImageBtn &&
+      !els.composerImageBtn?.contains(target)
+    ) {
+      els.composerImagePopover.classList.add('hidden');
+    }
+    if (
+      target &&
       !els.editModalTagPopover.contains(target) &&
       target !== els.editModalTagBtn
     ) {
       els.editModalTagPopover.classList.add('hidden');
+    }
+    if (
+      target &&
+      els.editModalImagePopover &&
+      !els.editModalImagePopover.contains(target) &&
+      target !== els.editModalImageBtn &&
+      !els.editModalImageBtn?.contains(target)
+    ) {
+      els.editModalImagePopover.classList.add('hidden');
     }
   });
 
@@ -1596,6 +2169,13 @@ function bindEvents(): void {
         state.activeFilter = { type: 'tag', tag };
         renderAll();
       }
+      return;
+    }
+
+    const lightboxEl = target.closest('[data-lightbox-src]');
+    if (lightboxEl) {
+      e.stopPropagation();
+      openLightbox(lightboxEl.getAttribute('data-lightbox-src') ?? '');
       return;
     }
 
@@ -1686,6 +2266,138 @@ function bindEvents(): void {
     renderEditModalTags();
   });
 
+  // Edit Modal Image Popover & Controls
+  els.editModalImageBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!state.editingDraft || !els.editModalImagePopover) return;
+    const isHidden = els.editModalImagePopover.classList.contains('hidden');
+    els.editModalTagPopover.classList.add('hidden');
+    if (isHidden) {
+      setPopoverImageStatus('modal', 'Tip: Paste images or URLs directly with Ctrl+V');
+      els.editModalImagePopover.classList.remove('hidden');
+      els.editModalImageUrlInput?.focus();
+    } else {
+      els.editModalImagePopover.classList.add('hidden');
+    }
+  });
+
+  els.editModalUploadImageBtn?.addEventListener('click', () => {
+    els.editModalImageFileInput?.click();
+  });
+
+  els.editModalImageFileInput?.addEventListener('change', async (e) => {
+    const input = e.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+      await handleImageFiles('modal', Array.from(input.files));
+      els.editModalImagePopover?.classList.add('hidden');
+    }
+    input.value = '';
+  });
+
+  const submitModalImageUrl = async (): Promise<void> => {
+    const raw = els.editModalImageUrlInput?.value.trim() ?? '';
+    if (!raw || !state.editingDraft) return;
+    setPopoverImageStatus('modal', 'Downloading & processing image...');
+    try {
+      const noteImg = await noteImageFromUrl(raw);
+      attachImageToTarget('modal', noteImg);
+      if (els.editModalImageUrlInput) els.editModalImageUrlInput.value = '';
+      setPopoverImageStatus(
+        'modal',
+        noteImg.sourceType === 'embedded'
+          ? 'Downloaded & encrypted as WebP!'
+          : 'Linked external image (CORS restricted download).'
+      );
+      setTimeout(() => {
+        els.editModalImagePopover?.classList.add('hidden');
+      }, 700);
+    } catch (err) {
+      setPopoverImageStatus(
+        'modal',
+        err instanceof Error ? err.message : 'Could not load image URL.',
+        true
+      );
+    }
+  };
+
+  els.editModalAddImageUrlBtn?.addEventListener('click', () => {
+    void submitModalImageUrl();
+  });
+
+  els.editModalImageUrlInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void submitModalImageUrl();
+    }
+  });
+
+  els.editModalImagesRow?.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement | null;
+    if (!target || !state.editingDraft) return;
+    const rmBtn = target.closest('[data-remove-modal-image]');
+    if (rmBtn) {
+      e.stopPropagation();
+      const imgId = rmBtn.getAttribute('data-remove-modal-image');
+      state.editingDraft.images = state.editingDraft.images.filter((img) => img.id !== imgId);
+      renderEditModalImages();
+      return;
+    }
+    const lightImg = target.closest('[data-lightbox-src]');
+    if (lightImg) {
+      e.stopPropagation();
+      openLightbox(lightImg.getAttribute('data-lightbox-src') ?? '');
+    }
+  });
+
+  els.editModalCard.addEventListener('paste', (e) => {
+    if (e.target === els.editModalImageUrlInput) return;
+    void handleClipboardPaste(e, 'modal');
+  });
+
+  els.editModalCard.addEventListener('dragover', (e) => {
+    if (e.dataTransfer?.types.includes('Files')) {
+      e.preventDefault();
+      els.editModalCard.classList.add('drag-over');
+    }
+  });
+
+  els.editModalCard.addEventListener('dragleave', () => {
+    els.editModalCard.classList.remove('drag-over');
+  });
+
+  els.editModalCard.addEventListener('drop', async (e) => {
+    els.editModalCard.classList.remove('drag-over');
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      e.preventDefault();
+      await handleImageFiles('modal', Array.from(e.dataTransfer.files));
+    }
+  });
+
+  // Global paste (when no text input is focused, paste image directly into active modal or composer)
+  document.addEventListener('paste', (e) => {
+    const target = e.target as Node | null;
+    if (target && (els.noteComposer.contains(target) || els.editModalCard.contains(target))) {
+      return;
+    }
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+      return;
+    }
+    const mode = !els.editModalBackdrop.classList.contains('hidden') ? 'modal' : 'composer';
+    void handleClipboardPaste(e, mode);
+  });
+
+  // Lightbox close handlers
+  els.closeLightboxBtn?.addEventListener('click', () => {
+    closeLightbox();
+  });
+
+  els.imageLightboxBackdrop?.addEventListener('click', (e) => {
+    if (e.target === els.imageLightboxBackdrop) {
+      closeLightbox();
+    }
+  });
+
   els.editModalDeleteBtn.addEventListener('click', async () => {
     if (!state.editingNoteId) return;
     state.notes = state.notes.filter((n) => n.id !== state.editingNoteId);
@@ -1743,9 +2455,8 @@ function bindEvents(): void {
     e.preventDefault();
     const attempt = els.unlockPassphraseInput.value;
     try {
-      const storedRaw = localStorage.getItem(STORAGE_KEY_VAULT);
-      if (!storedRaw) throw new Error('No vault found');
-      const envelope = JSON.parse(storedRaw) as EncryptedEnvelope;
+      const envelope = state.lastEncryptedEnvelope ?? (await loadVaultEnvelopeFromCache());
+      if (!envelope) throw new Error('No vault found');
       const decrypted = await CrypsyCrypto.decryptPayload(envelope, attempt);
       state.passphrase = attempt;
       state.notes = decrypted.notes || [];
@@ -1837,7 +2548,12 @@ function bindEvents(): void {
   // Global keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (!els.editModalBackdrop.classList.contains('hidden')) {
+      if (
+        els.imageLightboxBackdrop &&
+        !els.imageLightboxBackdrop.classList.contains('hidden')
+      ) {
+        closeLightbox();
+      } else if (!els.editModalBackdrop.classList.contains('hidden')) {
         void saveAndCloseEditModal();
       } else if (!els.cloudOnboardingBackdrop.classList.contains('hidden')) {
         els.cloudOnboardingBackdrop.classList.add('hidden');

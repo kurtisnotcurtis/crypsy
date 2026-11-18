@@ -960,6 +960,189 @@ html[data-theme="light"] .color-dot {
   opacity: 0.75;
 }
 
+.md-inline-image {
+  display: block;
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: 8px;
+  margin: 4px 0;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Note Card & Editor Image Attachments */
+.note-card-images,
+.note-edit-images-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.note-card-images.single-image,
+.note-edit-images-row.single-image {
+  grid-template-columns: 1fr;
+}
+
+.note-image-item,
+.note-edit-image-item {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  line-height: 0;
+}
+
+.note-image-item img,
+.note-edit-image-item img {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  display: block;
+  cursor: zoom-in;
+  transition: transform 0.18s ease;
+}
+
+.note-card-images:not(.single-image) .note-image-item img,
+.note-edit-images-row:not(.single-image) .note-edit-image-item img {
+  height: 120px;
+}
+
+.note-image-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1.2;
+  background: rgba(15, 17, 21, 0.78);
+  color: var(--text-secondary);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.note-image-item:hover .note-image-badge,
+.note-edit-image-item:hover .note-image-badge {
+  opacity: 1;
+}
+
+.note-image-remove-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(15, 17, 21, 0.78);
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.note-edit-image-item:hover .note-image-remove-btn {
+  opacity: 1;
+}
+
+.note-image-remove-btn:hover {
+  background: var(--danger);
+  color: #111;
+}
+
+.note-composer.drag-over,
+.note-modal.drag-over {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-bg), var(--shadow-modal);
+}
+
+/* Image Popover */
+.image-popover-menu {
+  width: 268px;
+}
+
+.image-upload-btn {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px dashed var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.image-upload-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.image-url-divider {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin: 8px 0 6px;
+}
+
+.image-url-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.image-url-row .popover-input {
+  margin-bottom: 0;
+  flex: 1;
+}
+
+.image-url-add-btn {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
+.image-popover-hint {
+  margin-top: 7px;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+/* Lightbox Modal */
+.lightbox-backdrop {
+  z-index: 140;
+  background-color: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+
+.lightbox-image {
+  max-width: min(92vw, 1200px);
+  max-height: 88vh;
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+  object-fit: contain;
+  cursor: default;
+}
+
+.lightbox-close-btn {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  background: rgba(32, 33, 36, 0.85);
+  color: #fff;
+}
+
 .note-tags-row {
   display: flex;
   flex-wrap: wrap;

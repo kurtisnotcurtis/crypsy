@@ -10,10 +10,19 @@ export type NoteColor =
   | 'sage'
   | (string & {});
 
+export interface NoteImage {
+  id: string;
+  src: string;
+  alt?: string | undefined;
+  sourceType: 'embedded' | 'external';
+  createdAt: number;
+}
+
 export interface Note {
   id: string;
   title: string;
   description: string;
+  images?: NoteImage[];
   tags: string[];
   pinned: boolean;
   color: NoteColor;
@@ -89,12 +98,14 @@ export interface ComposerState {
   pinned: boolean;
   color: NoteColor;
   tags: string[];
+  images: NoteImage[];
 }
 
 export interface EditingDraft {
   title: string;
   description: string;
   tags: string[];
+  images: NoteImage[];
   pinned: boolean;
   color: NoteColor;
 }

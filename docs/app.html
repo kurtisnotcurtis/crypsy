@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Crypsy - Transparently Encrypted Notes</title>
+  <title>Crypsy</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238ab4f8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='10' width='18' height='12' rx='2' ry='2'/%3E%3Cpath d='M7 10V7a5 5 0 0 1 10 0v3'/%3E%3Cline x1='7' y1='14' x2='17' y2='14'/%3E%3Cline x1='7' y1='18' x2='13' y2='18'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -24,7 +24,7 @@
           </svg>
         </div>
         <span class="brand-name">Crypsy</span>
-        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.2.0 — Click to check for updates">v1.2.0</button>
+        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.3.0 — Click to check for updates">v1.3.0</button>
         <span id="encryptionBadge" class="crypto-badge" title="Click to inspect encrypted cloud payload or manage vault key">
           <span class="status-dot"></span>
           AES-256-GCM
@@ -175,6 +175,7 @@
               <li><code>- [ ]</code> / <code>- [x]</code> Checkboxes</li>
               <li><code>- item</code> or <code>* item</code> Bullet list</li>
               <li><code>1. item</code> Numbered list</li>
+              <li><code>![alt](url)</code> or <kbd>Ctrl+V</kbd> Image</li>
             </ul>
           </div>
 
@@ -194,6 +195,7 @@
       <!-- Quick Note Composer (Google Keep style) -->
       <section class="composer-wrapper">
         <div id="noteComposer" class="note-composer" data-color="default">
+          <div id="composerImagesRow" class="note-edit-images-row hidden"></div>
           <div id="composerHeader" class="composer-header hidden">
             <input
               type="text"
@@ -239,6 +241,30 @@
                   <div class="popover-title">Add or create tag</div>
                   <input type="text" id="composerTagSearch" class="popover-input" placeholder="Enter tag name..." autocomplete="off" />
                   <div id="composerTagOptions" class="popover-options"></div>
+                </div>
+              </div>
+
+              <div class="popover-anchor">
+                <button type="button" id="composerImageBtn" class="tool-btn" title="Add image (or paste with Ctrl+V)">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                  <span>Image</span>
+                </button>
+                <div id="composerImagePopover" class="popover-menu image-popover-menu hidden">
+                  <div class="popover-title">Add image to note</div>
+                  <button type="button" id="composerUploadImageBtn" class="image-upload-btn">
+                    Upload Image File...
+                  </button>
+                  <input type="file" id="composerImageFileInput" accept="image/*" multiple class="hidden" />
+                  <div class="image-url-divider">or link / download from URL</div>
+                  <div class="image-url-row">
+                    <input type="url" id="composerImageUrlInput" class="popover-input" placeholder="https://example.com/image.png" autocomplete="off" />
+                    <button type="button" id="composerAddImageUrlBtn" class="btn-primary image-url-add-btn">Add</button>
+                  </div>
+                  <div id="composerImageStatus" class="image-popover-hint">Tip: Paste images or URLs directly with Ctrl+V</div>
                 </div>
               </div>
 
@@ -296,6 +322,7 @@
   <!-- Edit Note Modal -->
   <div id="editModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
     <div id="editModalCard" class="modal-card note-modal" data-color="default">
+      <div id="editModalImagesRow" class="note-edit-images-row hidden"></div>
       <div class="composer-header">
         <input
           type="text"
@@ -344,6 +371,30 @@
               <div class="popover-title">Toggle or create tag</div>
               <input type="text" id="editModalTagSearch" class="popover-input" placeholder="Enter tag name..." autocomplete="off" />
               <div id="editModalTagOptions" class="popover-options"></div>
+            </div>
+          </div>
+
+          <div class="popover-anchor">
+            <button type="button" id="editModalImageBtn" class="tool-btn" title="Add image (or paste with Ctrl+V)">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                <polyline points="21 15 16 10 5 21"></polyline>
+              </svg>
+              <span>Image</span>
+            </button>
+            <div id="editModalImagePopover" class="popover-menu image-popover-menu hidden">
+              <div class="popover-title">Add image to note</div>
+              <button type="button" id="editModalUploadImageBtn" class="image-upload-btn">
+                Upload Image File...
+              </button>
+              <input type="file" id="editModalImageFileInput" accept="image/*" multiple class="hidden" />
+              <div class="image-url-divider">or link / download from URL</div>
+              <div class="image-url-row">
+                <input type="url" id="editModalImageUrlInput" class="popover-input" placeholder="https://example.com/image.png" autocomplete="off" />
+                <button type="button" id="editModalAddImageUrlBtn" class="btn-primary image-url-add-btn">Add</button>
+              </div>
+              <div id="editModalImageStatus" class="image-popover-hint">Tip: Paste images or URLs directly with Ctrl+V</div>
             </div>
           </div>
 
@@ -592,7 +643,7 @@
         <div>
           <h3>Crypsy Updates &amp; Releases</h3>
           <p class="vault-subtitle">
-            Installed version: <strong id="installedVersionLabel">v1.2.0</strong>
+            Installed version: <strong id="installedVersionLabel">v1.3.0</strong>
           </p>
         </div>
         <button id="closeUpdatesModalBtn" class="icon-btn" aria-label="Close updates modal">
@@ -656,6 +707,17 @@
         <button type="submit" class="btn-primary unlock-btn">Decrypt &amp; Unlock</button>
       </form>
     </div>
+  </div>
+
+  <!-- Image Lightbox Overlay -->
+  <div id="imageLightboxBackdrop" class="modal-backdrop lightbox-backdrop hidden" role="dialog" aria-modal="true">
+    <button type="button" id="closeLightboxBtn" class="icon-btn lightbox-close-btn" aria-label="Close image preview" title="Close (Esc)">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+    <img id="lightboxImage" class="lightbox-image" src="" alt="Note attachment preview" referrerpolicy="no-referrer" />
   </div>
 
   <script src="dist/app.bundle.js"></script>

@@ -3,6 +3,19 @@
 All notable changes to **Crypsy Note** are documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-11-17
+### Added
+- **Encrypted Image Attachments & URL Import**: Paste screenshots or image URLs directly via `Ctrl+V`, drag-and-drop image files, upload files, or link image URLs in both the quick composer and note editor. Images are resized and compressed on-device to WebP before AES-256-GCM encryption, with CORS fallback to `no-referrer` external links, inline `![alt](url)` Markdown rendering, card galleries, and a click-to-zoom lightbox.
+- **IndexedDB Vault Cache**: Cached encrypted vault envelopes in IndexedDB (`crypsy_vault_cache_db_v1`) alongside `localStorage` so vaults with embedded images do not hit `localStorage`'s 5 MB quota limit.
+- **Collapsible Sidebar Sections**: Added persistent expand/collapse toggles for the **Tags** and **Quick Guide** sidebar sections (defaulting to both expanded).
+
+### Changed
+- **Search Input Overflow Fade**: Added a smooth horizontal fade mask (`mask-image`) on overflowing search text and reclaimed unused right padding when the clear button is hidden.
+- **Document Title & Landing Site**: Simplified the web app `<title>` to `Crypsy` and updated the landing page preview card to highlight encrypted WebP clipboard & URL images.
+
+### Fixed
+- **Portable HTML Bundling Over `file://`**: Updated `buildSelfContainedHtmlInBrowser()` so opening `index.html` over `file://` will no longer overwrite `Crypsy-Portable.html` with an unstyled `outerHTML` snapshot referencing external `styles.css` and `dist/app.bundle.js`, and added clean DOM sanitization when exporting from an already self-contained portable bundle.
+
 ## [1.2.0] - 2026-11-15
 ### Changed
 - **TypeScript + esbuild Pipeline**: Migrated `crypto.js`, `cloud-sync.js`, and `app.js` to strict TypeScript modules under `src/` (`types.ts`, `crypto.ts`, `cloud-sync.ts`, `app.ts`) bundled via `esbuild` into `dist/app.bundle.js`, shrinking `Crypsy-Portable.html` from ~144 KB to ~107 KB.

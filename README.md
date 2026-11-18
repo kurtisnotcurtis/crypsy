@@ -8,14 +8,16 @@ A lightweight, Google Keep-style encrypted notes web application with transparen
 - **Tags:** Create, delete, and assign `#tags` to notes; filter notes by tag from the sidebar or by clicking any tag chip on a card.
 - **Pins:** Pin important notes to the top (`PINNED` vs `OTHERS` sections).
 - **Card / List View:** Toggle between a responsive multi-column Card Grid and a single-column List layout.
-- **Rich Note Cards:** Title, multi-line description, timestamps, and 7 color themes (adapting to Dark & Light mode).
-- **Transparent AES-256-GCM Encryption:** All notes and tags are encrypted in-browser using the WebCrypto API (`PBKDF2-SHA256` + `AES-256-GCM`) before persisting to storage.
+- **Rich Note Cards & Markdown:** Title, multi-line description with interactive `- [ ]` task checkboxes, smart bullet/numbered list continuation, inline `![alt](url)` image rendering, timestamps, and 7 color themes (adapting to Dark & Light mode).
+- **Encrypted Images & Clipboard Paste:** Paste images (`Ctrl+V`), drag-and-drop files, upload images, or import image URLs—compressed on-device to WebP and encrypted inside your vault (with automatic `no-referrer` external fallback if a remote host blocks CORS), plus a click-to-zoom lightbox.
+- **Collapsible Sidebar:** Expand/collapse **Tags** and **Quick Guide** sections in the sidebar with persisted UI state.
+- **Transparent AES-256-GCM Encryption:** All notes, images, and tags are encrypted in-browser using the WebCrypto API (`PBKDF2-SHA256` + `AES-256-GCM`) before persisting to IndexedDB / `localStorage` or your cloud folder.
 - **Cloud Folder Onboarding & Live Sync:** Walk through placing Crypsy directly inside **Microsoft OneDrive, Google Drive, Dropbox, or iCloud Drive**—with live auto-save to `vault.crypsy.json` and automatic cross-device file-change polling.
 
 ## Two Ways to Set Up Cloud Sync
 
 ### 1. In-Browser Cloud Onboarding Wizard (Zero-Install)
-1. Open `index.html` (or `dist/Crypsy-Portable.html`) in Chrome, Edge, or Brave.
+1. Open `Crypsy-Portable.html` (or `index.html` over `http(s)://`) in Chrome, Edge, or Brave.
 2. Click **"Setup Cloud Folder"** in the top-right bar.
 3. Choose your cloud provider (**OneDrive**, **Google Drive**, **Dropbox**, **iCloud Drive**, or **Custom**), copy the OS-specific folder path hint, and select your cloud folder.
 4. Crypsy automatically creates a `Crypsy/` folder containing:
@@ -36,7 +38,7 @@ Auto-detects installed cloud drives on Windows, macOS, and Linux, bundles `Cryps
 # Or via Node.js directly:
 node install.js               # Interactive wizard
 node install.js --list        # Inspect auto-detected cloud folders
-node install.js --build-only  # Build standalone dist/Crypsy-Portable.html
+node install.js --build-only  # Build standalone Crypsy-Portable.html
 ```
 
 ## License

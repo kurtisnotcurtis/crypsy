@@ -446,11 +446,70 @@ export async function provisionCloudFolderAssets(includePortableHtml = true): Pr
   return true;
 }
 
+function sanitizeClonedPortableDom(): string {
+  const clone = document.documentElement.cloneNode(true) as HTMLElement;
+
+  const clearIds = [
+    'pinnedGrid',
+    'othersGrid',
+    'sidebarTagsList',
+    'composerImagesRow',
+    'composerTagsRow',
+    'editModalImagesRow',
+    'editModalTagsRow',
+    'ciphertextPreview',
+    'activeFilterText',
+  ];
+  for (const id of clearIds) {
+    const el = clone.querySelector(`#${id}`);
+    if (el) el.innerHTML = '';
+  }
+
+  const hideIds = [
+    'reconnectCloudBanner',
+    'lastUpdatedBadge',
+    'clearSearchBtn',
+    'composerHeader',
+    'composerTagsRow',
+    'composerImagesRow',
+    'composerFooter',
+    'composerTagPopover',
+    'composerImagePopover',
+    'activeFilterBanner',
+    'pinnedSection',
+    'othersSection',
+    'emptyState',
+    'editModalBackdrop',
+    'editModalImagesRow',
+    'editModalTagPopover',
+    'editModalImagePopover',
+    'cloudOnboardingBackdrop',
+    'vaultModalBackdrop',
+    'updatesModalBackdrop',
+    'lockScreenOverlay',
+    'imageLightboxBackdrop',
+  ];
+  for (const id of hideIds) {
+    const el = clone.querySelector(`#${id}`);
+    if (el) el.classList.add('hidden');
+  }
+
+  const cloudBtn = clone.querySelector('#cloudSetupBtn');
+  if (cloudBtn) cloudBtn.classList.remove('synced', 'detected');
+  const cloudLabel = clone.querySelector('#cloudSetupBtnLabel');
+  if (cloudLabel) cloudLabel.textContent = 'Setup Cloud Folder';
+
+  return '<!DOCTYPE html>\n' + clone.outerHTML;
+}
+
 /**
  * Assembles a single self-contained HTML file right in the browser
  * so users can drop `Crypsy-Portable.html` into their cloud drive even without Node.js.
  */
 export async function buildSelfContainedHtmlInBrowser(): Promise<string> {
+  const linkRegex = /<link\s+rel="stylesheet"\s+href="styles\.css"\s*\/?>/i;
+  const scriptRegex = /<script\s+src="dist\/app\.bundle\.js"><\/script>/i;
+
   try {
     const [htmlRes, cssRes, bundleRes] = await Promise.all([
       fetch(window.location.href).then((r) => (r.ok ? r.text() : '')),
@@ -459,24 +518,54 @@ export async function buildSelfContainedHtmlInBrowser(): Promise<string> {
     ]);
 
     if (cssRes && bundleRes) {
-      const baseHtml =
-        htmlRes && /<link\s+rel="stylesheet"\s+href="styles\.css"\s*\/?>/i.test(htmlRes)
-          ? htmlRes
-          : '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
-      return baseHtml
-        .replace(
-          /<link\s+rel="stylesheet"\s+href="styles\.css"\s*\/?>/i,
-          () => `<style>\n${cssRes}\n</` + 'style>'
-        )
-        .replace(
-          /<script\s+src="dist\/app\.bundle\.js"><\/script>/i,
-          () => `<script>\n${bundleRes}\n</` + 'script>'
-        );
+      let baseHtml = htmlRes && linkRegex.test(htmlRes) && scriptRegex.test(htmlRes) ? htmlRes : '';
+      if (!baseHtml) {
+        const fallbackCandidates = ['app.html', 'index.html'];
+        for (const candidate of fallbackCandidates) {
+          const text = await fetch(candidate).then((r) => (r.ok ? r.text() : '')).catch(() => '');
+          if (text && linkRegex.test(text) && scriptRegex.test(text)) {
+            baseHtml = text;
+            break;
+          }
+        }
+      }
+      if (baseHtml) {
+        return baseHtml
+          .replace(linkRegex, () => `<style>\n${cssRes}\n</` + 'style>')
+          .replace(scriptRegex, () => `<script>\n${bundleRes}\n</` + 'script>');
+      }
     }
   } catch {
-    // Fallback if running from a single-file bundle already (`file://` where fetch isn't needed)
+    // Expected on file:// where fetch() is blocked by CORS
   }
-  return '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+
+  try {
+    const portableRes = await fetch(PORTABLE_HTML_FILENAME).then((r) => (r.ok ? r.text() : ''));
+    if (
+      portableRes &&
+      !linkRegex.test(portableRes) &&
+      !scriptRegex.test(portableRes) &&
+      /<style>[\s\S]*<\/style>/i.test(portableRes)
+    ) {
+      return portableRes;
+    }
+  } catch {
+    // Ignore fetch failure on file://
+  }
+
+  const hasExternalCss = Boolean(document.querySelector('link[rel="stylesheet"][href="styles.css"]'));
+  const hasExternalJs = Boolean(document.querySelector('script[src="dist/app.bundle.js"]'));
+  const hasInlineCss = Array.from(document.querySelectorAll('style')).some(
+    (s) => (s.textContent?.length ?? 0) > 500
+  );
+
+  if (!hasExternalCss && !hasExternalJs && hasInlineCss) {
+    return sanitizeClonedPortableDom();
+  }
+
+  throw new Error(
+    'Cannot bundle Crypsy-Portable.html when index.html is opened directly via file:// (browser blocks reading styles.css). Open Crypsy-Portable.html directly, or copy Crypsy-Portable.html to your cloud folder.'
+  );
 }
 
 /**

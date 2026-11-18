@@ -10,7 +10,7 @@ import type { EncryptedEnvelope, VaultPayload } from './types';
 const PBKDF2_ITERATIONS = 150000;
 const SALT_BYTES = 16;
 const IV_BYTES = 12;
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 function bufToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
