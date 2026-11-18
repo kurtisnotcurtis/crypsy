@@ -8,6 +8,9 @@
  * and `README-CRYPSY.txt` into the selected cloud directory.
  */
 
+import { Capacitor } from '@capacitor/core';
+import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import type {
   CloudLocationInfo,
   CloudProviderConfig,
@@ -26,6 +29,7 @@ const META_STORAGE_KEY = 'crypsy_cloud_provider_meta_v1';
 export const VAULT_FILENAME = 'vault.crypsy.json';
 const README_FILENAME = 'README-CRYPSY.txt';
 export const PORTABLE_HTML_FILENAME = 'Crypsy-Portable.html';
+const NATIVE_VAULT_PATH = `Crypsy/${VAULT_FILENAME}`;
 
 export const PROVIDERS: Record<CloudProviderId, CloudProviderConfig> = {
   gdrive: {
@@ -94,6 +98,90 @@ let onExternalVaultUpdateCallback: ExternalVaultUpdateCallback | null = null;
 
 export function isFileSystemAccessSupported(): boolean {
   return typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+}
+
+export function isNativeApp(): boolean {
+  return Capacitor.isNativePlatform();
+}
+
+export function getNativePlatform(): string {
+  return Capacitor.getPlatform();
+}
+
+function getNativeProviderMeta(): CloudProviderMeta {
+  const existing = getSavedProviderMeta();
+  const platform = getNativePlatform();
+  return {
+    providerId: 'custom',
+    providerName: platform === 'ios' ? 'Files App' : 'Device Docs',
+    folderName: 'Crypsy',
+    parentFolderName: 'Documents',
+    linkedAt: existing?.linkedAt ?? new Date().toISOString(),
+    lastSyncedAt: existing?.lastSyncedAt ?? null,
+  };
+}
+
+async function readNativeVaultText(): Promise<string | null> {
+  for (const directory of [Directory.Documents, Directory.Data]) {
+    try {
+      const res = await Filesystem.readFile({
+        path: NATIVE_VAULT_PATH,
+        directory,
+        encoding: Encoding.UTF8,
+      });
+      if (typeof res.data === 'string' && res.data.trim()) {
+        return res.data;
+      }
+    } catch {
+      // File may not exist in this directory yet
+    }
+  }
+  return null;
+}
+
+async function writeNativeVaultText(content: string): Promise<boolean> {
+  for (const directory of [Directory.Documents, Directory.Data]) {
+    try {
+      await Filesystem.writeFile({
+        path: NATIVE_VAULT_PATH,
+        data: content,
+        directory,
+        encoding: Encoding.UTF8,
+        recursive: true,
+      });
+      return true;
+    } catch {
+      // Fall through to app-private Directory.Data if shared Documents is restricted
+    }
+  }
+  return false;
+}
+
+/**
+ * Shares an encrypted vault envelope via the native iOS/Android OS share sheet.
+ */
+export async function shareVaultWithNativeSheet(
+  envelope: EncryptedEnvelope,
+  filename: string
+): Promise<boolean> {
+  if (!isNativeApp()) return false;
+  const content = JSON.stringify(envelope, null, 2);
+  await Filesystem.writeFile({
+    path: filename,
+    data: content,
+    directory: Directory.Cache,
+    encoding: Encoding.UTF8,
+    recursive: true,
+  });
+  const { uri } = await Filesystem.getUri({
+    path: filename,
+    directory: Directory.Cache,
+  });
+  await Share.share({
+    title: 'Crypsy Encrypted Vault',
+    files: [uri],
+  });
+  return true;
 }
 
 export function detectOS(): OsPlatform {
@@ -315,6 +403,12 @@ export async function pickCloudFolder(
  * Restores a previously saved directory handle on startup.
  */
 export async function restoreSavedConnection(): Promise<RestoreConnectionResult> {
+  if (isNativeApp()) {
+    const meta = getNativeProviderMeta();
+    saveProviderMeta(meta);
+    return { status: 'connected', meta };
+  }
+
   const meta = getSavedProviderMeta();
   const handle = await loadDirHandleFromIDB();
   if (!handle || !meta) {
@@ -353,6 +447,17 @@ export async function unlinkCloudFolder(): Promise<void> {
  * Reads `vault.crypsy.json` from the active cloud directory if it exists.
  */
 export async function readVaultFromCloudFolder(): Promise<EncryptedEnvelope | null> {
+  if (isNativeApp()) {
+    try {
+      const text = await readNativeVaultText();
+      if (!text) return null;
+      lastKnownFileModified = Date.now();
+      return JSON.parse(text) as EncryptedEnvelope;
+    } catch {
+      return null;
+    }
+  }
+
   if (!activeDirHandle) return null;
   try {
     const fileHandle = await activeDirHandle.getFileHandle(VAULT_FILENAME, {
@@ -372,6 +477,17 @@ export async function readVaultFromCloudFolder(): Promise<EncryptedEnvelope | nu
  * Writes the encrypted AES-256-GCM envelope to `vault.crypsy.json` in the active cloud folder.
  */
 export async function writeVaultToCloudFolder(envelope: EncryptedEnvelope): Promise<boolean> {
+  if (isNativeApp()) {
+    const ok = await writeNativeVaultText(JSON.stringify(envelope, null, 2));
+    if (ok) {
+      lastKnownFileModified = Date.now();
+      const meta = getNativeProviderMeta();
+      meta.lastSyncedAt = new Date().toISOString();
+      saveProviderMeta(meta);
+    }
+    return ok;
+  }
+
   if (!activeDirHandle) return false;
   const hasPerm = await verifyPermission(activeDirHandle, true);
   if (!hasPerm) return false;
@@ -490,10 +606,14 @@ function sanitizeClonedPortableDom(): string {
     'editModalImagePopover',
     'boardEditorBackdrop',
     'boardSelectionBar',
+    'boardSelStrokeGroup',
+    'boardInkPopover',
+    'boardInkLiveCanvas',
     'boardTagPopover',
     'boardImagePopover',
     'boardLinkPopover',
     'boardMarqueeRect',
+    'wizardMobileSyncBox',
     'cloudOnboardingBackdrop',
     'vaultModalBackdrop',
     'updatesModalBackdrop',
@@ -505,6 +625,9 @@ function sanitizeClonedPortableDom(): string {
     const el = clone.querySelector(`#${id}`);
     if (el) el.classList.add('hidden');
   }
+
+  const manifestLink = clone.querySelector('link[rel="manifest"]');
+  if (manifestLink) manifestLink.remove();
 
   const cloudBtn = clone.querySelector('#cloudSetupBtn');
   if (cloudBtn) cloudBtn.classList.remove('synced', 'detected');
@@ -543,6 +666,7 @@ export async function buildSelfContainedHtmlInBrowser(): Promise<string> {
       }
       if (baseHtml) {
         return baseHtml
+          .replace(/<link\s+rel="manifest"\s+href="\.\/manifest\.webmanifest"\s*\/?>\s*\r?\n?/i, '')
           .replace(linkRegex, () => `<style>\n${cssRes}\n</` + 'style>')
           .replace(scriptRegex, () => `<script>\n${bundleRes}\n</` + 'script>');
       }
@@ -618,7 +742,7 @@ export function onExternalUpdate(cb: ExternalVaultUpdateCallback): void {
 }
 
 export function isConnected(): boolean {
-  return Boolean(activeDirHandle);
+  return isNativeApp() || Boolean(activeDirHandle);
 }
 
 export const CrypsyCloudSync = {
@@ -626,6 +750,9 @@ export const CrypsyCloudSync = {
   VAULT_FILENAME,
   PORTABLE_HTML_FILENAME,
   isFileSystemAccessSupported,
+  isNativeApp,
+  getNativePlatform,
+  shareVaultWithNativeSheet,
   detectOS,
   getProviderPathHint,
   detectRunningCloudLocation,

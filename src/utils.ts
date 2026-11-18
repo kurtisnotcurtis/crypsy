@@ -2,9 +2,10 @@
  * Shared DOM, text escaping, and formatting utilities for Crypsy.
  */
 
+import { renderBoardStrokeSvg } from './ink';
 import type { BoardItem } from './types';
 
-export const APP_VERSION = '1.4.0';
+export const APP_VERSION = '1.5.0';
 
 export function byId<T extends HTMLElement = HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -186,6 +187,17 @@ export function renderBoardItemHtml(
     return `
       <div class="board-item type-image ${isSelected ? 'selected' : ''}" ${idAttr} data-color="${colorAttr}" style="${baseStyle}">
         <img src="${escapeHtml(item.image.src)}" alt="${escapeHtml(item.image.alt || 'Board image')}" referrerpolicy="no-referrer" loading="lazy" />
+      </div>
+    `;
+  }
+
+  if (item.type === 'stroke') {
+    const strokeH = item.height ?? item.sourceHeight;
+    const strokeStyle = `left:${item.x - ox}px;top:${item.y - oy}px;width:${item.width}px;height:${strokeH}px;z-index:${item.zIndex};transform:rotate(${rot}deg);`;
+    const hlClass = item.tool === 'highlighter' ? 'is-highlighter' : '';
+    return `
+      <div class="board-item type-stroke ${hlClass} ${isSelected ? 'selected' : ''}" ${idAttr} style="${strokeStyle}">
+        ${renderBoardStrokeSvg(item, Boolean(options.minimap))}
       </div>
     `;
   }

@@ -255,6 +255,12 @@ const els = {
   wizardStep1: byId('wizardStep1'),
   wizardStep2: byId('wizardStep2'),
   wizardStep3: byId('wizardStep3'),
+  wizardDesktopSyncBox: maybeById('wizardDesktopSyncBox'),
+  wizardMobileSyncBox: maybeById('wizardMobileSyncBox'),
+  mobileShareVaultBtn: maybeById<HTMLButtonElement>('mobileShareVaultBtn'),
+  mobileImportVaultInput: maybeById<HTMLInputElement>('mobileImportVaultInput'),
+  wizardMobileBackBtn: maybeById<HTMLButtonElement>('wizardMobileBackBtn'),
+  wizardMobileDoneBtn: maybeById<HTMLButtonElement>('wizardMobileDoneBtn'),
 
   // Vault Inspector Modal
   vaultModalBackdrop: byId('vaultModalBackdrop'),
@@ -606,6 +612,9 @@ async function initVault(): Promise<void> {
   applyThemeUI();
   applyViewModeUI();
   applySidebarSectionsUI();
+  if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+    els.sidebar.classList.add('collapsed');
+  }
 
   // Listen for external cloud folder updates (e.g. synced from another device)
   CrypsyCloudSync.onExternalUpdate(async (externalEnvelope) => {
@@ -738,6 +747,71 @@ function updateCloudStatusUI(restoredState?: Pick<RestoreConnectionResult, 'stat
 // Theme & View Mode UI
 function applyThemeUI(): void {
   document.documentElement.setAttribute('data-theme', state.theme);
+  const metaTheme = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (metaTheme) {
+    metaTheme.setAttribute('content', state.theme === 'light' ? '#ffffff' : '#202124');
+  }
+}
+
+function closeSidebarIfMobile(): void {
+  if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+    els.sidebar.classList.add('collapsed');
+  }
+}
+
+async function shareOrDownloadVaultJson(): Promise<void> {
+  if (!state.lastEncryptedEnvelope) return;
+  const filename = `crypsy-vault-${new Date().toISOString().slice(0, 10)}.crypsy.json`;
+
+  if (CrypsyCloudSync.isNativeApp()) {
+    try {
+      await CrypsyCloudSync.shareVaultWithNativeSheet(state.lastEncryptedEnvelope, filename);
+      return;
+    } catch (err) {
+      if (err instanceof Error && /cancel|abort/i.test(err.message)) return;
+    }
+  }
+
+  const jsonText = JSON.stringify(state.lastEncryptedEnvelope, null, 2);
+
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof File === 'function') {
+    try {
+      const vaultFile = new File([jsonText], filename, { type: 'application/json' });
+      const canShareFiles =
+        typeof navigator.canShare !== 'function' || navigator.canShare({ files: [vaultFile] });
+      if (canShareFiles) {
+        await navigator.share({
+          files: [vaultFile],
+          title: 'Crypsy Encrypted Vault',
+        });
+        return;
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+    }
+  }
+
+  const blob = new Blob([jsonText], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function importEncryptedVaultFile(file: File, backdropToClose?: HTMLElement): Promise<void> {
+  try {
+    const text = await file.text();
+    const envelope = JSON.parse(text) as EncryptedEnvelope;
+    const ok = await tryLoadEnvelope(envelope);
+    if (ok && CrypsyCloudSync.isConnected()) {
+      await CrypsyCloudSync.writeVaultToCloudFolder(envelope);
+    }
+    backdropToClose?.classList.add('hidden');
+  } catch {
+    alert('Invalid .crypsy vault file.');
+  }
 }
 
 function applyViewModeUI(): void {
@@ -1977,11 +2051,17 @@ function setWizardStep(stepNum: 1 | 2 | 3): void {
   els.wizardStep2Error.classList.add('hidden');
 
   if (stepNum === 2) {
-    const provider =
-      CrypsyCloudSync.PROVIDERS[state.selectedProviderId] ?? CrypsyCloudSync.PROVIDERS.custom;
-    els.selectedProviderTitle.textContent = `Typical ${provider.name} Location on Your OS:`;
-    els.osPathHintCode.textContent = CrypsyCloudSync.getProviderPathHint(state.selectedProviderId);
-    els.folderPickerHintText.textContent = provider.folderHint;
+    const fsSupported = !CrypsyCloudSync.isNativeApp() && CrypsyCloudSync.isFileSystemAccessSupported();
+    els.wizardDesktopSyncBox?.classList.toggle('hidden', !fsSupported);
+    els.wizardMobileSyncBox?.classList.toggle('hidden', fsSupported);
+    els.wizardMobileBackBtn?.classList.toggle('hidden', CrypsyCloudSync.isNativeApp());
+    if (fsSupported) {
+      const provider =
+        CrypsyCloudSync.PROVIDERS[state.selectedProviderId] ?? CrypsyCloudSync.PROVIDERS.custom;
+      els.selectedProviderTitle.textContent = `Typical ${provider.name} Location on Your OS:`;
+      els.osPathHintCode.textContent = CrypsyCloudSync.getProviderPathHint(state.selectedProviderId);
+      els.folderPickerHintText.textContent = provider.folderHint;
+    }
   }
 
   if (stepNum === 3) {
@@ -1994,6 +2074,11 @@ function setWizardStep(stepNum: 1 | 2 | 3): void {
 }
 
 function openCloudOnboardingModal(): void {
+  if (CrypsyCloudSync.isNativeApp()) {
+    setWizardStep(2);
+    els.cloudOnboardingBackdrop.classList.remove('hidden');
+    return;
+  }
   const meta = CrypsyCloudSync.getSavedProviderMeta();
   if (CrypsyCloudSync.isConnected() && meta) {
     state.selectedProviderId = meta.providerId || 'onedrive';
@@ -2044,6 +2129,7 @@ function bindEvents(): void {
       const type = btn.getAttribute('data-filter-type');
       if (type === 'all' || type === 'pinned' || type === 'boards') {
         state.activeFilter = { type, tag: null };
+        closeSidebarIfMobile();
         if (boardEditor.isOpen()) {
           boardEditor.close();
           return;
@@ -2051,6 +2137,10 @@ function bindEvents(): void {
         renderAll();
       }
     });
+  });
+
+  document.querySelector('.main-content')?.addEventListener('click', () => {
+    closeSidebarIfMobile();
   });
 
   // Sidebar Boards expand, list & creation
@@ -2090,6 +2180,7 @@ function bindEvents(): void {
       const boardId = boardItem.getAttribute('data-open-board');
       if (boardId) {
         state.activeFilter = { type: 'boards', tag: null };
+        closeSidebarIfMobile();
         openBoardEditor(boardId);
       }
     }
@@ -2115,6 +2206,7 @@ function bindEvents(): void {
       const tag = tagItem.getAttribute('data-tag');
       if (!tag) return;
       state.activeFilter = { type: 'tag', tag };
+      closeSidebarIfMobile();
       if (boardEditor.isOpen()) {
         boardEditor.close();
         return;
@@ -2305,6 +2397,26 @@ function bindEvents(): void {
 
   els.wizardBackToStep1Btn.addEventListener('click', () => {
     setWizardStep(1);
+  });
+
+  els.wizardMobileBackBtn?.addEventListener('click', () => {
+    setWizardStep(1);
+  });
+
+  els.wizardMobileDoneBtn?.addEventListener('click', () => {
+    els.cloudOnboardingBackdrop.classList.add('hidden');
+  });
+
+  els.mobileShareVaultBtn?.addEventListener('click', () => {
+    void shareOrDownloadVaultJson();
+  });
+
+  els.mobileImportVaultInput?.addEventListener('change', async (e) => {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    await importEncryptedVaultFile(file, els.cloudOnboardingBackdrop);
+    input.value = '';
   });
 
   els.copyPathHintBtn.addEventListener('click', async () => {
@@ -3107,35 +3219,15 @@ function bindEvents(): void {
   });
 
   els.exportEncryptedBtn.addEventListener('click', () => {
-    if (!state.lastEncryptedEnvelope) return;
-    const blob = new Blob([JSON.stringify(state.lastEncryptedEnvelope, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `crypsy-vault-${new Date().toISOString().slice(0, 10)}.crypsy.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    void shareOrDownloadVaultJson();
   });
 
   els.importEncryptedInput.addEventListener('change', async (e) => {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    try {
-      const text = await file.text();
-      const envelope = JSON.parse(text) as EncryptedEnvelope;
-      const ok = await tryLoadEnvelope(envelope);
-      if (ok && CrypsyCloudSync.isConnected()) {
-        await CrypsyCloudSync.writeVaultToCloudFolder(envelope);
-      }
-      els.vaultModalBackdrop.classList.add('hidden');
-    } catch {
-      alert('Invalid .crypsy vault file.');
-    } finally {
-      els.importEncryptedInput.value = '';
-    }
+    await importEncryptedVaultFile(file, els.vaultModalBackdrop);
+    input.value = '';
   });
 
   // Updates Modal

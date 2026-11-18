@@ -2,8 +2,14 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#202124" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Crypsy" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>Crypsy</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238ab4f8' stroke-width='2' stroke-linecap='square' stroke-linejoin='miter'%3E%3Cpath d='M5 10H19L20.5 11.5V20.5L19 22H5L3.5 20.5V11.5Z'/%3E%3Cpath d='M7.5 10V6.5a4.5 4.5 0 0 1 9 0V10' stroke-linecap='butt'/%3E%3Cpath d='M13.9 14.93C14.15 14.78 15.36 14.49 15.38 14.03C15.39 13.56 14.76 12.43 14.01 12.15C13.27 11.86 11.88 11.91 10.9 12.31C9.92 12.71 8.64 13.58 8.14 14.52C7.65 15.46 7.53 17.05 7.93 17.94C8.32 18.84 9.46 19.76 10.52 19.89C11.58 20.02 13.14 19.44 14.28 18.73C15.43 18.01 16.85 16.11 17.36 15.59A0.39 0.39 0 0 1 16.84 15.01C16.22 15.53 14.14 17.6 13.1 18.15C12.07 18.7 11.21 18.51 10.62 18.31C10.02 18.11 9.64 17.45 9.53 16.93C9.43 16.42 9.59 15.76 9.97 15.23C10.34 14.7 11.15 14.05 11.79 13.76C12.43 13.47 13.35 13.55 13.79 13.47C14.22 13.39 14.5 13.26 14.42 13.29C14.33 13.33 13.48 13.61 13.3 13.67A0.7 0.7 0 0 1 13.9 14.93Z' fill='%238ab4f8' stroke='none'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -23,7 +29,7 @@
           </svg>
         </div>
         <span class="brand-name">Crypsy</span>
-        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.4.0 — Click to check for updates">v1.4.0</button>
+        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.5.0 — Click to check for updates">v1.5.0</button>
         <span id="encryptionBadge" class="crypto-badge" title="Click to inspect encrypted cloud payload or manage vault key">
           <span class="status-dot"></span>
           AES-256-GCM
@@ -550,42 +556,70 @@
 
       <!-- STEP 2: Locate & Provision Cloud Folder -->
       <div id="wizardStep2" class="wizard-pane hidden">
-        <div class="path-guidance-box">
-          <div class="path-guidance-header">
-            <span id="selectedProviderTitle">Typical OneDrive Location on Your OS:</span>
-            <button type="button" id="copyPathHintBtn" class="btn-link">Copy Path</button>
+        <div id="wizardDesktopSyncBox" class="wizard-pane">
+          <div class="path-guidance-box">
+            <div class="path-guidance-header">
+              <span id="selectedProviderTitle">Typical OneDrive Location on Your OS:</span>
+              <button type="button" id="copyPathHintBtn" class="btn-link">Copy Path</button>
+            </div>
+            <code id="osPathHintCode" class="path-code">%UserProfile%\OneDrive\Crypsy</code>
+            <p id="folderPickerHintText" class="path-hint-sub">
+              When the folder dialog opens, select your cloud folder and Crypsy will place the encrypted vault and portable app inside it.
+            </p>
           </div>
-          <code id="osPathHintCode" class="path-code">%UserProfile%\OneDrive\Crypsy</code>
-          <p id="folderPickerHintText" class="path-hint-sub">
-            When the folder dialog opens, select your cloud folder and Crypsy will place the encrypted vault and portable app inside it.
-          </p>
+
+          <div class="provision-options">
+            <label class="checkbox-row">
+              <input type="checkbox" id="createCrypsySubfolderCb" checked />
+              <div>
+                <strong>Create a dedicated <code>Crypsy/</code> subfolder</strong>
+                <p>Keeps your encrypted vault and portable app neatly organized inside your cloud drive.</p>
+              </div>
+            </label>
+
+            <label class="checkbox-row">
+              <input type="checkbox" id="provisionPortableHtmlCb" checked />
+              <div>
+                <strong>Copy portable <code>Crypsy-Portable.html</code> into cloud folder</strong>
+                <p>Allows you to open Crypsy directly from your cloud folder on any other synced computer without installing anything.</p>
+              </div>
+            </label>
+          </div>
+
+          <p id="wizardStep2Error" class="unlock-error hidden"></p>
+
+          <div class="wizard-footer">
+            <button type="button" id="wizardBackToStep1Btn" class="btn-ghost">&larr; Back</button>
+            <button type="button" id="pickAndProvisionBtn" class="btn-primary">
+              Select Cloud Folder &amp; Place Files
+            </button>
+          </div>
         </div>
 
-        <div class="provision-options">
-          <label class="checkbox-row">
-            <input type="checkbox" id="createCrypsySubfolderCb" checked />
-            <div>
-              <strong>Create a dedicated <code>Crypsy/</code> subfolder</strong>
-              <p>Keeps your encrypted vault and portable app neatly organized inside your cloud drive.</p>
+        <div id="wizardMobileSyncBox" class="wizard-pane hidden">
+          <div class="path-guidance-box">
+            <div class="path-guidance-header">
+              <span>Device &amp; Mobile Sync (iOS &amp; Android)</span>
             </div>
-          </label>
+            <p class="path-hint-sub">
+              Your encrypted vault caches offline on-device (IndexedDB) and auto-saves to <code>Documents/Crypsy/vault.crypsy.json</code> in native mobile apps. Use the actions below to share or import <code>vault.crypsy.json</code> with iCloud Files, Google Drive, OneDrive, or Dropbox:
+            </p>
+          </div>
 
-          <label class="checkbox-row">
-            <input type="checkbox" id="provisionPortableHtmlCb" checked />
-            <div>
-              <strong>Copy portable <code>Crypsy-Portable.html</code> into cloud folder</strong>
-              <p>Allows you to open Crypsy directly from your cloud folder on any other synced computer without installing anything.</p>
-            </div>
-          </label>
-        </div>
+          <div class="mobile-sync-actions">
+            <button type="button" id="mobileShareVaultBtn" class="btn-primary">
+              Share / Save vault.crypsy.json
+            </button>
+            <label class="btn-ghost mobile-import-label" for="mobileImportVaultInput">
+              Import vault.crypsy.json from Files / Cloud
+              <input type="file" id="mobileImportVaultInput" accept=".json,.crypsy,application/json" class="hidden" />
+            </label>
+          </div>
 
-        <p id="wizardStep2Error" class="unlock-error hidden"></p>
-
-        <div class="wizard-footer">
-          <button type="button" id="wizardBackToStep1Btn" class="btn-ghost">&larr; Back</button>
-          <button type="button" id="pickAndProvisionBtn" class="btn-primary">
-            Select Cloud Folder &amp; Place Files
-          </button>
+          <div class="wizard-footer">
+            <button type="button" id="wizardMobileBackBtn" class="btn-ghost">&larr; Back</button>
+            <button type="button" id="wizardMobileDoneBtn" class="btn-primary">Done</button>
+          </div>
         </div>
       </div>
 
@@ -686,7 +720,7 @@
         <div>
           <h3>Crypsy Updates &amp; Releases</h3>
           <p class="vault-subtitle">
-            Installed version: <strong id="installedVersionLabel">v1.4.0</strong>
+            Installed version: <strong id="installedVersionLabel">v1.5.0</strong>
           </p>
         </div>
         <button id="closeUpdatesModalBtn" class="icon-btn" aria-label="Close updates modal">
@@ -802,6 +836,75 @@
         </div>
 
         <div class="board-toolbar-right">
+          <div class="popover-anchor">
+            <div class="board-tool-rack" id="boardDrawRack" role="toolbar" aria-label="Drawing and selection tools">
+              <button type="button" id="boardToolSelectBtn" class="tool-btn ink-tool-btn active" data-board-tool="select" title="Select &amp; Type (Esc)" aria-label="Select and Type">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 3l14 9-7 1.5L9.5 20z"></path>
+                </svg>
+              </button>
+              <button type="button" id="boardToolLassoBtn" class="tool-btn ink-tool-btn" data-board-tool="lasso" title="Lasso Select" aria-label="Lasso Select">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 2.5">
+                  <ellipse cx="12" cy="10" rx="8" ry="6"></ellipse>
+                  <path d="M12 16c0 3 2.5 4.5 5 5" stroke-dasharray="none"></path>
+                </svg>
+              </button>
+              <button type="button" id="boardToolEraserBtn" class="tool-btn ink-tool-btn" data-board-tool="eraser" title="Stroke Eraser" aria-label="Stroke Eraser">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L13.6 2.6c.8-.8 2-.8 2.8 0l4.9 4.9c.8.8.8 2 0 2.8L11.6 20"></path>
+                </svg>
+              </button>
+              <span class="board-rack-sep"></span>
+              <button type="button" id="boardPenSlot0Btn" class="tool-btn ink-tool-btn ink-preset-btn" data-ink-slot="0" title="Pen 1 (Click to draw, click again to customize)" aria-label="Pen 1">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+                </svg>
+                <span class="ink-slot-swatch" data-swatch-slot="0"></span>
+              </button>
+              <button type="button" id="boardPenSlot1Btn" class="tool-btn ink-tool-btn ink-preset-btn" data-ink-slot="1" title="Pen 2 (Click to draw, click again to customize)" aria-label="Pen 2">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+                </svg>
+                <span class="ink-slot-swatch" data-swatch-slot="1"></span>
+              </button>
+              <button type="button" id="boardPenSlot2Btn" class="tool-btn ink-tool-btn ink-preset-btn" data-ink-slot="2" title="Pen 3 (Click to draw, click again to customize)" aria-label="Pen 3">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+                </svg>
+                <span class="ink-slot-swatch" data-swatch-slot="2"></span>
+              </button>
+              <button type="button" id="boardHighlighterSlotBtn" class="tool-btn ink-tool-btn ink-preset-btn" data-ink-slot="3" title="Highlighter (Click to draw, click again to customize)" aria-label="Highlighter">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 11l-6 6v3h9l3-3"></path>
+                  <path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"></path>
+                </svg>
+                <span class="ink-slot-swatch" data-swatch-slot="3"></span>
+              </button>
+              <button type="button" id="boardTouchDrawBtn" class="tool-btn ink-tool-btn" title="Draw with Touch (off = single-finger pan)" aria-label="Draw with Touch">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 11V6a2 2 0 0 0-4 0v5"></path>
+                  <path d="M14 10V4a2 2 0 0 0-4 0v6"></path>
+                  <path d="M10 10.5V6a2 2 0 0 0-4 0v8"></path>
+                  <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.7-2.8L4 16"></path>
+                </svg>
+              </button>
+            </div>
+
+            <div id="boardInkPopover" class="popover-menu popover-right ink-popover-menu hidden">
+              <div id="boardInkPopoverTitle" class="popover-title">Customize Pen</div>
+              <div class="ink-width-row">
+                <span class="ink-popover-label">Thickness</span>
+                <span id="boardInkWidthLabel" class="ink-width-readout">3px</span>
+              </div>
+              <input type="range" id="boardInkWidthRange" class="ink-width-slider" min="1.5" max="10" step="0.5" value="3" />
+              <div id="boardInkWidthQuick" class="ink-width-quick"></div>
+              <div class="ink-popover-label" style="margin-top:8px;">Ink Color</div>
+              <div id="boardInkColorSwatches" class="ink-color-grid"></div>
+            </div>
+          </div>
+
+          <div class="board-toolbar-divider"></div>
+
           <button type="button" id="boardAddTextBtn" class="tool-btn" title="Add text box">
             <span>+ Text</span>
           </button>
@@ -849,7 +952,8 @@
 
           <button type="button" id="boardUndoBtn" class="tool-btn" title="Undo (Ctrl+Z)" disabled>Undo</button>
           <button type="button" id="boardRedoBtn" class="tool-btn" title="Redo (Ctrl+Y)" disabled>Redo</button>
-          <button type="button" id="boardSnapBtn" class="tool-btn" title="Snap items to 16px grid">Grid</button>
+          <button type="button" id="boardSnapBtn" class="tool-btn" title="Snap items to 16px grid">Snap</button>
+          <button type="button" id="boardPaperBtn" class="tool-btn" title="Background style: Dots / Grid / Ruled / Blank">Dots</button>
 
           <div class="board-zoom-group">
             <button type="button" id="boardZoomOutBtn" class="tool-btn" title="Zoom out">-</button>
@@ -882,7 +986,14 @@
             <button type="button" id="boardSelAlignRightBtn" class="tool-btn" title="Align right">Right</button>
           </div>
 
-          <div class="board-sel-group">
+          <div id="boardSelStrokeGroup" class="board-sel-group hidden">
+            <button type="button" id="boardSelStrokeDecBtn" class="tool-btn" title="Thinner ink">W-</button>
+            <span id="boardSelStrokeWidthLabel" class="board-sel-readout">3px</span>
+            <button type="button" id="boardSelStrokeIncBtn" class="tool-btn" title="Thicker ink">W+</button>
+            <div class="color-picker ink-sel-colors" id="boardSelStrokeColorPicker" aria-label="Selected ink color"></div>
+          </div>
+
+          <div id="boardSelColorGroup" class="board-sel-group">
             <div class="color-picker" id="boardSelColorPicker" aria-label="Selected item color">
               <button type="button" class="color-dot" data-color="default" title="Default"></button>
               <button type="button" class="color-dot" data-color="coral" title="Coral"></button>
@@ -921,9 +1032,10 @@
             <div id="boardItemsLayer" class="board-items-layer"></div>
             <div id="boardSelectionOverlay" class="board-selection-overlay hidden"></div>
           </div>
+          <canvas id="boardInkLiveCanvas" class="board-ink-live-canvas hidden" aria-hidden="true"></canvas>
           <div id="boardMarqueeRect" class="board-marquee-rect hidden"></div>
           <div id="boardCanvasHint" class="board-canvas-hint">
-            Click anywhere to type &bull; Click or drag box border to select &amp; move &bull; Drag handles to resize/rotate &bull; Ctrl+V to paste image or link
+            Click anywhere to type &bull; Draw directly with stylus or Pen tool &bull; Drag border to move &bull; Ctrl+V to paste image or link
           </div>
         </div>
       </div>

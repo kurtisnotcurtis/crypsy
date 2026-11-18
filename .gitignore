@@ -1,5 +1,6 @@
 node_modules/
 /dist/
+/www/
 /Crypsy-Portable.html
 *.crypsy.json
 .DS_Store

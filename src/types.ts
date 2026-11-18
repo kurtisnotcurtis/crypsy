@@ -37,6 +37,8 @@ export interface BoardViewport {
 }
 
 export type BoardTextAlign = 'left' | 'center' | 'right';
+export type BoardInkTool = 'pen' | 'highlighter';
+export type BoardGridStyle = 'dots' | 'grid' | 'ruled' | 'blank';
 
 export interface BoardItemBase {
   id: string;
@@ -70,7 +72,24 @@ export interface BoardLinkItem extends BoardItemBase {
   description?: string | undefined;
 }
 
-export type BoardItem = BoardTextItem | BoardImageItem | BoardLinkItem;
+export interface BoardStrokeItem extends BoardItemBase {
+  type: 'stroke';
+  tool: BoardInkTool;
+  /** CSS hex ink color or 'auto-ink' token (theme-adaptive dark/light ink) */
+  strokeColor: string;
+  /** Nominal base width in canvas px before pressure modulation */
+  strokeWidth: number;
+  /** Normalized opacity (1 for pen, ~0.4 for highlighter) */
+  opacity?: number | undefined;
+  /** Original stroke bounding box width for proportional vector scaling on resize */
+  sourceWidth: number;
+  /** Original stroke bounding box height for proportional vector scaling on resize */
+  sourceHeight: number;
+  /** Simplified stroke-local samples [x, y, pressure] */
+  points: [number, number, number][];
+}
+
+export type BoardItem = BoardTextItem | BoardImageItem | BoardLinkItem | BoardStrokeItem;
 
 export interface Board {
   id: string;
@@ -78,6 +97,7 @@ export interface Board {
   tags: string[];
   pinned: boolean;
   color: NoteColor;
+  gridStyle?: BoardGridStyle | undefined;
   viewport: BoardViewport;
   items: BoardItem[];
   createdAt: number;

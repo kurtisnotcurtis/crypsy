@@ -32,6 +32,7 @@ function buildPortableHtml() {
   const bundleJs = fs.readFileSync(path.join(ROOT_DIR, 'dist', 'app.bundle.js'), 'utf8');
 
   return indexHtml
+    .replace(/<link\s+rel="manifest"\s+href="\.\/manifest\.webmanifest"\s*\/?>\s*\r?\n?/i, '')
     .replace(
       /<link\s+rel="stylesheet"\s+href="styles\.css"\s*\/?>/i,
       () => `<style>\n${stylesCss}\n</style>`

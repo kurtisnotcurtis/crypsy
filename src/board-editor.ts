@@ -11,6 +11,18 @@ import {
   shouldBypassCustomContextMenu,
 } from './context-menu';
 import {
+  AUTO_INK_TOKEN,
+  INK_SWATCHES,
+  type StrokePoint,
+  computePointPressure,
+  lassoSelectsRect,
+  lassoSelectsStroke,
+  normalizeRawStroke,
+  renderStrokeToCanvas2d,
+  resolveLiveInkColor,
+  segmentHitsStroke,
+} from './ink';
+import {
   extractClipboardImages,
   extractImageUrlFromClipboardHtml,
   extractStandaloneImageUrl,
@@ -20,9 +32,12 @@ import {
 } from './media';
 import type {
   Board,
+  BoardGridStyle,
   BoardImageItem,
+  BoardInkTool,
   BoardItem,
   BoardLinkItem,
+  BoardStrokeItem,
   BoardTextAlign,
   BoardTextItem,
   NoteColor,
@@ -59,6 +74,23 @@ export interface BoardEditorHost {
 }
 
 type HandleDir = 'nw' | 'ne' | 'sw' | 'se' | 'w' | 'e' | 'rotate';
+type BoardActiveTool = 'select' | 'lasso' | 'eraser' | 'pen' | 'highlighter';
+
+interface InkPreset {
+  slot: number;
+  tool: BoardInkTool;
+  color: string;
+  width: number;
+  opacity: number;
+}
+
+const GRID_STYLES: readonly BoardGridStyle[] = ['dots', 'grid', 'ruled', 'blank'];
+const GRID_STYLE_LABELS: Record<BoardGridStyle, string> = {
+  dots: 'Dots',
+  grid: 'Grid',
+  ruled: 'Ruled',
+  blank: 'Blank',
+};
 
 interface ItemMetrics {
   x: number;
@@ -117,6 +149,41 @@ type ActiveGesture =
       startCanvasY: number;
       additive: boolean;
       moved: boolean;
+    }
+  | {
+      kind: 'draw';
+      pointerId: number;
+      pointerType: string;
+      tool: BoardInkTool;
+      strokeColor: string;
+      strokeWidth: number;
+      opacity: number;
+      rawPoints: StrokePoint[];
+      lastTime: number;
+      lastPressure: number;
+      startPt: { x: number; y: number };
+      straightLinePt: { x: number; y: number } | null;
+    }
+  | {
+      kind: 'erase';
+      pointerId: number;
+      prevCanvasPt: { x: number; y: number };
+      erasedAny: boolean;
+      undoPushed: boolean;
+    }
+  | {
+      kind: 'lasso';
+      pointerId: number;
+      points: [number, number][];
+      additive: boolean;
+    }
+  | {
+      kind: 'pinch';
+      pointerIds: [number, number];
+      startDist: number;
+      startCanvasMidX: number;
+      startCanvasMidY: number;
+      startZoom: number;
     };
 
 const GRID_STEP = 16;
@@ -157,6 +224,21 @@ export class BoardEditorController {
     tagOptions: byId('boardTagOptions'),
     tagsRow: byId('boardTagsRow'),
     colorPicker: byId('boardColorPicker'),
+    drawRack: byId('boardDrawRack'),
+    toolSelectBtn: byId<HTMLButtonElement>('boardToolSelectBtn'),
+    toolLassoBtn: byId<HTMLButtonElement>('boardToolLassoBtn'),
+    toolEraserBtn: byId<HTMLButtonElement>('boardToolEraserBtn'),
+    penSlot0Btn: byId<HTMLButtonElement>('boardPenSlot0Btn'),
+    penSlot1Btn: byId<HTMLButtonElement>('boardPenSlot1Btn'),
+    penSlot2Btn: byId<HTMLButtonElement>('boardPenSlot2Btn'),
+    highlighterSlotBtn: byId<HTMLButtonElement>('boardHighlighterSlotBtn'),
+    touchDrawBtn: byId<HTMLButtonElement>('boardTouchDrawBtn'),
+    inkPopover: byId('boardInkPopover'),
+    inkPopoverTitle: byId('boardInkPopoverTitle'),
+    inkWidthLabel: byId('boardInkWidthLabel'),
+    inkWidthRange: byId<HTMLInputElement>('boardInkWidthRange'),
+    inkWidthQuick: byId('boardInkWidthQuick'),
+    inkColorSwatches: byId('boardInkColorSwatches'),
     addTextBtn: byId<HTMLButtonElement>('boardAddTextBtn'),
     addImageBtn: byId<HTMLButtonElement>('boardAddImageBtn'),
     imagePopover: byId('boardImagePopover'),
@@ -174,6 +256,7 @@ export class BoardEditorController {
     undoBtn: byId<HTMLButtonElement>('boardUndoBtn'),
     redoBtn: byId<HTMLButtonElement>('boardRedoBtn'),
     snapBtn: byId<HTMLButtonElement>('boardSnapBtn'),
+    paperBtn: byId<HTMLButtonElement>('boardPaperBtn'),
     zoomOutBtn: byId<HTMLButtonElement>('boardZoomOutBtn'),
     zoomResetBtn: byId<HTMLButtonElement>('boardZoomResetBtn'),
     zoomInBtn: byId<HTMLButtonElement>('boardZoomInBtn'),
@@ -190,6 +273,12 @@ export class BoardEditorController {
     selAlignLeftBtn: byId<HTMLButtonElement>('boardSelAlignLeftBtn'),
     selAlignCenterBtn: byId<HTMLButtonElement>('boardSelAlignCenterBtn'),
     selAlignRightBtn: byId<HTMLButtonElement>('boardSelAlignRightBtn'),
+    selStrokeGroup: byId('boardSelStrokeGroup'),
+    selStrokeDecBtn: byId<HTMLButtonElement>('boardSelStrokeDecBtn'),
+    selStrokeWidthLabel: byId('boardSelStrokeWidthLabel'),
+    selStrokeIncBtn: byId<HTMLButtonElement>('boardSelStrokeIncBtn'),
+    selStrokeColorPicker: byId('boardSelStrokeColorPicker'),
+    selColorGroup: byId('boardSelColorGroup'),
     selColorPicker: byId('boardSelColorPicker'),
     selRotateLeftBtn: byId<HTMLButtonElement>('boardSelRotateLeftBtn'),
     selRotationLabel: byId<HTMLButtonElement>('boardSelRotationLabel'),
@@ -204,6 +293,7 @@ export class BoardEditorController {
     world: byId('boardCanvasWorld'),
     itemsLayer: byId('boardItemsLayer'),
     selectionOverlay: byId('boardSelectionOverlay'),
+    inkLiveCanvas: byId<HTMLCanvasElement>('boardInkLiveCanvas'),
     marqueeRect: byId('boardMarqueeRect'),
     canvasHint: maybeById('boardCanvasHint'),
   };
@@ -213,6 +303,23 @@ export class BoardEditorController {
   private editingLinkLabelId: string | null = null;
   private snapToGrid = false;
   private spacePressed = false;
+  private activeTool: BoardActiveTool = 'select';
+  private activeInkSlot = 0;
+  private editingInkSlot = 0;
+  private touchDrawEnabled = false;
+  private activeTouchPoints = new Map<number, { clientX: number; clientY: number }>();
+  private longPressState: {
+    timerId: number;
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+  } | null = null;
+  private inkPresets: InkPreset[] = [
+    { slot: 0, tool: 'pen', color: AUTO_INK_TOKEN, width: 3, opacity: 1 },
+    { slot: 1, tool: 'pen', color: '#4285f4', width: 3, opacity: 1 },
+    { slot: 2, tool: 'pen', color: '#ea4335', width: 4.5, opacity: 1 },
+    { slot: 3, tool: 'highlighter', color: '#fbbc04', width: 18, opacity: 0.42 },
+  ];
   private lastCanvasCursor: { x: number; y: number } | null = null;
   private gesture: ActiveGesture | null = null;
   private isRenderingItems = false;
@@ -222,10 +329,12 @@ export class BoardEditorController {
   private lastCopiedSummary = '';
   private hintResetTimer: number | null = null;
   private defaultCanvasHint =
-    'Click anywhere to type • Click or drag box border to select & move • Drag handles to resize/rotate • Ctrl+V to paste image or link';
+    'Click anywhere to type • Draw directly with stylus or Pen tool • Drag border to move • Ctrl+V to paste image or link';
 
   constructor(host: BoardEditorHost) {
     this.host = host;
+    this.initInkPickers();
+    this.updateDrawToolbarUi();
     this.bindEvents();
   }
 
@@ -237,11 +346,58 @@ export class BoardEditorController {
     return this.gesture !== null;
   }
 
+  private clearLongPressTimer(): void {
+    if (this.longPressState) {
+      window.clearTimeout(this.longPressState.timerId);
+      this.longPressState = null;
+    }
+  }
+
+  private openContextMenuForTarget(
+    board: Board,
+    clientX: number,
+    clientY: number,
+    target: HTMLElement | null
+  ): void {
+    this.closePopovers();
+    let itemEl = target?.closest<HTMLElement>('[data-board-item-id]') ?? null;
+    if (!itemEl && target?.closest('#boardSelectionOverlay') && this.selectedIds.size === 1) {
+      const onlyId = Array.from(this.selectedIds)[0];
+      itemEl = onlyId ? this.getItemElement(onlyId) : null;
+    }
+
+    const pt = this.clientToCanvas(clientX, clientY, board);
+    if (itemEl) {
+      const itemId = itemEl.getAttribute('data-board-item-id');
+      const item = board.items.find((it) => it.id === itemId);
+      if (item) {
+        this.commitActiveTextEdit(item.id);
+        if (!this.selectedIds.has(item.id)) {
+          this.selectedIds = new Set([item.id]);
+        }
+        this.renderItems();
+        this.updateSelectionBar();
+        this.openItemContextMenu(clientX, clientY, board);
+        return;
+      }
+    }
+
+    this.lastCanvasCursor = { x: pt.x, y: pt.y };
+    this.commitActiveTextEdit();
+    this.selectedIds.clear();
+    this.renderItems();
+    this.updateSelectionBar();
+    this.openCanvasContextMenu(clientX, clientY, board, pt);
+  }
+
   public open(board: Board): void {
     this.selectedIds.clear();
     this.editingItemId = null;
     this.editingLinkLabelId = null;
     this.gesture = null;
+    this.activeTouchPoints.clear();
+    this.clearLongPressTimer();
+    this.clearLiveCanvas();
     this.undoStack = [];
     this.redoStack = [];
     this.lastCanvasCursor = null;
@@ -258,6 +414,7 @@ export class BoardEditorController {
     this.closePopovers();
     this.els.backdrop.classList.remove('hidden');
     this.renderBoardMeta(board);
+    this.updateDrawToolbarUi();
     this.applyViewport(board);
     this.renderItems();
     this.updateSelectionBar();
@@ -271,6 +428,9 @@ export class BoardEditorController {
     this.editingItemId = null;
     this.editingLinkLabelId = null;
     this.gesture = null;
+    this.activeTouchPoints.clear();
+    this.clearLongPressTimer();
+    this.clearLiveCanvas();
     this.host.contextMenu.close();
     this.closePopovers();
     this.els.backdrop.classList.add('hidden');
@@ -304,7 +464,8 @@ export class BoardEditorController {
     if (
       !this.els.tagPopover.classList.contains('hidden') ||
       !this.els.imagePopover.classList.contains('hidden') ||
-      !this.els.linkPopover.classList.contains('hidden')
+      !this.els.linkPopover.classList.contains('hidden') ||
+      !this.els.inkPopover.classList.contains('hidden')
     ) {
       this.closePopovers();
       return true;
@@ -323,6 +484,11 @@ export class BoardEditorController {
       this.renderItems();
       this.updateSelectionOverlay();
       this.updateSelectionBar();
+      return true;
+    }
+
+    if (this.activeTool !== 'select') {
+      this.setActiveTool('select');
       return true;
     }
 
@@ -504,7 +670,284 @@ export class BoardEditorController {
     this.els.tagPopover.classList.add('hidden');
     this.els.imagePopover.classList.add('hidden');
     this.els.linkPopover.classList.add('hidden');
+    this.els.inkPopover.classList.add('hidden');
     this.els.linkError.classList.add('hidden');
+  }
+
+  private renderSwatchButtonsHtml(includeAuto: boolean): string {
+    return INK_SWATCHES.filter((s) => includeAuto || s.color !== AUTO_INK_TOKEN)
+      .map(
+        (s) =>
+          `<button type="button" class="ink-swatch-btn" data-ink-color="${s.color}" title="${s.label}" aria-label="${s.label}"${
+            s.color === AUTO_INK_TOKEN ? '' : ` style="background:${s.color};"`
+          }></button>`
+      )
+      .join('');
+  }
+
+  private initInkPickers(): void {
+    this.els.inkColorSwatches.innerHTML = this.renderSwatchButtonsHtml(true);
+    this.els.selStrokeColorPicker.innerHTML = this.renderSwatchButtonsHtml(true);
+  }
+
+  private getActiveInkPreset(): InkPreset {
+    return this.inkPresets[this.activeInkSlot] ?? this.inkPresets[0]!;
+  }
+
+  private setActiveTool(tool: BoardActiveTool, slotIndex?: number): void {
+    if (slotIndex !== undefined && this.inkPresets[slotIndex]) {
+      this.activeInkSlot = slotIndex;
+    }
+    this.activeTool = tool;
+    this.updateDrawToolbarUi();
+  }
+
+  private updateDrawToolbarUi(): void {
+    this.els.toolSelectBtn.classList.toggle('active', this.activeTool === 'select');
+    this.els.toolLassoBtn.classList.toggle('active', this.activeTool === 'lasso');
+    this.els.toolEraserBtn.classList.toggle('active', this.activeTool === 'eraser');
+    this.els.touchDrawBtn.classList.toggle('active', this.touchDrawEnabled);
+
+    const presetBtns = [
+      this.els.penSlot0Btn,
+      this.els.penSlot1Btn,
+      this.els.penSlot2Btn,
+      this.els.highlighterSlotBtn,
+    ];
+    for (let i = 0; i < this.inkPresets.length; i++) {
+      const preset = this.inkPresets[i]!;
+      const btn = presetBtns[i];
+      if (!btn) continue;
+      const isActive =
+        (this.activeTool === 'pen' || this.activeTool === 'highlighter') &&
+        this.activeInkSlot === i;
+      btn.classList.toggle('active', isActive);
+      const swatchEl = btn.querySelector<HTMLElement>('[data-swatch-slot]');
+      if (swatchEl) {
+        swatchEl.setAttribute('data-ink-token', preset.color);
+        swatchEl.style.background = preset.color === AUTO_INK_TOKEN ? '' : preset.color;
+      }
+    }
+
+    this.els.viewport.setAttribute('data-tool', this.activeTool);
+  }
+
+  private openInkPopoverForSlot(slot: number): void {
+    const preset = this.inkPresets[slot];
+    if (!preset) return;
+    this.closePopovers();
+    this.editingInkSlot = slot;
+    this.els.inkPopoverTitle.textContent =
+      preset.tool === 'highlighter' ? 'Customize Highlighter' : `Customize Pen ${slot + 1}`;
+    this.els.inkWidthRange.min = preset.tool === 'highlighter' ? '10' : '1.5';
+    this.els.inkWidthRange.max = preset.tool === 'highlighter' ? '32' : '10';
+    this.els.inkWidthRange.step = preset.tool === 'highlighter' ? '2' : '0.5';
+    this.els.inkWidthRange.value = String(preset.width);
+    this.els.inkWidthLabel.textContent = `${preset.width}px`;
+
+    const quickWidths = preset.tool === 'highlighter' ? [12, 18, 24, 30] : [1.5, 3, 5, 8];
+    this.els.inkWidthQuick.innerHTML = quickWidths
+      .map(
+        (w) =>
+          `<button type="button" class="tool-btn${preset.width === w ? ' active' : ''}" data-ink-quick-w="${w}">${w}px</button>`
+      )
+      .join('');
+
+    this.els.inkColorSwatches.querySelectorAll<HTMLElement>('[data-ink-color]').forEach((btn) => {
+      btn.classList.toggle('active', btn.getAttribute('data-ink-color') === preset.color);
+    });
+    this.els.inkPopover.classList.remove('hidden');
+  }
+
+  private cycleBoardGridStyle(): void {
+    const board = this.host.getBoard();
+    if (!board) return;
+    const current = board.gridStyle ?? 'dots';
+    const next = GRID_STYLES[(GRID_STYLES.indexOf(current) + 1) % GRID_STYLES.length]!;
+    board.gridStyle = next;
+    this.applyViewport(board);
+    this.host.onBoardMutated(board, true);
+  }
+
+  private getLiveCanvasCtx(board: Board): CanvasRenderingContext2D | null {
+    const canvas = this.els.inkLiveCanvas;
+    const w = this.els.viewport.clientWidth;
+    const h = this.els.viewport.clientHeight;
+    if (w <= 0 || h <= 0) return null;
+
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const targetW = Math.round(w * dpr);
+    const targetH = Math.round(h * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+    }
+    canvas.classList.remove('hidden');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const z = board.viewport.zoom;
+    ctx.setTransform(dpr * z, 0, 0, dpr * z, board.viewport.panX * dpr, board.viewport.panY * dpr);
+    return ctx;
+  }
+
+  private clearLiveCanvas(): void {
+    const canvas = this.els.inkLiveCanvas;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    canvas.classList.add('hidden');
+  }
+
+  private renderLiveDrawOverlay(board: Board, pt?: { x: number; y: number }): void {
+    if (!this.gesture) return;
+    const ctx = this.getLiveCanvasCtx(board);
+    if (!ctx) return;
+
+    if (this.gesture.kind === 'draw') {
+      const pts: StrokePoint[] = this.gesture.straightLinePt
+        ? [
+            [this.gesture.startPt.x, this.gesture.startPt.y, 0.58],
+            [this.gesture.straightLinePt.x, this.gesture.straightLinePt.y, 0.58],
+          ]
+        : this.gesture.rawPoints;
+      renderStrokeToCanvas2d(
+        ctx,
+        pts,
+        this.gesture.tool,
+        this.gesture.strokeColor,
+        this.gesture.strokeWidth,
+        this.gesture.opacity
+      );
+    } else if (this.gesture.kind === 'erase' && pt) {
+      const r = 10 / board.viewport.zoom;
+      ctx.save();
+      ctx.strokeStyle = resolveLiveInkColor(AUTO_INK_TOKEN);
+      ctx.lineWidth = 1.5 / board.viewport.zoom;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (this.gesture.kind === 'lasso' && this.gesture.points.length >= 2) {
+      ctx.save();
+      ctx.strokeStyle = '#8ab4f8';
+      ctx.fillStyle = 'rgba(138, 180, 248, 0.1)';
+      ctx.lineWidth = 1.75 / board.viewport.zoom;
+      ctx.setLineDash([6 / board.viewport.zoom, 4 / board.viewport.zoom]);
+      ctx.beginPath();
+      ctx.moveTo(this.gesture.points[0]![0], this.gesture.points[0]![1]);
+      for (let i = 1; i < this.gesture.points.length; i++) {
+        ctx.lineTo(this.gesture.points[i]![0], this.gesture.points[i]![1]);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  private eraseStrokesAlongSegment(
+    board: Board,
+    segA: { x: number; y: number },
+    segB: { x: number; y: number },
+    gesture: Extract<ActiveGesture, { kind: 'erase' }>
+  ): void {
+    const hitRadius = 10 / Math.max(0.25, board.viewport.zoom);
+    const hitIds: string[] = [];
+    for (const item of board.items) {
+      if (item.type !== 'stroke') continue;
+      const m = this.getItemMetrics(item);
+      if (segmentHitsStroke(item, m.w, m.h, segA.x, segA.y, segB.x, segB.y, hitRadius)) {
+        hitIds.push(item.id);
+      }
+    }
+    if (hitIds.length === 0) return;
+
+    if (!gesture.undoPushed) {
+      this.pushUndoSnapshot(board);
+      gesture.undoPushed = true;
+    }
+    const hitSet = new Set(hitIds);
+    board.items = board.items.filter((it) => !hitSet.has(it.id));
+    for (const id of hitIds) this.selectedIds.delete(id);
+    gesture.erasedAny = true;
+    this.renderItems();
+    this.updateSelectionBar();
+  }
+
+  private commitStrokeFromGesture(
+    board: Board,
+    finished: Extract<ActiveGesture, { kind: 'draw' }>
+  ): void {
+    const sourcePts: StrokePoint[] = finished.straightLinePt
+      ? [
+          [finished.startPt.x, finished.startPt.y, 0.58],
+          [finished.straightLinePt.x, finished.straightLinePt.y, 0.58],
+        ]
+      : finished.rawPoints;
+    if (sourcePts.length === 0) return;
+
+    const norm = normalizeRawStroke(sourcePts, finished.tool, finished.strokeWidth);
+    const strokeItem: BoardStrokeItem = {
+      id: createItemId(),
+      type: 'stroke',
+      tool: finished.tool,
+      strokeColor: finished.strokeColor,
+      strokeWidth: finished.strokeWidth,
+      opacity: finished.opacity,
+      x: norm.x,
+      y: norm.y,
+      width: norm.width,
+      height: norm.height,
+      sourceWidth: norm.sourceWidth,
+      sourceHeight: norm.sourceHeight,
+      rotation: 0,
+      zIndex: this.nextZIndex(board),
+      points: norm.points,
+    };
+
+    this.pushUndoSnapshot(board);
+    board.items.push(strokeItem);
+    this.renderItems();
+    this.host.onBoardMutated(board, true);
+  }
+
+  private commitLassoSelection(
+    board: Board,
+    finished: Extract<ActiveGesture, { kind: 'lasso' }>
+  ): void {
+    const poly = finished.points;
+    let perimeter = 0;
+    for (let i = 1; i < poly.length; i++) {
+      perimeter += Math.hypot(poly[i]![0] - poly[i - 1]![0], poly[i]![1] - poly[i - 1]![1]);
+    }
+    if (poly.length < 3 || perimeter < 12) {
+      if (!finished.additive) {
+        this.selectedIds.clear();
+        this.renderItems();
+        this.updateSelectionBar();
+      }
+      return;
+    }
+
+    const nextSel = finished.additive ? new Set(this.selectedIds) : new Set<string>();
+    for (const item of board.items) {
+      const m = this.getItemMetrics(item);
+      if (item.type === 'stroke') {
+        if (lassoSelectsStroke(item, m.w, m.h, poly)) {
+          nextSel.add(item.id);
+        }
+      } else if (lassoSelectsRect(m.x, m.y, m.w, m.h, m.rotation, poly)) {
+        nextSel.add(item.id);
+      }
+    }
+    this.selectedIds = nextSel;
+    this.renderItems();
+    this.updateSelectionBar();
   }
 
   private clientToCanvas(clientX: number, clientY: number, board: Board): { x: number; y: number } {
@@ -589,9 +1032,20 @@ export class BoardEditorController {
 
   private applyViewport(board: Board): void {
     const { panX, panY, zoom } = board.viewport;
+    const gridStyle: BoardGridStyle = board.gridStyle ?? 'dots';
     this.els.world.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
-    const dotStep = 24 * zoom;
-    this.els.viewport.style.backgroundSize = `${dotStep}px ${dotStep}px`;
+    this.els.viewport.setAttribute('data-grid', gridStyle);
+    this.els.paperBtn.textContent = GRID_STYLE_LABELS[gridStyle];
+
+    if (gridStyle === 'ruled') {
+      const ruleStep = 32 * zoom;
+      this.els.viewport.style.backgroundSize = `100% ${ruleStep}px`;
+    } else if (gridStyle === 'blank') {
+      this.els.viewport.style.backgroundSize = '';
+    } else {
+      const dotStep = 24 * zoom;
+      this.els.viewport.style.backgroundSize = `${dotStep}px ${dotStep}px`;
+    }
     this.els.viewport.style.backgroundPosition = `${panX}px ${panY}px`;
     this.els.zoomResetBtn.textContent = `${Math.round(zoom * 100)}%`;
   }
@@ -670,8 +1124,9 @@ export class BoardEditorController {
 
   private getItemMetrics(item: BoardItem): ItemMetrics {
     const el = this.getItemElement(item.id);
+    const fallbackH = item.type === 'stroke' ? item.sourceHeight : 80;
     const w = el && el.offsetWidth > 0 ? el.offsetWidth : item.width || 220;
-    const h = el && el.offsetHeight > 0 ? el.offsetHeight : item.height || 80;
+    const h = el && el.offsetHeight > 0 ? el.offsetHeight : item.height || fallbackH;
     return {
       x: item.x,
       y: item.y,
@@ -781,7 +1236,7 @@ export class BoardEditorController {
     this.els.selectionOverlay.style.transform = `rotate(${m.rotation}deg)`;
 
     const handles: HandleDir[] =
-      item.type === 'image'
+      item.type === 'image' || item.type === 'stroke'
         ? ['nw', 'ne', 'sw', 'se', 'rotate']
         : ['nw', 'ne', 'sw', 'se', 'w', 'e', 'rotate'];
 
@@ -812,6 +1267,8 @@ export class BoardEditorController {
 
     this.els.selectionBar.classList.remove('hidden');
     const textItems = selectedItems.filter((it): it is BoardTextItem => it.type === 'text');
+    const strokeItems = selectedItems.filter((it): it is BoardStrokeItem => it.type === 'stroke');
+    const allStrokes = strokeItems.length > 0 && strokeItems.length === selectedItems.length;
 
     if (textItems.length > 0 && textItems.length === selectedItems.length) {
       this.els.selTextGroup.classList.remove('hidden');
@@ -824,6 +1281,21 @@ export class BoardEditorController {
       this.els.selAlignRightBtn.classList.toggle('active', primary.align === 'right');
     } else {
       this.els.selTextGroup.classList.add('hidden');
+    }
+
+    if (allStrokes) {
+      this.els.selStrokeGroup.classList.remove('hidden');
+      this.els.selColorGroup.classList.add('hidden');
+      const primaryStroke = strokeItems[0]!;
+      this.els.selStrokeWidthLabel.textContent = `${primaryStroke.strokeWidth}px`;
+      this.els.selStrokeColorPicker
+        .querySelectorAll<HTMLElement>('[data-ink-color]')
+        .forEach((btn) => {
+          btn.classList.toggle('active', btn.getAttribute('data-ink-color') === primaryStroke.strokeColor);
+        });
+    } else {
+      this.els.selStrokeGroup.classList.add('hidden');
+      this.els.selColorGroup.classList.remove('hidden');
     }
 
     const first = selectedItems[0]!;
@@ -1072,6 +1544,7 @@ export class BoardEditorController {
     const summaryParts = selected.map((it) => {
       if (it.type === 'text') return it.content;
       if (it.type === 'link') return it.url;
+      if (it.type === 'stroke') return '';
       return it.image.sourceType === 'external' ? it.image.src : it.image.alt || '[Board Image]';
     });
     this.lastCopiedSummary = summaryParts.filter(Boolean).join('\n\n');
@@ -1201,6 +1674,28 @@ export class BoardEditorController {
     });
   }
 
+  private mutateSelectedStrokeItems(fn: (item: BoardStrokeItem) => void): void {
+    this.mutateSelectedItems((items) => {
+      for (const item of items) {
+        if (item.type === 'stroke') fn(item);
+      }
+    });
+  }
+
+  private setSelectedStrokeColor(color: string): void {
+    this.mutateSelectedStrokeItems((it) => {
+      it.strokeColor = color;
+    });
+  }
+
+  private adjustSelectedStrokeWidth(delta: number): void {
+    this.mutateSelectedStrokeItems((it) => {
+      const minW = it.tool === 'highlighter' ? 8 : 1;
+      const maxW = it.tool === 'highlighter' ? 36 : 16;
+      it.strokeWidth = Math.max(minW, Math.min(maxW, Math.round((it.strokeWidth + delta) * 2) / 2));
+    });
+  }
+
   private mutateSelectedTextItems(fn: (item: BoardTextItem) => void): void {
     this.mutateSelectedItems((items) => {
       for (const item of items) {
@@ -1276,7 +1771,21 @@ export class BoardEditorController {
     board: Board,
     pt: { x: number; y: number }
   ): void {
-    const entries: ContextMenuEntry[] = [
+    const entries: ContextMenuEntry[] = [];
+    if (this.activeTool !== 'select') {
+      entries.push(
+        {
+          type: 'action',
+          id: 'tool-select',
+          label: 'Switch to Select / Type Tool',
+          shortcut: 'Esc',
+          onSelect: () => this.setActiveTool('select'),
+        },
+        { type: 'divider' }
+      );
+    }
+
+    entries.push(
       {
         type: 'action',
         id: 'new-text',
@@ -1334,7 +1843,13 @@ export class BoardEditorController {
           this.els.snapBtn.classList.toggle('active', this.snapToGrid);
         },
       },
-    ];
+      {
+        type: 'action',
+        id: 'cycle-paper',
+        label: `Paper: ${GRID_STYLE_LABELS[board.gridStyle ?? 'dots']} (Switch)`,
+        onSelect: () => this.cycleBoardGridStyle(),
+      }
+    );
 
     this.host.contextMenu.open(clientX, clientY, entries);
   }
@@ -1345,6 +1860,7 @@ export class BoardEditorController {
 
     const single = selected.length === 1 ? selected[0] : undefined;
     const allText = selected.every((it): it is BoardTextItem => it.type === 'text');
+    const allStrokes = selected.every((it): it is BoardStrokeItem => it.type === 'stroke');
     const entries: ContextMenuEntry[] = [];
 
     if (single?.type === 'text') {
@@ -1443,6 +1959,23 @@ export class BoardEditorController {
       );
     }
 
+    if (allStrokes) {
+      entries.push(
+        {
+          type: 'action',
+          id: 'stroke-thicker',
+          label: 'Thicker Ink',
+          onSelect: () => this.adjustSelectedStrokeWidth(1),
+        },
+        {
+          type: 'action',
+          id: 'stroke-thinner',
+          label: 'Thinner Ink',
+          onSelect: () => this.adjustSelectedStrokeWidth(-1),
+        }
+      );
+    }
+
     if (entries.length > 0) {
       entries.push({ type: 'divider' });
     }
@@ -1468,14 +2001,22 @@ export class BoardEditorController {
         label: 'Duplicate',
         shortcut: 'Ctrl+D',
         onSelect: () => this.duplicateSelected(),
-      },
-      { type: 'divider' },
-      {
-        type: 'color-row',
-        label: 'Tint',
-        activeColor: selected[0]?.color || 'default',
-        onSelectColor: (c) => this.setSelectedColor(c),
-      },
+      }
+    );
+
+    if (!allStrokes) {
+      entries.push(
+        { type: 'divider' },
+        {
+          type: 'color-row',
+          label: 'Tint',
+          activeColor: selected[0]?.color || 'default',
+          onSelectColor: (c) => this.setSelectedColor(c),
+        }
+      );
+    }
+
+    entries.push(
       { type: 'divider' },
       {
         type: 'action',
@@ -1755,11 +2296,103 @@ export class BoardEditorController {
       }
     });
 
+    this.els.drawRack.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const target = e.target as HTMLElement | null;
+      const toolBtn = target?.closest<HTMLElement>('[data-board-tool]');
+      if (toolBtn) {
+        const nextTool = toolBtn.getAttribute('data-board-tool') as BoardActiveTool | null;
+        if (nextTool === 'select' || nextTool === 'lasso' || nextTool === 'eraser') {
+          this.commitActiveTextEdit();
+          this.renderItems();
+          this.closePopovers();
+          this.setActiveTool(nextTool);
+        }
+        return;
+      }
+
+      const slotBtn = target?.closest<HTMLElement>('[data-ink-slot]');
+      if (slotBtn) {
+        const slot = Number(slotBtn.getAttribute('data-ink-slot'));
+        const preset = this.inkPresets[slot];
+        if (!preset) return;
+        const alreadyActive =
+          (this.activeTool === 'pen' || this.activeTool === 'highlighter') &&
+          this.activeInkSlot === slot;
+        if (alreadyActive) {
+          if (this.els.inkPopover.classList.contains('hidden')) {
+            this.openInkPopoverForSlot(slot);
+          } else {
+            this.closePopovers();
+          }
+        } else {
+          this.commitActiveTextEdit();
+          this.renderItems();
+          this.closePopovers();
+          this.setActiveTool(preset.tool, slot);
+        }
+      }
+    });
+
+    this.els.touchDrawBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.touchDrawEnabled = !this.touchDrawEnabled;
+      this.updateDrawToolbarUi();
+      this.showTransientHint(
+        this.touchDrawEnabled
+          ? 'Touch Draw ON: Single finger draws ink.'
+          : 'Touch Draw OFF: Single finger pans; use stylus or Pen tool to draw.'
+      );
+    });
+
+    this.els.inkWidthRange.addEventListener('input', () => {
+      const preset = this.inkPresets[this.editingInkSlot];
+      if (!preset) return;
+      const val = parseFloat(this.els.inkWidthRange.value);
+      if (Number.isFinite(val)) {
+        preset.width = val;
+        this.els.inkWidthLabel.textContent = `${val}px`;
+        this.els.inkWidthQuick.querySelectorAll<HTMLElement>('[data-ink-quick-w]').forEach((b) => {
+          b.classList.toggle('active', parseFloat(b.getAttribute('data-ink-quick-w') || '') === val);
+        });
+      }
+    });
+
+    this.els.inkWidthQuick.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-ink-quick-w]');
+      const preset = this.inkPresets[this.editingInkSlot];
+      if (!btn || !preset) return;
+      const val = parseFloat(btn.getAttribute('data-ink-quick-w') || '');
+      if (Number.isFinite(val)) {
+        preset.width = val;
+        this.els.inkWidthRange.value = String(val);
+        this.els.inkWidthLabel.textContent = `${val}px`;
+        this.els.inkWidthQuick.querySelectorAll<HTMLElement>('[data-ink-quick-w]').forEach((b) => {
+          b.classList.toggle('active', b === btn);
+        });
+      }
+    });
+
+    this.els.inkColorSwatches.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-ink-color]');
+      const preset = this.inkPresets[this.editingInkSlot];
+      const color = btn?.getAttribute('data-ink-color');
+      if (!btn || !preset || !color) return;
+      preset.color = color;
+      this.els.inkColorSwatches.querySelectorAll<HTMLElement>('[data-ink-color]').forEach((el) => {
+        el.classList.toggle('active', el === btn);
+      });
+      this.updateDrawToolbarUi();
+    });
+
     this.els.undoBtn.addEventListener('click', () => this.undo());
     this.els.redoBtn.addEventListener('click', () => this.redo());
     this.els.snapBtn.addEventListener('click', () => {
       this.snapToGrid = !this.snapToGrid;
       this.els.snapBtn.classList.toggle('active', this.snapToGrid);
+    });
+    this.els.paperBtn.addEventListener('click', () => {
+      this.cycleBoardGridStyle();
     });
 
     this.els.zoomOutBtn.addEventListener('click', () => {
@@ -1804,6 +2437,15 @@ export class BoardEditorController {
     this.els.selAlignLeftBtn.addEventListener('click', () => this.setSelectedTextAlign('left'));
     this.els.selAlignCenterBtn.addEventListener('click', () => this.setSelectedTextAlign('center'));
     this.els.selAlignRightBtn.addEventListener('click', () => this.setSelectedTextAlign('right'));
+
+    this.els.selStrokeDecBtn.addEventListener('click', () => this.adjustSelectedStrokeWidth(-1));
+    this.els.selStrokeIncBtn.addEventListener('click', () => this.adjustSelectedStrokeWidth(1));
+    this.els.selStrokeColorPicker.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement | null;
+      const btn = target?.closest<HTMLElement>('[data-ink-color]');
+      const color = btn?.getAttribute('data-ink-color');
+      if (color) this.setSelectedStrokeColor(color);
+    });
 
     this.els.selColorPicker.addEventListener('click', (e) => {
       const target = e.target as HTMLElement | null;
@@ -1945,6 +2587,13 @@ export class BoardEditorController {
       ) {
         this.els.linkPopover.classList.add('hidden');
       }
+      if (
+        target &&
+        !this.els.inkPopover.contains(target) &&
+        !this.els.drawRack.contains(target)
+      ) {
+        this.els.inkPopover.classList.add('hidden');
+      }
     });
 
     // Drag & Drop Image Files onto Board Canvas
@@ -1992,14 +2641,89 @@ export class BoardEditorController {
       { passive: false }
     );
 
-    // Pointer Interactions (Pan, Handle Resize/Rotate, Item Drag, Marquee, Click-Anywhere Text)
+    // Pointer Interactions (Pan, Pinch, Draw, Erase, Lasso, Handle Resize/Rotate, Item Drag, Marquee, Click-Anywhere Text)
     this.els.viewport.addEventListener('pointerdown', (e) => {
       const board = this.host.getBoard();
       if (!board) return;
 
       const target = e.target as HTMLElement | null;
-      if (target?.closest('a')) {
+      if (e.pointerType === 'touch') {
+        this.activeTouchPoints.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+        if (this.activeTouchPoints.size >= 2) {
+          this.clearLongPressTimer();
+          if (
+            this.gesture &&
+            (this.gesture.kind === 'draw' ||
+              this.gesture.kind === 'lasso' ||
+              this.gesture.kind === 'marquee' ||
+              this.gesture.kind === 'pan' ||
+              this.gesture.kind === 'move')
+          ) {
+            if (this.els.viewport.hasPointerCapture(this.gesture.pointerId)) {
+              this.els.viewport.releasePointerCapture(this.gesture.pointerId);
+            }
+            this.clearLiveCanvas();
+            this.els.marqueeRect.classList.add('hidden');
+            this.els.viewport.classList.remove('panning');
+            this.gesture = null;
+          }
+
+          if (this.activeTouchPoints.size === 2) {
+            const entries = Array.from(this.activeTouchPoints.entries());
+            const [id1, p1] = entries[0]!;
+            const [id2, p2] = entries[1]!;
+            const rect = this.els.viewport.getBoundingClientRect();
+            const midX = (p1.clientX + p2.clientX) * 0.5;
+            const midY = (p1.clientY + p2.clientY) * 0.5;
+            const dist = Math.max(12, Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY));
+            this.gesture = {
+              kind: 'pinch',
+              pointerIds: [id1, id2],
+              startDist: dist,
+              startCanvasMidX: (midX - rect.left - board.viewport.panX) / board.viewport.zoom,
+              startCanvasMidY: (midY - rect.top - board.viewport.panY) / board.viewport.zoom,
+              startZoom: board.viewport.zoom,
+            };
+          }
+          return;
+        }
+      }
+
+      if (target?.closest('a') && e.pointerType !== 'pen' && this.activeTool === 'select') {
         return;
+      }
+
+      if (e.pointerType === 'touch' && this.activeTool === 'select' && !this.host.isLocked()) {
+        this.clearLongPressTimer();
+        const touchClientX = e.clientX;
+        const touchClientY = e.clientY;
+        const touchTarget = target;
+        const touchPointerId = e.pointerId;
+        const timerId = window.setTimeout(() => {
+          const activeBoard = this.host.getBoard();
+          if (!activeBoard || !this.longPressState || this.longPressState.pointerId !== touchPointerId) {
+            return;
+          }
+          this.longPressState = null;
+          if (
+            this.gesture &&
+            this.gesture.kind !== 'pinch' &&
+            this.gesture.pointerId === touchPointerId
+          ) {
+            if (this.els.viewport.hasPointerCapture(touchPointerId)) {
+              this.els.viewport.releasePointerCapture(touchPointerId);
+            }
+            this.els.viewport.classList.remove('panning');
+            this.gesture = null;
+          }
+          this.openContextMenuForTarget(activeBoard, touchClientX, touchClientY, touchTarget);
+        }, 520);
+        this.longPressState = {
+          timerId,
+          pointerId: e.pointerId,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+        };
       }
 
       // Middle click or Space+Left click -> Pan
@@ -2015,6 +2739,27 @@ export class BoardEditorController {
           startPanX: board.viewport.panX,
           startPanY: board.viewport.panY,
         };
+        return;
+      }
+
+      // Hardware stylus barrel eraser OR Eraser tool -> Erase strokes under pointer
+      const isBarrelEraser =
+        e.pointerType === 'pen' && (e.button === 5 || (e.buttons & 32) !== 0);
+      if (isBarrelEraser || (e.button === 0 && this.activeTool === 'eraser')) {
+        e.preventDefault();
+        this.commitActiveTextEdit();
+        this.els.viewport.setPointerCapture(e.pointerId);
+        const pt = this.clientToCanvas(e.clientX, e.clientY, board);
+        const eraseGesture: Extract<ActiveGesture, { kind: 'erase' }> = {
+          kind: 'erase',
+          pointerId: e.pointerId,
+          prevCanvasPt: pt,
+          erasedAny: false,
+          undoPushed: false,
+        };
+        this.gesture = eraseGesture;
+        this.eraseStrokesAlongSegment(board, pt, pt, eraseGesture);
+        this.renderLiveDrawOverlay(board, pt);
         return;
       }
 
@@ -2060,12 +2805,58 @@ export class BoardEditorController {
               startCanvasY: pt.y,
               startMetrics: m,
               aspectRatio: m.w / Math.max(1, m.h),
-              isImage: item.type === 'image',
+              isImage: item.type === 'image' || item.type === 'stroke',
               moved: false,
             };
           }
           return;
         }
+      }
+
+      // 1b. Armed Lasso / Pen / Highlighter OR auto-detected stylus Pen input
+      const isPenInput = e.pointerType === 'pen';
+      const isTouchDraw = e.pointerType === 'touch' && this.touchDrawEnabled;
+      const isArmedDrawTool = this.activeTool === 'pen' || this.activeTool === 'highlighter';
+      if (this.activeTool === 'lasso') {
+        e.preventDefault();
+        this.commitActiveTextEdit();
+        this.els.viewport.focus();
+        this.els.viewport.setPointerCapture(e.pointerId);
+        const pt = this.clientToCanvas(e.clientX, e.clientY, board);
+        this.gesture = {
+          kind: 'lasso',
+          pointerId: e.pointerId,
+          points: [[pt.x, pt.y]],
+          additive: e.shiftKey,
+        };
+        this.renderLiveDrawOverlay(board);
+        return;
+      }
+
+      if (isArmedDrawTool || isPenInput || isTouchDraw) {
+        e.preventDefault();
+        this.commitActiveTextEdit();
+        this.els.viewport.focus();
+        this.els.viewport.setPointerCapture(e.pointerId);
+        const pt = this.clientToCanvas(e.clientX, e.clientY, board);
+        const preset = this.getActiveInkPreset();
+        const initialPressure = computePointPressure(e.pressure, e.pointerType, 0, 0, 16, 0.55);
+        this.gesture = {
+          kind: 'draw',
+          pointerId: e.pointerId,
+          pointerType: e.pointerType,
+          tool: preset.tool,
+          strokeColor: preset.color,
+          strokeWidth: preset.width,
+          opacity: preset.opacity,
+          rawPoints: [[pt.x, pt.y, initialPressure]],
+          lastTime: performance.now(),
+          lastPressure: initialPressure,
+          startPt: { x: pt.x, y: pt.y },
+          straightLinePt: null,
+        };
+        this.renderLiveDrawOverlay(board);
+        return;
       }
 
       // 2. Clicking inside an actively edited textarea or link input
@@ -2130,10 +2921,23 @@ export class BoardEditorController {
         }
       }
 
-      // 4. Empty canvas click/drag -> marquee or click-to-type
+      // 4. Empty canvas click/drag -> touch pan (when Touch Draw is off) or marquee / click-to-type
       e.preventDefault();
       this.els.viewport.focus();
       this.els.viewport.setPointerCapture(e.pointerId);
+      if (e.pointerType === 'touch' && !this.touchDrawEnabled) {
+        this.els.viewport.classList.add('panning');
+        this.gesture = {
+          kind: 'pan',
+          pointerId: e.pointerId,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          startPanX: board.viewport.panX,
+          startPanY: board.viewport.panY,
+        };
+        return;
+      }
+
       const pt = this.clientToCanvas(e.clientX, e.clientY, board);
       this.lastCanvasCursor = { x: pt.x, y: pt.y };
       this.gesture = {
@@ -2150,7 +2954,46 @@ export class BoardEditorController {
 
     this.els.viewport.addEventListener('pointermove', (e) => {
       const board = this.host.getBoard();
-      if (!board || !this.gesture || this.gesture.pointerId !== e.pointerId) return;
+      if (!board) return;
+
+      if (e.pointerType === 'touch' && this.activeTouchPoints.has(e.pointerId)) {
+        this.activeTouchPoints.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+      }
+
+      if (this.longPressState && this.longPressState.pointerId === e.pointerId) {
+        if (
+          Math.hypot(
+            e.clientX - this.longPressState.startClientX,
+            e.clientY - this.longPressState.startClientY
+          ) > 6
+        ) {
+          this.clearLongPressTimer();
+        }
+      }
+
+      if (this.gesture?.kind === 'pinch') {
+        if (!this.gesture.pointerIds.includes(e.pointerId)) return;
+        const p1 = this.activeTouchPoints.get(this.gesture.pointerIds[0]);
+        const p2 = this.activeTouchPoints.get(this.gesture.pointerIds[1]);
+        if (!p1 || !p2) return;
+
+        const rect = this.els.viewport.getBoundingClientRect();
+        const midX = (p1.clientX + p2.clientX) * 0.5;
+        const midY = (p1.clientY + p2.clientY) * 0.5;
+        const dist = Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY);
+        const nextZoom = clamp(
+          this.gesture.startZoom * (dist / this.gesture.startDist),
+          MIN_ZOOM,
+          MAX_ZOOM
+        );
+        board.viewport.zoom = nextZoom;
+        board.viewport.panX = midX - rect.left - this.gesture.startCanvasMidX * nextZoom;
+        board.viewport.panY = midY - rect.top - this.gesture.startCanvasMidY * nextZoom;
+        this.applyViewport(board);
+        return;
+      }
+
+      if (!this.gesture || this.gesture.pointerId !== e.pointerId) return;
 
       if (this.gesture.kind === 'pan') {
         board.viewport.panX = this.gesture.startPanX + (e.clientX - this.gesture.startClientX);
@@ -2160,6 +3003,57 @@ export class BoardEditorController {
       }
 
       const pt = this.clientToCanvas(e.clientX, e.clientY, board);
+
+      if (this.gesture.kind === 'draw') {
+        if (e.shiftKey) {
+          this.gesture.straightLinePt = { x: pt.x, y: pt.y };
+          this.renderLiveDrawOverlay(board);
+          return;
+        }
+        this.gesture.straightLinePt = null;
+        const coalesced =
+          typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
+        const samples = coalesced.length > 0 ? coalesced : [e];
+        const minDist = 0.65 / Math.max(0.25, board.viewport.zoom);
+        for (const ev of samples) {
+          const evPt = this.clientToCanvas(ev.clientX, ev.clientY, board);
+          const last = this.gesture.rawPoints[this.gesture.rawPoints.length - 1]!;
+          const dx = evPt.x - last[0];
+          const dy = evPt.y - last[1];
+          if (Math.hypot(dx, dy) < minDist) continue;
+          const now = performance.now();
+          const dt = Math.max(1, now - this.gesture.lastTime);
+          const pressure = computePointPressure(
+            ev.pressure,
+            this.gesture.pointerType,
+            dx,
+            dy,
+            dt,
+            this.gesture.lastPressure
+          );
+          this.gesture.lastTime = now;
+          this.gesture.lastPressure = pressure;
+          this.gesture.rawPoints.push([evPt.x, evPt.y, pressure]);
+        }
+        this.renderLiveDrawOverlay(board);
+        return;
+      }
+
+      if (this.gesture.kind === 'erase') {
+        this.eraseStrokesAlongSegment(board, this.gesture.prevCanvasPt, pt, this.gesture);
+        this.gesture.prevCanvasPt = pt;
+        this.renderLiveDrawOverlay(board, pt);
+        return;
+      }
+
+      if (this.gesture.kind === 'lasso') {
+        const last = this.gesture.points[this.gesture.points.length - 1];
+        if (!last || Math.hypot(pt.x - last[0], pt.y - last[1]) >= 3 / Math.max(0.25, board.viewport.zoom)) {
+          this.gesture.points.push([pt.x, pt.y]);
+        }
+        this.renderLiveDrawOverlay(board);
+        return;
+      }
 
       if (this.gesture.kind === 'move') {
         const dx = pt.x - this.gesture.startCanvasX;
@@ -2217,8 +3111,8 @@ export class BoardEditorController {
         const localDx = dx * cos + dy * sin;
         const localDy = -dx * sin + dy * cos;
 
-        const minW = item.type === 'image' ? 60 : 120;
-        const minH = item.type === 'image' ? 45 : 40;
+        const minW = item.type === 'stroke' ? 12 : item.type === 'image' ? 60 : 120;
+        const minH = item.type === 'stroke' ? 12 : item.type === 'image' ? 45 : 40;
 
         let nextW = sx !== 0 ? Math.max(minW, sw + sx * localDx) : sw;
         let nextH = sy !== 0 ? Math.max(minH, sh + sy * localDy) : sh;
@@ -2245,7 +3139,7 @@ export class BoardEditorController {
         item.x = Math.round(nextCenterX - nextW / 2);
         item.y = Math.round(nextCenterY - nextH / 2);
         item.width = Math.round(nextW);
-        if (item.type === 'image' || sy !== 0) {
+        if (item.type === 'image' || item.type === 'stroke' || sy !== 0) {
           item.height = Math.round(nextH);
         }
 
@@ -2328,8 +3222,22 @@ export class BoardEditorController {
     });
 
     const finishPointer = (e: PointerEvent): void => {
+      if (e.pointerType === 'touch') {
+        this.activeTouchPoints.delete(e.pointerId);
+      }
+      if (this.longPressState && this.longPressState.pointerId === e.pointerId) {
+        this.clearLongPressTimer();
+      }
+
       const board = this.host.getBoard();
-      if (!this.gesture || this.gesture.pointerId !== e.pointerId) return;
+      if (!this.gesture) return;
+      if (this.gesture.kind === 'pinch') {
+        if (!this.gesture.pointerIds.includes(e.pointerId)) return;
+        this.gesture = null;
+        if (board) this.host.onBoardMutated(board, false);
+        return;
+      }
+      if (this.gesture.pointerId !== e.pointerId) return;
       const finished = this.gesture;
       this.gesture = null;
 
@@ -2338,11 +3246,33 @@ export class BoardEditorController {
       }
       this.els.viewport.classList.remove('panning');
       this.els.marqueeRect.classList.add('hidden');
+      this.clearLiveCanvas();
 
       if (!board) return;
 
       if (finished.kind === 'pan') {
         this.host.onBoardMutated(board, false);
+        return;
+      }
+
+      if (finished.kind === 'draw') {
+        if (e.type !== 'pointercancel' || e.pointerType !== 'touch') {
+          this.commitStrokeFromGesture(board, finished);
+        }
+        return;
+      }
+
+      if (finished.kind === 'erase') {
+        if (finished.erasedAny) {
+          this.host.onBoardMutated(board, true);
+        }
+        return;
+      }
+
+      if (finished.kind === 'lasso') {
+        if (e.type !== 'pointercancel') {
+          this.commitLassoSelection(board, finished);
+        }
         return;
       }
 
@@ -2396,37 +3326,7 @@ export class BoardEditorController {
 
       e.preventDefault();
       e.stopPropagation();
-      this.closePopovers();
-
-      const target = e.target as HTMLElement | null;
-      let itemEl = target?.closest<HTMLElement>('[data-board-item-id]') ?? null;
-      if (!itemEl && target?.closest('#boardSelectionOverlay') && this.selectedIds.size === 1) {
-        const onlyId = Array.from(this.selectedIds)[0];
-        itemEl = onlyId ? this.getItemElement(onlyId) : null;
-      }
-
-      const pt = this.clientToCanvas(e.clientX, e.clientY, board);
-      if (itemEl) {
-        const itemId = itemEl.getAttribute('data-board-item-id');
-        const item = board.items.find((it) => it.id === itemId);
-        if (item) {
-          this.commitActiveTextEdit(item.id);
-          if (!this.selectedIds.has(item.id)) {
-            this.selectedIds = new Set([item.id]);
-          }
-          this.renderItems();
-          this.updateSelectionBar();
-          this.openItemContextMenu(e.clientX, e.clientY, board);
-          return;
-        }
-      }
-
-      this.lastCanvasCursor = { x: pt.x, y: pt.y };
-      this.commitActiveTextEdit();
-      this.selectedIds.clear();
-      this.renderItems();
-      this.updateSelectionBar();
-      this.openCanvasContextMenu(e.clientX, e.clientY, board, pt);
+      this.openContextMenuForTarget(board, e.clientX, e.clientY, e.target as HTMLElement | null);
     });
   }
 }

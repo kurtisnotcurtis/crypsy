@@ -3,6 +3,16 @@
 All notable changes to **Crypsy Note** are documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-11-18
+### Added
+- **Pen, Highlighter, Eraser & Lasso Drawing in Boards (`src/ink.ts`)**: Added zero-dependency freehand drawing on Spatial Boards using `BoardStrokeItem` (`type: 'stroke'`) with pressure/velocity modulation, Ramer-Douglas-Peucker simplification (`[x, y, pressure]` tuples), smooth variable-width pen paths, blended highlighter strokes, swept-segment stroke eraser, freehand lasso selection, `Shift+Drag` straight lines, live 120Hz drawing canvas (`#boardInkLiveCanvas`), 4 customizable ink slots via `#boardInkPopover`, theme-adaptive `Auto Ink`, per-board `Dots`/`Grid`/`Ruled`/`Blank` paper backgrounds, contextual stroke thickness & ink recoloring, right-click stroke actions, and SVG stroke previews inside board thumbnails.
+- **Stylus & Touch-First Drawing UX**: Added automatic `pointerType === 'pen'` inking without leaving `Select` mode, hardware stylus barrel eraser support, a **Touch Draw** toggle (preserving single-finger panning cleanly when off), and multi-touch cancellation so two-finger gestures do not leave stray ink marks.
+- **Mobile PWA & Touch Compatibility**: Added `manifest.webmanifest`, `icon.svg`, `viewport-fit=cover`, dynamic `theme-color`, `100dvh` & safe-area layout padding, `16px` mobile form input sizing (preventing iOS Safari auto-zoom), scrollable mobile board toolbars with fixed-position popovers, two-finger pinch-to-zoom/pan, `520ms` long-press touch context menus, auto-collapsing mobile sidebar drawer, and Web Share / Files vault import-export (`#wizardMobileSyncBox`) for iOS Safari & Android Chrome.
+- **Native Android & iOS Capacitor Integration (`capacitor.config.json`, `android/`, `ios/`, `prepare-mobile.mjs`)**: Added Capacitor `v8.6.2` runtime and generated Android & iOS native projects using slim `www/` bundle staging, automatic encrypted persistence to `Documents/Crypsy/vault.crypsy.json` (`UIFileSharingEnabled` / `LSSupportsOpeningDocumentsInPlace` for iOS Files app visibility), and native OS share-sheet integration (`@capacitor/filesystem`, `@capacitor/share`).
+
+### Changed
+- **Landing Site Refresh ([docs/index.html](file:///C:/Users/Kurt/Projects/crypsy/crypsy-note/docs/index.html))**: Centered hero positioning on Spatial Boards and quick Markdown notes, added an auto-rotating constant-height hero carousel (`Spatial Boards | Quick Notes`), added the `#boards` Canvas Editor spotlight section, updated ciphertext version previews, and removed third-party app comparisons (`Keep` / `OneNote`) across public pages and repository docs.
+
 ## [1.4.0] - 2026-11-18
 ### Added
 - **Spatial Boards (Free-Form Infinite Canvas)**: Added **Boards** as a first-class encrypted object type alongside Notes in the AES-256-GCM vault (`VaultPayload.boards`), organized in the sidebar under **All Notes** (Notes-only default), **Pinned**, and **Boards** with a collapsible board list and inline `+ New board...` creation.
