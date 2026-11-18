@@ -1,10 +1,10 @@
 # Crypsy <img src="./logo.svg" width="28" height="28" align="top" alt="Crypsy logo" />
 
-A lightweight, Google Keep & OneNote-style encrypted notes and spatial boards web application with transparent client-side **AES-256-GCM** encryption and **Bring Your Own Cloud (BYOC)** folder syncing.
+A lightweight encrypted quick-notes and spatial-boards web application with transparent client-side **AES-256-GCM** encryption and **Bring Your Own Cloud (BYOC)** folder syncing.
 
 ## Core Features
 
-- **Spatial Boards (OneNote-Style Canvas):** Create free-form encrypted **Boards** from the sidebar (`Boards` section) or **+ New Board**. Click anywhere to type text boxes, paste (`Ctrl+V`) or drag-and-drop screenshots, image URLs, and link cards, grab the box border to move, resize/rotate with handles (including `Shift` 15° snap), align multiple items, pan/zoom infinitely, undo/redo edits, and preview boards directly via true-scale card thumbnails.
+- **Spatial Boards (Free-Form Infinite Canvas):** Create free-form encrypted **Boards** from the sidebar (`Boards` section) or **+ New Board**. Click anywhere to type text boxes, paste (`Ctrl+V`) or drag-and-drop screenshots, image URLs, and link cards, grab the box border to move, resize/rotate with handles (including `Shift` 15° snap), align multiple items, pan/zoom infinitely, undo/redo edits, and preview boards directly via true-scale card thumbnails.
 - **Custom Right-Click Context Menus:** Right-click on Board canvas space, single or multi-selected board items, note cards, board cards, sidebar boards, or sidebar `#tags` for quick format, tint, duplicate, rename, copy/cut/paste, and delete actions—while holding `Shift + Right-Click` or right-clicking inside text inputs preserves the native browser menu.
 - **Search:** Instant client-side search across note titles, descriptions, board contents, and `#tags` with live match highlighting (`/` or `Ctrl+K`).
 - **Tags:** Create, rename, delete, and assign `#tags` to notes and boards; filter from the sidebar or by clicking any tag chip on a card.

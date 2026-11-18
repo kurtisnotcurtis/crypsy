@@ -1,5 +1,5 @@
 /**
- * Crypsy — OneNote-style Free-Form Spatial Board Editor
+ * Crypsy — Free-Form Spatial Board Editor
  * Supports pannable/zoomable dot-grid canvas, click-anywhere text boxes,
  * move/resize/rotate/align transforms, clipboard image & link pasting,
  * drag-and-drop image insertion, and in-session undo/redo.

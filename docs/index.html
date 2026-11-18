@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Crypsy: Zero-Server Encrypted Notes for Your Cloud Drive</title>
+  <title>Crypsy: Encrypted Notes &amp; Spatial Boards for Your Cloud Drive</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238ab4f8' stroke-width='2' stroke-linecap='square' stroke-linejoin='miter'%3E%3Cpath d='M5 10H19L20.5 11.5V20.5L19 22H5L3.5 20.5V11.5Z'/%3E%3Cpath d='M7.5 10V6.5a4.5 4.5 0 0 1 9 0V10' stroke-linecap='butt'/%3E%3Cpath d='M13.9 14.93C14.15 14.78 15.36 14.49 15.38 14.03C15.39 13.56 14.76 12.43 14.01 12.15C13.27 11.86 11.88 11.91 10.9 12.31C9.92 12.71 8.64 13.58 8.14 14.52C7.65 15.46 7.53 17.05 7.93 17.94C8.32 18.84 9.46 19.76 10.52 19.89C11.58 20.02 13.14 19.44 14.28 18.73C15.43 18.01 16.85 16.11 17.36 15.59A0.39 0.39 0 0 1 16.84 15.01C16.22 15.53 14.14 17.6 13.1 18.15C12.07 18.7 11.21 18.51 10.62 18.31C10.02 18.11 9.64 17.45 9.53 16.93C9.43 16.42 9.59 15.76 9.97 15.23C10.34 14.7 11.15 14.05 11.79 13.76C12.43 13.47 13.35 13.55 13.79 13.47C14.22 13.39 14.5 13.26 14.42 13.29C14.33 13.33 13.48 13.61 13.3 13.67A0.7 0.7 0 0 1 13.9 14.93Z' fill='%238ab4f8' stroke='none'/%3E%3C/svg%3E" />
-  <meta name="description" content="Lightweight, Google Keep-style encrypted notes app with transparent client-side AES-256-GCM encryption and Bring Your Own Cloud (BYOC) folder sync for OneDrive, Google Drive, Dropbox, and iCloud." />
+  <meta name="description" content="Encrypted Markdown notes and free-form spatial boards in your browser. Client-side AES-256-GCM encryption and Bring Your Own Cloud (BYOC) folder sync for OneDrive, Google Drive, Dropbox, and iCloud." />
   <style>
     :root {
       --bg-deep: #0f1115;
@@ -539,6 +539,7 @@
     .mock-card.teal { background: var(--note-teal); }
     .mock-card.cobalt { background: var(--note-cobalt); }
     .mock-card.amber { background: var(--note-amber); }
+    .mock-card.sage { background: var(--note-sage); }
     .mock-card.board { background: #202124; border-color: #3c4043; }
 
     .mock-card-head {
@@ -643,6 +644,174 @@
       border-radius: 4px;
       background: rgba(15, 17, 21, 0.85);
       color: #8ab4f8;
+    }
+
+    /* Hero Browser View Switcher + Spatial Boards Workspace */
+    .browser-view-switch {
+      display: inline-flex;
+      align-items: center;
+      background: #101216;
+      border: 1px solid #2a2d37;
+      border-radius: 999px;
+      padding: 2px;
+      gap: 2px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .browser-view-btn {
+      position: relative;
+      overflow: hidden;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 0.67rem;
+      font-weight: 600;
+      padding: 3px 10px 4px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.14s ease, color 0.14s ease;
+    }
+
+    .browser-view-btn:hover {
+      color: var(--text-primary);
+    }
+
+    .browser-view-btn.active {
+      background: rgba(138, 180, 248, 0.18);
+      color: #8ab4f8;
+    }
+
+    .browser-view-btn.active.progress-running::after {
+      content: "";
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: 1px;
+      height: 1.5px;
+      border-radius: 2px;
+      background: rgba(138, 180, 248, 0.8);
+      transform-origin: left center;
+      animation: mockCarouselProgress 4s linear 1 forwards;
+    }
+
+    .browser-view-switch.carousel-paused .browser-view-btn.active.progress-running::after {
+      animation-play-state: paused;
+    }
+
+    @keyframes mockCarouselProgress {
+      from { transform: scaleX(0); }
+      to { transform: scaleX(1); }
+    }
+
+    /* Stack both workspace panes inside one CSS Grid track so vertical height never shifts */
+    .app-mock-panes {
+      position: relative;
+      display: grid;
+      min-width: 0;
+    }
+
+    .app-mock-panes > .mock-view-pane {
+      grid-area: 1 / 1;
+      height: 100%;
+      transition: opacity 0.34s ease, transform 0.34s ease, visibility 0.34s ease;
+    }
+
+    .mock-view-pane.hidden {
+      display: flex;
+      opacity: 0;
+      transform: translateY(5px);
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .app-mock-panes > .mock-view-pane {
+        transition: none;
+      }
+      .mock-view-pane.hidden {
+        transform: none;
+      }
+      .browser-view-btn.active.progress-running::after {
+        animation: none;
+      }
+    }
+
+    .mock-side-new {
+      margin: 4px 10px 2px 12px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px dashed #3c4043;
+      color: #80868b;
+      font-size: 0.64rem;
+    }
+
+    .mock-boards-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 11px;
+      border-radius: 9px;
+      background: #202124;
+      border: 1px solid #30343d;
+    }
+
+    .mock-boards-banner h4 {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #f1f3f5;
+      margin-bottom: 2px;
+    }
+
+    .mock-boards-banner p {
+      font-size: 0.64rem;
+      color: #9aa0a6;
+      line-height: 1.3;
+    }
+
+    .mock-boards-cta {
+      padding: 5px 10px;
+      border-radius: 7px;
+      background: #8ab4f8;
+      color: #111317;
+      font-size: 0.66rem;
+      font-weight: 700;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .mock-board-thumb {
+      position: relative;
+      height: 118px;
+      border-radius: 7px;
+      background-color: #16181c;
+      background-image: radial-gradient(rgba(154, 160, 166, 0.24) 1px, transparent 1px);
+      background-size: 10px 10px;
+      border: 1px solid #30343d;
+      overflow: hidden;
+    }
+
+    .mock-photo-frame {
+      position: absolute;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.42);
+    }
+
+    .mock-tilt-label {
+      position: absolute;
+      padding: 3px 7px;
+      border-radius: 4px;
+      font-size: 0.56rem;
+      font-weight: 600;
+      line-height: 1.25;
+      color: #f8f9fa;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+      white-space: nowrap;
     }
 
     /* Window 2: Generic Plain-Text Editor Viewing Encrypted Disk File */
@@ -919,6 +1088,330 @@
       color: #6e7681;
     }
 
+    /* Spatial Boards Spotlight Section */
+    .boards-spotlight {
+      display: grid;
+      grid-template-columns: 1.42fr 1fr;
+      gap: 28px;
+      align-items: center;
+    }
+
+    .canvas-mock-window {
+      background: #18191c;
+      border: 1px solid #30343d;
+      border-radius: 14px;
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .canvas-mock-toolbar {
+      background: #202124;
+      border-bottom: 1px solid #2e3138;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .canvas-mock-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .canvas-mock-chip {
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 4px 9px;
+      border-radius: 7px;
+      background: #2c2d31;
+      border: 1px solid #3c4043;
+      color: #e8eaed;
+      white-space: nowrap;
+    }
+
+    .canvas-mock-chip.primary {
+      background: rgba(138, 180, 248, 0.16);
+      border-color: rgba(138, 180, 248, 0.36);
+      color: #8ab4f8;
+    }
+
+    .canvas-mock-title {
+      font-size: 0.86rem;
+      font-weight: 700;
+      color: #f1f3f5;
+      white-space: nowrap;
+    }
+
+    .canvas-mock-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .canvas-mock-stage {
+      position: relative;
+      height: 390px;
+      background-color: #16181c;
+      background-image: radial-gradient(rgba(154, 160, 166, 0.25) 1px, transparent 1px);
+      background-size: 16px 16px;
+      overflow: hidden;
+    }
+
+    .canvas-mock-floatbar {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 6;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(32, 33, 36, 0.96);
+      border: 1px solid #3c4043;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.48);
+      font-size: 0.67rem;
+      color: #d7dbe3;
+      white-space: nowrap;
+    }
+
+    .float-sep {
+      width: 1px;
+      height: 14px;
+      background: #3c4043;
+    }
+
+    .float-pill-btn {
+      padding: 2px 6px;
+      border-radius: 5px;
+      font-weight: 600;
+      color: #b7bec9;
+    }
+
+    .float-pill-btn.active {
+      background: rgba(138, 180, 248, 0.18);
+      color: #8ab4f8;
+    }
+
+    .float-swatch {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+    }
+
+    .float-swatch.active {
+      outline: 2px solid #8ab4f8;
+      outline-offset: 1px;
+    }
+
+    .canvas-mock-photo {
+      position: absolute;
+      border-radius: 9px;
+      overflow: hidden;
+      border: 1px solid #3c4043;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.48);
+      background: #1e222a;
+    }
+
+    .canvas-mock-item {
+      position: absolute;
+      padding: 10px 13px;
+      border-radius: 9px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+      color: #f4f6f8;
+    }
+
+    .canvas-mock-item h4 {
+      font-size: 0.84rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+      color: #ffffff;
+    }
+
+    .canvas-mock-item p {
+      font-size: 0.72rem;
+      line-height: 1.4;
+      color: rgba(255, 255, 255, 0.88);
+    }
+
+    .canvas-mock-selbox {
+      outline: 1.5px solid #8ab4f8;
+      outline-offset: 0;
+    }
+
+    .canvas-mock-rot-stem {
+      position: absolute;
+      top: -20px;
+      left: 50%;
+      width: 1.5px;
+      height: 20px;
+      margin-left: -0.75px;
+      background: #8ab4f8;
+    }
+
+    .canvas-mock-rot-knob {
+      position: absolute;
+      top: -28px;
+      left: 50%;
+      width: 11px;
+      height: 11px;
+      margin-left: -5.5px;
+      border-radius: 50%;
+      background: #18191c;
+      border: 2px solid #8ab4f8;
+    }
+
+    .canvas-mock-rot-pill {
+      position: absolute;
+      top: -31px;
+      left: calc(50% + 12px);
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: rgba(17, 19, 24, 0.92);
+      border: 1px solid rgba(138, 180, 248, 0.45);
+      color: #8ab4f8;
+      font-size: 0.62rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .canvas-mock-handle {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      background: #ffffff;
+      border: 1.5px solid #8ab4f8;
+    }
+
+    .canvas-mock-handle.nw { top: -4px; left: -4px; }
+    .canvas-mock-handle.ne { top: -4px; right: -4px; }
+    .canvas-mock-handle.sw { bottom: -4px; left: -4px; }
+    .canvas-mock-handle.se { bottom: -4px; right: -4px; }
+    .canvas-mock-handle.n  { top: -4px; left: 50%; margin-left: -4px; }
+    .canvas-mock-handle.s  { bottom: -4px; left: 50%; margin-left: -4px; }
+    .canvas-mock-handle.w  { top: 50%; left: -4px; margin-top: -4px; }
+    .canvas-mock-handle.e  { top: 50%; right: -4px; margin-top: -4px; }
+
+    .canvas-mock-ctx {
+      position: absolute;
+      width: 158px;
+      background: #23252a;
+      border: 1px solid #3e424c;
+      border-radius: 8px;
+      padding: 5px;
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.62);
+      z-index: 8;
+      font-size: 0.68rem;
+      color: #e8eaed;
+    }
+
+    .ctx-row {
+      padding: 5px 8px;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .ctx-row.active {
+      background: rgba(138, 180, 248, 0.14);
+      color: #8ab4f8;
+    }
+
+    .ctx-row.danger {
+      color: #f28b82;
+    }
+
+    .ctx-divider {
+      height: 1px;
+      background: #353841;
+      margin: 3px 4px;
+    }
+
+    .canvas-mock-linkcard {
+      position: absolute;
+      padding: 9px 11px;
+      border-radius: 8px;
+      background: #202124;
+      border: 1px solid #3c4043;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .canvas-mock-hud {
+      position: absolute;
+      right: 12px;
+      bottom: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(24, 25, 28, 0.9);
+      border: 1px solid #343842;
+      font-size: 0.64rem;
+      color: #9aa0a6;
+    }
+
+    .boards-pillars {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .pillar-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 18px 20px;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      transition: border-color 0.15s ease;
+    }
+
+    .pillar-card:hover {
+      border-color: var(--border-highlight);
+    }
+
+    .pillar-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: var(--accent-glow);
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .pillar-card h3 {
+      font-size: 0.98rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .pillar-card p {
+      font-size: 0.86rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
     /* Footer */
     .footer {
       border-top: 1px solid var(--border);
@@ -948,6 +1441,9 @@
       .comparison-stage {
         grid-template-columns: 1fr;
         max-width: 680px;
+      }
+      .boards-spotlight {
+        grid-template-columns: 1fr;
       }
     }
 
@@ -980,6 +1476,31 @@
       .app-mock-cards {
         grid-template-columns: 1fr;
       }
+      .compare-caption {
+        flex-wrap: wrap;
+      }
+      .canvas-mock-floatbar {
+        font-size: 0.6rem;
+        padding: 4px 8px;
+      }
+      .canvas-mock-stage {
+        height: 430px;
+      }
+      .canvas-mock-item {
+        padding: 7px 9px;
+      }
+      .canvas-mock-item h4 {
+        font-size: 0.72rem;
+      }
+      .canvas-mock-item p {
+        font-size: 0.61rem;
+      }
+      .canvas-mock-ctx {
+        width: 132px;
+        font-size: 0.59rem;
+        bottom: 108px !important;
+        left: 14% !important;
+      }
     }
   </style>
 </head>
@@ -1001,9 +1522,9 @@
       </div>
 
       <nav class="nav-links">
+        <a href="#boards">Spatial Boards</a>
         <a href="#features">Features</a>
-        <a href="#byoc">How Cloud Sync Works</a>
-        <a href="#security">Encryption</a>
+        <a href="#byoc">Cloud Sync</a>
       </nav>
 
       <div class="nav-actions">
@@ -1028,12 +1549,12 @@
       </div>
 
       <h1>
-        Google Keep Speed.<br />
+        Quick Notes. Spatial Boards.<br />
         <span class="gradient-text">Zero-Knowledge Cloud Encryption.</span>
       </h1>
 
       <p class="hero-sub">
-        Crypsy encrypts your notes, spatial boards, pasted images, and tags in-browser using WebCrypto <strong>AES-256-GCM</strong> and syncs directly through your existing cloud folder, with zero servers, accounts, or subscriptions.
+        Capture fast Markdown notes or arrange rotated text blocks, pasted screenshots, and links on free-form spatial canvases. Crypsy encrypts everything in-browser with WebCrypto <strong>AES-256-GCM</strong> and syncs straight through your own cloud folder.
       </p>
 
       <div class="hero-cta">
@@ -1067,10 +1588,13 @@
       <!-- Separate Browser App Window vs. Plain-Text Disk File Window -->
       <div class="comparison-stage">
         <!-- Left Window: Real Browser Running Crypsy Web App -->
-        <div class="compare-column">
+        <div class="compare-column" id="heroCompareCol">
           <div class="compare-caption">
             <span class="compare-pill in-browser">In Browser &middot; Decrypted in Memory</span>
-            <span>Never written in plaintext</span>
+            <div class="browser-view-switch" id="browserViewSwitch" role="tablist" aria-label="Preview mode">
+              <button type="button" class="browser-view-btn active progress-running" data-mock-view="boards" role="tab" aria-selected="true">Spatial Boards</button>
+              <button type="button" class="browser-view-btn" data-mock-view="notes" role="tab" aria-selected="false">Quick Notes</button>
+            </div>
           </div>
 
           <div class="browser-mock-window">
@@ -1111,62 +1635,150 @@
 
             <div class="app-mock-body">
               <aside class="app-mock-sidebar" aria-hidden="true">
-                <div class="app-mock-nav active"><span>All Notes</span><span>4</span></div>
-                <div class="app-mock-nav"><span>Pinned</span><span>2</span></div>
-                <div class="app-mock-nav"><span>Boards</span><span>1</span></div>
-                <div class="app-mock-nav child"><span>Roadmap Canvas</span></div>
+                <div class="app-mock-nav" id="mockNavAll"><span>All Notes</span><span>4</span></div>
+                <div class="app-mock-nav"><span>Pinned</span><span>1</span></div>
+                <div class="app-mock-nav active" id="mockNavBoards"><span>Boards</span><span>2</span></div>
+                <div class="app-mock-nav child"><span>Coastal Study</span><span>6</span></div>
+                <div class="app-mock-nav child"><span>Architecture</span><span>4</span></div>
+                <div class="mock-side-new">+ New board...</div>
                 <div class="app-mock-sec-label">TAGS</div>
-                <div class="app-mock-nav"><span>#security</span><span>2</span></div>
-                <div class="app-mock-nav"><span>#ideas</span><span>1</span></div>
+                <div class="app-mock-nav"><span>#research</span><span>2</span></div>
+                <div class="app-mock-nav"><span>#ideas</span><span>2</span></div>
               </aside>
 
-              <div class="app-mock-workspace">
-                <div class="app-mock-composer">Take an encrypted note...</div>
-
-                <div class="app-mock-cards">
-                  <div class="mock-card teal">
-                    <div class="mock-card-head">
-                      <h4>Security Checklist</h4>
+              <div class="app-mock-panes">
+                <!-- Default Hero Preview: Spatial Boards -->
+                <div class="app-mock-workspace mock-view-pane" data-pane="boards" aria-hidden="false">
+                  <div class="mock-boards-banner">
+                    <div>
+                      <h4>Spatial Boards</h4>
+                      <p>Free-form canvases for rotated notes, pasted images, and links.</p>
                     </div>
-                    <ul class="mock-check-list">
-                      <li class="done">&#9745; WebCrypto PBKDF2</li>
-                      <li>&#9744; Hardware key backup</li>
-                    </ul>
-                    <div class="mock-tags">
-                      <span class="mock-tag">#security</span>
-                    </div>
+                    <div class="mock-boards-cta">+ New Board</div>
                   </div>
 
-                  <div class="mock-card board">
-                    <div class="mock-minimap">
-                      <div class="mock-mini-box" style="left:8px;top:8px;width:72px;background:#5c2b29;">API Notes</div>
-                      <div class="mock-mini-box" style="left:86px;top:18px;width:62px;background:#2d555e;transform:rotate(-4deg);">Wireframe</div>
+                  <div class="app-mock-cards">
+                    <div class="mock-card board" style="grid-column: 1 / -1;">
+                      <div class="mock-board-thumb" aria-hidden="true">
+                        <div class="mock-photo-frame" style="left: 34%; top: 9px; width: 92px; height: 46px;">
+                          <svg viewBox="0 0 92 46" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+                            <defs><linearGradient id="mockSeaGrad1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#174d7c"/><stop offset="100%" stop-color="#0f324d"/></linearGradient></defs>
+                            <rect width="92" height="46" fill="url(#mockSeaGrad1)"/>
+                            <circle cx="46" cy="20" r="14" fill="rgba(138, 180, 248, 0.28)"/>
+                            <path d="M0 32 Q24 22 46 31 T92 27 L92 46 L0 46 Z" fill="rgba(110, 200, 235, 0.35)"/>
+                          </svg>
+                        </div>
+                        <div class="mock-tilt-label" style="left: 38%; top: 44px; background: #16504b;">Focus Area</div>
+
+                        <div class="mock-photo-frame" style="left: 16%; top: 58px; width: 96px; height: 46px;">
+                          <svg viewBox="0 0 96 46" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+                            <defs><linearGradient id="mockSeaGrad2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#223a52"/><stop offset="100%" stop-color="#385b73"/></linearGradient></defs>
+                            <rect width="96" height="46" fill="url(#mockSeaGrad2)"/>
+                            <path d="M0 34 L28 18 L52 29 L76 14 L96 28 L96 46 L0 46 Z" fill="rgba(255,255,255,0.2)"/>
+                          </svg>
+                        </div>
+                        <div class="mock-tilt-label" style="left: 25%; top: 88px; background: #5c2b29; transform: rotate(-9deg);">HIGHLIGHT NOTE</div>
+
+                        <div class="mock-photo-frame" style="left: 55%; top: 58px; width: 96px; height: 46px;">
+                          <svg viewBox="0 0 96 46" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+                            <defs><linearGradient id="mockSeaGrad3" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#19304d"/><stop offset="100%" stop-color="#205c6b"/></linearGradient></defs>
+                            <rect width="96" height="46" fill="url(#mockSeaGrad3)"/>
+                            <circle cx="72" cy="14" r="6" fill="rgba(126, 231, 135, 0.45)"/>
+                            <path d="M0 30 Q30 16 62 28 T96 22 L96 46 L0 46 Z" fill="rgba(138, 180, 248, 0.25)"/>
+                          </svg>
+                        </div>
+                        <div class="mock-tilt-label" style="left: 56%; top: 84px; background: #42275e; transform: rotate(10deg);">Field telemetry</div>
+                      </div>
+
+                      <div class="mock-card-head">
+                        <h4>Coastal Study <span class="mock-board-badge" style="margin-left:4px;">Board</span></h4>
+                        <div class="mock-tags"><span class="mock-tag">#research</span></div>
+                      </div>
                     </div>
-                    <div class="mock-card-head">
-                      <h4>Roadmap Canvas</h4>
-                      <span class="mock-board-badge">Board</span>
-                    </div>
-                    <div class="mock-tags">
-                      <span class="mock-tag">#ideas</span>
+
+                    <div class="mock-card board" style="grid-column: 1 / -1;">
+                      <div class="mock-minimap" style="height: 62px;">
+                        <div class="mock-mini-box" style="left:10px;top:9px;width:96px;background:#2d555e;">AES-256-GCM Spec</div>
+                        <div class="mock-mini-box" style="left:120px;top:16px;width:98px;background:#614a19;transform:rotate(-5deg);">Zero plaintext on disk</div>
+                        <div class="mock-mini-box" style="left:232px;top:12px;width:98px;background:#345920;">vault.crypsy.json</div>
+                      </div>
+                      <div class="mock-card-head">
+                        <h4>Architecture v2 <span class="mock-board-badge" style="margin-left:4px;">Board</span></h4>
+                        <div class="mock-tags"><span class="mock-tag">#ideas</span></div>
+                      </div>
                     </div>
                   </div>
+                </div>
 
-                  <div class="mock-card cobalt" style="grid-column: 1 / -1;">
-                    <div class="mock-image-preview" aria-hidden="true">
-                      <svg viewBox="0 0 320 46" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
-                        <defs>
-                          <linearGradient id="mockGrad" x1="0" y1="0" x2="1" y2="1">
-                            <stop offset="0%" stop-color="#1e3a5f"/>
-                            <stop offset="100%" stop-color="#16504b"/>
-                          </linearGradient>
-                        </defs>
-                        <rect width="320" height="46" fill="url(#mockGrad)"/>
-                        <path d="M0 36 L68 18 L128 32 L198 11 L268 29 L320 18 L320 46 L0 46 Z" fill="rgba(138, 180, 248, 0.22)"/>
-                        <circle cx="256" cy="14" r="6" fill="rgba(126, 231, 135, 0.45)"/>
-                      </svg>
-                      <span class="mock-image-badge">Encrypted WebP</span>
+                <!-- Alternate Hero Preview: Card-Grid Quick Notes -->
+                <div class="app-mock-workspace mock-view-pane hidden" data-pane="notes" aria-hidden="true">
+                  <div class="app-mock-composer">Take an encrypted note...</div>
+
+                  <div class="app-mock-cards">
+                    <div class="mock-card teal">
+                      <div class="mock-card-head">
+                        <h4>Security Checklist</h4>
+                      </div>
+                      <ul class="mock-check-list">
+                        <li class="done">&#9745; WebCrypto PBKDF2</li>
+                        <li>&#9744; Hardware key backup</li>
+                      </ul>
+                      <div class="mock-tags">
+                        <span class="mock-tag">#security</span>
+                      </div>
                     </div>
-                    <p>Paste screenshots via Ctrl+V or link URLs&mdash;compressed &amp; encrypted on-device.</p>
+
+                    <div class="mock-card board">
+                      <div class="mock-minimap">
+                        <div class="mock-mini-box" style="left:8px;top:8px;width:72px;background:#5c2b29;">API Notes</div>
+                        <div class="mock-mini-box" style="left:86px;top:18px;width:62px;background:#2d555e;transform:rotate(-4deg);">Wireframe</div>
+                      </div>
+                      <div class="mock-card-head">
+                        <h4>Roadmap Canvas</h4>
+                        <span class="mock-board-badge">Board</span>
+                      </div>
+                      <div class="mock-tags">
+                        <span class="mock-tag">#ideas</span>
+                      </div>
+                    </div>
+
+                    <div class="mock-card cobalt" style="grid-column: 1 / -1;">
+                      <div class="mock-image-preview" aria-hidden="true">
+                        <svg viewBox="0 0 320 46" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+                          <defs>
+                            <linearGradient id="mockGrad" x1="0" y1="0" x2="1" y2="1">
+                              <stop offset="0%" stop-color="#1e3a5f"/>
+                              <stop offset="100%" stop-color="#16504b"/>
+                            </linearGradient>
+                          </defs>
+                          <rect width="320" height="46" fill="url(#mockGrad)"/>
+                          <path d="M0 36 L68 18 L128 32 L198 11 L268 29 L320 18 L320 46 L0 46 Z" fill="rgba(138, 180, 248, 0.22)"/>
+                          <circle cx="256" cy="14" r="6" fill="rgba(126, 231, 135, 0.45)"/>
+                        </svg>
+                        <span class="mock-image-badge">Encrypted WebP</span>
+                      </div>
+                      <p>Paste screenshots via Ctrl+V or link URLs, compressed and encrypted on-device.</p>
+                    </div>
+
+                    <div class="mock-card amber">
+                      <div class="mock-card-head">
+                        <h4>Markdown Capture</h4>
+                      </div>
+                      <p>Smart lists, checkboxes, and instant <code>Ctrl+K</code> search highlighting.</p>
+                      <div class="mock-tags">
+                        <span class="mock-tag">#notes</span>
+                      </div>
+                    </div>
+
+                    <div class="mock-card sage">
+                      <div class="mock-card-head">
+                        <h4>Cloud Auto-Sync</h4>
+                      </div>
+                      <p>Writes encrypted chunks straight to <code>vault.crypsy.json</code>.</p>
+                      <div class="mock-tags">
+                        <span class="mock-tag">#byoc</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1240,13 +1852,184 @@
     </div>
   </section>
 
+  <!-- Spatial Boards Spotlight -->
+  <section id="boards" class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-eyebrow">Beyond Card Grids &bull; Infinite Spatial Canvas</div>
+        <h2>Visual Thinking on an Encrypted Infinite Canvas</h2>
+        <p>When a simple note card isn&rsquo;t enough, open a Spatial Board to arrange screenshots, rotated callouts, checklists, and links freely across a zoomable dot-grid workspace.</p>
+      </div>
+
+      <div class="boards-spotlight">
+        <!-- Interactive Board Canvas Mockup -->
+        <div class="canvas-mock-window" aria-label="Crypsy Spatial Board Canvas Editor preview">
+          <div class="canvas-mock-toolbar">
+            <div class="canvas-mock-title-row">
+              <span class="canvas-mock-chip">&larr; Boards</span>
+              <span class="canvas-mock-title">Product Launch Board</span>
+              <span class="canvas-mock-chip primary">6 items</span>
+            </div>
+            <div class="canvas-mock-actions" aria-hidden="true">
+              <span class="canvas-mock-chip">+ Text</span>
+              <span class="canvas-mock-chip">Paste Image</span>
+              <span class="canvas-mock-chip">Add Link</span>
+              <span class="canvas-mock-chip">100%</span>
+            </div>
+          </div>
+
+          <div class="canvas-mock-stage" aria-hidden="true">
+            <!-- Floating Selection Formatting Pill -->
+            <div class="canvas-mock-floatbar">
+              <span class="float-pill-btn">S</span>
+              <span class="float-pill-btn">M</span>
+              <span class="float-pill-btn active">L</span>
+              <span class="float-pill-btn">XL</span>
+              <span class="float-sep"></span>
+              <span class="float-swatch active" style="background:#5c2b29;"></span>
+              <span class="float-swatch" style="background:#614a19;"></span>
+              <span class="float-swatch" style="background:#345920;"></span>
+              <span class="float-swatch" style="background:#16504b;"></span>
+              <span class="float-swatch" style="background:#2d555e;"></span>
+              <span class="float-swatch" style="background:#42275e;"></span>
+              <span class="float-sep"></span>
+              <span class="float-pill-btn active">B</span>
+              <span class="float-pill-btn">I</span>
+            </div>
+
+            <!-- Pasted Encrypted WebP Photo -->
+            <div class="canvas-mock-photo" style="left: 4%; top: 56px; width: 39%; height: 126px;">
+              <svg viewBox="0 0 260 126" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+                <defs>
+                  <linearGradient id="boardHeroPhoto" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#173859"/>
+                    <stop offset="55%" stop-color="#1b5463"/>
+                    <stop offset="100%" stop-color="#132c3d"/>
+                  </linearGradient>
+                </defs>
+                <rect width="260" height="126" fill="url(#boardHeroPhoto)"/>
+                <circle cx="204" cy="36" r="18" fill="rgba(138, 180, 248, 0.25)"/>
+                <path d="M0 98 L48 64 L92 86 L152 44 L212 82 L260 60 L260 126 L0 126 Z" fill="rgba(138, 180, 248, 0.2)"/>
+                <path d="M0 108 Q64 82 132 104 T260 92 L260 126 L0 126 Z" fill="rgba(109, 213, 140, 0.16)"/>
+              </svg>
+              <span class="mock-image-badge">WebP &middot; 42 KB</span>
+            </div>
+
+            <!-- Selected Tilted Coral Card with Handles + Rotate Stem -->
+            <div class="canvas-mock-item canvas-mock-selbox" style="left: 33%; top: 84px; width: 38%; background: #5c2b29; transform: rotate(-5deg); z-index: 4;">
+              <div class="canvas-mock-rot-stem"></div>
+              <div class="canvas-mock-rot-knob"></div>
+              <div class="canvas-mock-rot-pill">&#8635; -5&deg;</div>
+              <span class="canvas-mock-handle nw"></span>
+              <span class="canvas-mock-handle n"></span>
+              <span class="canvas-mock-handle ne"></span>
+              <span class="canvas-mock-handle e"></span>
+              <span class="canvas-mock-handle se"></span>
+              <span class="canvas-mock-handle s"></span>
+              <span class="canvas-mock-handle sw"></span>
+              <span class="canvas-mock-handle w"></span>
+              <h4>Launch Vision</h4>
+              <p>Drag perimeter borders to move cleanly. Hold Shift while rotating for 15&deg; snaps.</p>
+            </div>
+
+            <!-- Right Teal Checklist Card -->
+            <div class="canvas-mock-item" style="right: 3.5%; top: 68px; width: 24%; background: #16504b; z-index: 2;">
+              <h4>Sprint Goals</h4>
+              <p>&#9745; WebCrypto keys<br>&#9745; Pan &amp; zoom grid<br>&#9744; Cloud folder sync</p>
+            </div>
+
+            <!-- Bottom-Left Rotated Plum Block -->
+            <div class="canvas-mock-item" style="left: 5%; bottom: 26px; width: 34%; background: #42275e; transform: rotate(4deg); z-index: 3;">
+              <h4>Field Research</h4>
+              <p>Overlap notes over screenshots and adjust layer order anytime.</p>
+            </div>
+
+            <!-- Custom Right-Click Context Menu -->
+            <div class="canvas-mock-ctx" style="left: 26%; bottom: 38px;">
+              <div class="ctx-row active"><span>Bring to Front</span><span>&#8679;]</span></div>
+              <div class="ctx-row"><span>Send to Back</span><span>&#8679;[</span></div>
+              <div class="ctx-row"><span>Duplicate Item</span><span>Ctrl+D</span></div>
+              <div class="ctx-row" style="justify-content:flex-start; gap:5px;">
+                <span class="float-swatch" style="background:#5c2b29;"></span>
+                <span class="float-swatch" style="background:#614a19;"></span>
+                <span class="float-swatch" style="background:#16504b;"></span>
+                <span class="float-swatch" style="background:#2d555e;"></span>
+                <span class="float-swatch active" style="background:#42275e;"></span>
+              </div>
+              <div class="ctx-divider"></div>
+              <div class="ctx-row danger"><span>Delete Item</span><span>Del</span></div>
+            </div>
+
+            <!-- Bottom-Right Clickable Link Card -->
+            <div class="canvas-mock-linkcard" style="right: 4%; bottom: 58px; width: 37%; z-index: 2;">
+              <div style="width:26px;height:26px;border-radius:6px;background:rgba(138,180,248,0.16);color:#8ab4f8;display:flex;align-items:center;justify-content:center;font-size:0.75rem;flex-shrink:0;">&#128279;</div>
+              <div style="min-width:0;">
+                <div style="font-size:0.74rem;font-weight:600;color:#8ab4f8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">docs.webcrypto.dev</div>
+                <div style="font-size:0.64rem;color:#9aa0a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">AES-256-GCM Spec Reference</div>
+              </div>
+            </div>
+
+            <div class="canvas-mock-hud">
+              <span>100% Zoom</span>
+              <span>&middot;</span>
+              <span>Drag grid to pan</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Capabilities List -->
+        <div class="boards-pillars">
+          <div class="pillar-card">
+            <div class="pillar-icon">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="8" y="14" width="8" height="7" rx="1"></rect></svg>
+            </div>
+            <div>
+              <h3>Click-Anywhere Free Placement</h3>
+              <p>Click anywhere on a pannable, zoomable dot-grid workspace to drop Markdown text cards, layer ideas freely, and build visual moodboards or system maps.</p>
+            </div>
+          </div>
+
+          <div class="pillar-card">
+            <div class="pillar-icon">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path></svg>
+            </div>
+            <div>
+              <h3>Perimeter Move, 8-Way Resize &amp; Snap Rotate</h3>
+              <p>Grab card borders to reposition without losing text selection, drag corner or edge handles to size cards cleanly, and hold <code>Shift</code> to snap rotation in 15&deg; increments.</p>
+            </div>
+          </div>
+
+          <div class="pillar-card">
+            <div class="pillar-icon">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            </div>
+            <div>
+              <h3>Paste Screenshots &amp; Project Links</h3>
+              <p>Press <code>Ctrl+V</code> to embed screenshots compressed to WebP directly onto the canvas alongside formatted link cards, encrypted inside your vault.</p>
+            </div>
+          </div>
+
+          <div class="pillar-card">
+            <div class="pillar-icon">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+            </div>
+            <div>
+              <h3>True-Scale Thumbnails &amp; Context Menus</h3>
+              <p>Board cards render proportionally faithful live thumbnails of rotated blocks and photos, while right-clicking surfaces instant z-order, palette, and duplicate tools.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Core Features -->
   <section id="features" class="section">
     <div class="container">
       <div class="section-header">
-        <div class="section-eyebrow">Built for Speed &amp; Privacy</div>
-        <h2>Everything You Love About Keep, Encrypted</h2>
-        <p>Fast, tactile note-taking without surrendering your private thoughts to a remote database.</p>
+        <div class="section-eyebrow">Quick Notes + Spatial Canvases</div>
+        <h2>Speed for Quick Thoughts. Freedom for Spatial Boards.</h2>
+        <p>Start with instant Markdown capture or expand onto an encrypted visual board without surrendering your private workspace to a remote server.</p>
       </div>
 
       <div class="features-grid">
@@ -1262,8 +2045,8 @@
           <div class="feature-icon">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="5" rx="1.5"></rect><rect x="13" y="10" width="8" height="11" rx="1.5"></rect><rect x="3" y="13" width="8" height="8" rx="1.5"></rect></svg>
           </div>
-          <h3>OneNote-Style Spatial Boards</h3>
-          <p>Click anywhere on a pannable, zoomable canvas to place text boxes, pasted screenshots, and link cards—with free move, resize, rotation, alignment, and live thumbnail previews.</p>
+          <h3>Free-Form Spatial Boards</h3>
+          <p>Click anywhere on a pannable, zoomable canvas to place text boxes, pasted screenshots, and link cards, with free move, resize, rotation, alignment, and live thumbnail previews.</p>
         </div>
 
         <div class="feature-card">
@@ -1362,5 +2145,112 @@ node install.js --build-only</pre>
       </div>
     </div>
   </footer>
+
+  <script>
+    (function () {
+      const buttons = Array.from(document.querySelectorAll('.browser-view-btn[data-mock-view]'));
+      const panes = Array.from(document.querySelectorAll('.mock-view-pane[data-pane]'));
+      const navAll = document.getElementById('mockNavAll');
+      const navBoards = document.getElementById('mockNavBoards');
+      const viewSwitch = document.getElementById('browserViewSwitch');
+      if (buttons.length === 0 || panes.length === 0) return;
+
+      const views = buttons.map((b) => b.getAttribute('data-mock-view'));
+      const INTERVAL_MS = 4000;
+
+      let activeView = views[0];
+      let timerId = null;
+      let startedAt = Date.now();
+      let remainingMs = INTERVAL_MS;
+      let isHovered = false;
+
+      function clearTimer() {
+        if (timerId !== null) {
+          window.clearTimeout(timerId);
+          timerId = null;
+        }
+      }
+
+      function scheduleNext(delayMs) {
+        clearTimer();
+        if (isHovered || (typeof document !== 'undefined' && document.hidden)) return;
+        startedAt = Date.now();
+        remainingMs = delayMs;
+        timerId = window.setTimeout(() => {
+          const nextIdx = (views.indexOf(activeView) + 1) % views.length;
+          setActiveView(views[nextIdx], true);
+        }, delayMs);
+      }
+
+      function setActiveView(target, restartCycle) {
+        activeView = target;
+        buttons.forEach((b) => {
+          const isMatch = b.getAttribute('data-mock-view') === target;
+          b.classList.toggle('active', isMatch);
+          b.classList.remove('progress-running');
+          b.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+          if (isMatch) {
+            void b.offsetWidth;
+            b.classList.add('progress-running');
+          }
+        });
+        panes.forEach((pane) => {
+          const isMatch = pane.getAttribute('data-pane') === target;
+          pane.classList.toggle('hidden', !isMatch);
+          pane.setAttribute('aria-hidden', isMatch ? 'false' : 'true');
+        });
+        if (navAll && navBoards) {
+          navAll.classList.toggle('active', target === 'notes');
+          navBoards.classList.toggle('active', target === 'boards');
+        }
+        if (restartCycle) {
+          remainingMs = INTERVAL_MS;
+          scheduleNext(INTERVAL_MS);
+        }
+      }
+
+      function pauseCarousel() {
+        if (timerId !== null) {
+          remainingMs = Math.max(400, remainingMs - (Date.now() - startedAt));
+          clearTimer();
+        }
+        if (viewSwitch) viewSwitch.classList.add('carousel-paused');
+      }
+
+      function resumeCarousel() {
+        if (isHovered || (typeof document !== 'undefined' && document.hidden)) return;
+        if (viewSwitch) viewSwitch.classList.remove('carousel-paused');
+        scheduleNext(remainingMs);
+      }
+
+      buttons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          setActiveView(btn.getAttribute('data-mock-view'), true);
+        });
+      });
+
+      if (viewSwitch) {
+        viewSwitch.addEventListener('mouseenter', () => {
+          isHovered = true;
+          pauseCarousel();
+        });
+        viewSwitch.addEventListener('mouseleave', () => {
+          isHovered = false;
+          resumeCarousel();
+        });
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) pauseCarousel();
+        else resumeCarousel();
+      });
+
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (viewSwitch) viewSwitch.classList.add('carousel-paused');
+      } else {
+        scheduleNext(INTERVAL_MS);
+      }
+    })();
+  </script>
 </body>
 </html>

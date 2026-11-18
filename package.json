@@ -1,7 +1,7 @@
 {
   "name": "crypsy-note",
   "version": "1.4.0",
-  "description": "Google Keep & OneNote-style encrypted notes and spatial boards web app with transparent client-side AES-256-GCM encryption and BYOC cloud folder installer",
+  "description": "Client-side AES-256-GCM encrypted quick-notes and free-form spatial boards web app with Bring Your Own Cloud (BYOC) folder installer",
   "license": "MIT",
   "private": true,
   "scripts": {

@@ -1,6 +1,6 @@
 /**
  * Crypsy — Main Application Logic
- * Implements Google Keep-style UX + Cloud Folder Onboarding & Live File Sync:
+ * Implements Card-Grid Notes + Spatial Boards UX + Cloud Folder Onboarding & Live File Sync:
  * - Search (title, description, tags) with live highlight
  * - Tags (create, filter, assign/remove per note)
  * - Pins (PINNED vs OTHERS sections)
