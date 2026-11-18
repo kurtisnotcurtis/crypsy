@@ -452,13 +452,17 @@ function sanitizeClonedPortableDom(): string {
   const clearIds = [
     'pinnedGrid',
     'othersGrid',
+    'sidebarBoardsList',
     'sidebarTagsList',
     'composerImagesRow',
     'composerTagsRow',
     'editModalImagesRow',
     'editModalTagsRow',
+    'boardItemsLayer',
+    'boardTagsRow',
     'ciphertextPreview',
     'activeFilterText',
+    'crypsyContextMenu',
   ];
   for (const id of clearIds) {
     const el = clone.querySelector(`#${id}`);
@@ -469,6 +473,7 @@ function sanitizeClonedPortableDom(): string {
     'reconnectCloudBanner',
     'lastUpdatedBadge',
     'clearSearchBtn',
+    'boardsActionBar',
     'composerHeader',
     'composerTagsRow',
     'composerImagesRow',
@@ -483,11 +488,18 @@ function sanitizeClonedPortableDom(): string {
     'editModalImagesRow',
     'editModalTagPopover',
     'editModalImagePopover',
+    'boardEditorBackdrop',
+    'boardSelectionBar',
+    'boardTagPopover',
+    'boardImagePopover',
+    'boardLinkPopover',
+    'boardMarqueeRect',
     'cloudOnboardingBackdrop',
     'vaultModalBackdrop',
     'updatesModalBackdrop',
     'lockScreenOverlay',
     'imageLightboxBackdrop',
+    'crypsyContextMenu',
   ];
   for (const id of hideIds) {
     const el = clone.querySelector(`#${id}`);

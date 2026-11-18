@@ -1,17 +1,19 @@
 # Crypsy <img src="./logo.svg" width="28" height="28" align="top" alt="Crypsy logo" />
 
-A lightweight, Google Keep-style encrypted notes web application with transparent client-side **AES-256-GCM** encryption and **Bring Your Own Cloud (BYOC)** folder syncing.
+A lightweight, Google Keep & OneNote-style encrypted notes and spatial boards web application with transparent client-side **AES-256-GCM** encryption and **Bring Your Own Cloud (BYOC)** folder syncing.
 
 ## Core Features
 
-- **Search:** Instant client-side search across note titles, descriptions, and `#tags` with live match highlighting (`/` or `Ctrl+K`).
-- **Tags:** Create, delete, and assign `#tags` to notes; filter notes by tag from the sidebar or by clicking any tag chip on a card.
-- **Pins:** Pin important notes to the top (`PINNED` vs `OTHERS` sections).
+- **Spatial Boards (OneNote-Style Canvas):** Create free-form encrypted **Boards** from the sidebar (`Boards` section) or **+ New Board**. Click anywhere to type text boxes, paste (`Ctrl+V`) or drag-and-drop screenshots, image URLs, and link cards, grab the box border to move, resize/rotate with handles (including `Shift` 15° snap), align multiple items, pan/zoom infinitely, undo/redo edits, and preview boards directly via true-scale card thumbnails.
+- **Custom Right-Click Context Menus:** Right-click on Board canvas space, single or multi-selected board items, note cards, board cards, sidebar boards, or sidebar `#tags` for quick format, tint, duplicate, rename, copy/cut/paste, and delete actions—while holding `Shift + Right-Click` or right-clicking inside text inputs preserves the native browser menu.
+- **Search:** Instant client-side search across note titles, descriptions, board contents, and `#tags` with live match highlighting (`/` or `Ctrl+K`).
+- **Tags:** Create, rename, delete, and assign `#tags` to notes and boards; filter from the sidebar or by clicking any tag chip on a card.
+- **Pins:** Pin priority notes and boards to the top (`PINNED` vs `OTHERS` sections).
 - **Card / List View:** Toggle between a responsive multi-column Card Grid and a single-column List layout.
 - **Rich Note Cards & Markdown:** Title, multi-line description with interactive `- [ ]` task checkboxes, smart bullet/numbered list continuation, inline `![alt](url)` image rendering, timestamps, and 7 color themes (adapting to Dark & Light mode).
 - **Encrypted Images & Clipboard Paste:** Paste images (`Ctrl+V`), drag-and-drop files, upload images, or import image URLs—compressed on-device to WebP and encrypted inside your vault (with automatic `no-referrer` external fallback if a remote host blocks CORS), plus a click-to-zoom lightbox.
-- **Collapsible Sidebar:** Expand/collapse **Tags** and **Quick Guide** sections in the sidebar with persisted UI state.
-- **Transparent AES-256-GCM Encryption:** All notes, images, and tags are encrypted in-browser using the WebCrypto API (`PBKDF2-SHA256` + `AES-256-GCM`) before persisting to IndexedDB / `localStorage` or your cloud folder.
+- **Collapsible Sidebar:** Expand/collapse **Boards**, **Tags**, and **Quick Guide** sections in the sidebar with persisted UI state.
+- **Transparent AES-256-GCM Encryption:** All notes, boards, images, and tags are encrypted in-browser using the WebCrypto API (`PBKDF2-SHA256` + `AES-256-GCM`) before persisting to IndexedDB / `localStorage` or your cloud folder.
 - **Cloud Folder Onboarding & Live Sync:** Walk through placing Crypsy directly inside **Microsoft OneDrive, Google Drive, Dropbox, or iCloud Drive**—with live auto-save to `vault.crypsy.json` and automatic cross-device file-change polling.
 
 ## Two Ways to Set Up Cloud Sync

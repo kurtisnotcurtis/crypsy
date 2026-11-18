@@ -10,20 +10,43 @@
  * - Cloud Folder Provisioning Wizard & Live Auto-Sync (`vault.crypsy.json`)
  */
 
+import { BoardEditorController } from './board-editor';
 import { CrypsyCloudSync } from './cloud-sync';
+import { ContextMenuController, shouldBypassCustomContextMenu } from './context-menu';
 import { CrypsyCrypto } from './crypto';
+import {
+  extractClipboardImages,
+  extractImageUrlFromClipboardHtml,
+  extractStandaloneImageUrl,
+  noteImageFromFile,
+  noteImageFromUrl,
+} from './media';
 import type {
   ActiveFilter,
   AppState,
+  Board,
   CloudProviderId,
   EncryptedEnvelope,
   Note,
   NoteColor,
   NoteImage,
   RestoreConnectionResult,
+  VaultPayload,
 } from './types';
+import {
+  APP_VERSION,
+  autoResizeTextarea,
+  byId,
+  escapeHtml,
+  formatRelativeTime,
+  formatTimestamp,
+  getRotatedRectAabb,
+  highlightText,
+  isEditableElement,
+  maybeById,
+  renderBoardItemHtml,
+} from './utils';
 
-const APP_VERSION = '1.3.0';
 const STORAGE_KEY_VAULT = 'crypsy_encrypted_vault_v1';
 const STORAGE_KEY_PREFS = 'crypsy_ui_prefs_v1';
 const VAULT_IDB_NAME = 'crypsy_vault_cache_db_v1';
@@ -36,11 +59,13 @@ window.CRYPSY_VERSION = APP_VERSION;
 // Application State
 const state: AppState = {
   notes: [],
+  boards: [],
   tags: ['security', 'ideas', 'work', 'personal'],
   searchQuery: '',
   activeFilter: { type: 'all', tag: null },
   viewMode: 'grid',
   theme: 'dark',
+  boardsSectionExpanded: true,
   tagsSectionExpanded: true,
   guideSectionExpanded: true,
   autoCheckUpdates: false,
@@ -56,6 +81,7 @@ const state: AppState = {
   },
   editingNoteId: null,
   editingDraft: null,
+  activeBoardId: null,
 };
 
 // Seed notes for first-time launch
@@ -106,22 +132,15 @@ const SEED_NOTES: Note[] = [
   },
 ];
 
-function byId<T extends HTMLElement = HTMLElement>(id: string): T {
-  const el = document.getElementById(id);
-  if (!el) {
-    throw new Error(`Missing required DOM element: #${id}`);
-  }
-  return el as T;
-}
-
-function maybeById<T extends HTMLElement = HTMLElement>(id: string): T | null {
-  return document.getElementById(id) as T | null;
-}
-
 // DOM Elements
 const els = {
   sidebar: byId('sidebar'),
   sidebarToggleBtn: byId<HTMLButtonElement>('sidebarToggleBtn'),
+  toggleBoardsSectionBtn: maybeById<HTMLButtonElement>('toggleBoardsSectionBtn'),
+  sidebarBoardsContent: maybeById('sidebarBoardsContent'),
+  sidebarBoardsList: maybeById('sidebarBoardsList'),
+  newBoardForm: maybeById<HTMLFormElement>('newBoardForm'),
+  newBoardInput: maybeById<HTMLInputElement>('newBoardInput'),
   toggleTagsSectionBtn: maybeById<HTMLButtonElement>('toggleTagsSectionBtn'),
   sidebarTagsContent: maybeById('sidebarTagsContent'),
   sidebarTagsList: byId('sidebarTagsList'),
@@ -131,6 +150,10 @@ const els = {
   sidebarGuideContent: maybeById('sidebarGuideContent'),
   countAll: byId('countAll'),
   countPinned: byId('countPinned'),
+  countBoards: maybeById('countBoards'),
+  boardsActionBar: maybeById('boardsActionBar'),
+  createBoardHeroBtn: maybeById<HTMLButtonElement>('createBoardHeroBtn'),
+  composerWrapper: maybeById('composerWrapper'),
 
   searchInput: byId<HTMLInputElement>('searchInput'),
   clearSearchBtn: byId<HTMLButtonElement>('clearSearchBtn'),
@@ -183,6 +206,8 @@ const els = {
   othersSectionLabel: byId('othersSectionLabel'),
   othersGrid: byId('othersGrid'),
   emptyState: byId('emptyState'),
+  emptyStateTitle: maybeById('emptyStateTitle'),
+  emptyStateSubtitle: maybeById('emptyStateSubtitle'),
 
   editModalBackdrop: byId('editModalBackdrop'),
   editModalCard: byId('editModalCard'),
@@ -261,52 +286,7 @@ const els = {
   lightboxImage: maybeById<HTMLImageElement>('lightboxImage'),
 };
 
-// Utility helpers
-function escapeHtml(str: unknown): string {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function highlightText(text: string, query: string): string {
-  const safe = escapeHtml(text);
-  if (!query || !query.trim()) return safe;
-  const cleanQ = query.trim().replace(/^#/, '');
-  if (!cleanQ) return safe;
-  const escapedRegex = cleanQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(`(${escapedRegex})`, 'gi');
-  return safe.replace(regex, '<mark class="search-highlight">$1</mark>');
-}
-
-function formatTimestamp(ms: number): string {
-  const d = new Date(ms);
-  return d.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function formatRelativeTime(ms: number): string {
-  if (!ms) return '';
-  const diffSec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
-  if (diffSec < 45) return 'just now';
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  return formatTimestamp(ms);
-}
-
-function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
-  textarea.style.height = 'auto';
-  textarea.style.height = `${Math.max(textarea.scrollHeight, 32)}px`;
-}
-
+// List continuation helper
 function handleListEnterKeydown(e: KeyboardEvent): void {
   if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.isComposing) {
     return;
@@ -363,6 +343,7 @@ function handleListEnterKeydown(e: KeyboardEvent): void {
 interface StoredPrefs {
   viewMode?: unknown;
   theme?: unknown;
+  boardsSectionExpanded?: unknown;
   tagsSectionExpanded?: unknown;
   guideSectionExpanded?: unknown;
   autoCheckUpdates?: unknown;
@@ -378,6 +359,9 @@ function loadPreferences(): void {
     }
     if (prefs.theme === 'light' || prefs.theme === 'dark') {
       state.theme = prefs.theme;
+    }
+    if (typeof prefs.boardsSectionExpanded === 'boolean') {
+      state.boardsSectionExpanded = prefs.boardsSectionExpanded;
     }
     if (typeof prefs.tagsSectionExpanded === 'boolean') {
       state.tagsSectionExpanded = prefs.tagsSectionExpanded;
@@ -399,6 +383,7 @@ function savePreferences(): void {
     JSON.stringify({
       viewMode: state.viewMode,
       theme: state.theme,
+      boardsSectionExpanded: state.boardsSectionExpanded,
       tagsSectionExpanded: state.tagsSectionExpanded,
       guideSectionExpanded: state.guideSectionExpanded,
       autoCheckUpdates: state.autoCheckUpdates,
@@ -491,163 +476,7 @@ async function checkForUpdates(silent = false): Promise<void> {
 }
 
 // Persistence & Cloud Sync
-const MAX_IMAGE_DIMENSION = 1440;
-const WEBP_QUALITY = 0.82;
-
-function createImageId(): string {
-  return `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-async function compressImageBlobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      let { naturalWidth: width, naturalHeight: height } = img;
-      if (!width || !height) {
-        width = 800;
-        height = 600;
-      }
-      if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
-        const scale = Math.min(MAX_IMAGE_DIMENSION / width, MAX_IMAGE_DIMENSION / height);
-        width = Math.max(1, Math.round(width * scale));
-        height = Math.max(1, Math.round(height * scale));
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        reject(new Error('Canvas context unavailable'));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, width, height);
-      const webp = canvas.toDataURL('image/webp', WEBP_QUALITY);
-      resolve(
-        webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/jpeg', WEBP_QUALITY)
-      );
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('Could not decode image file'));
-    };
-    img.src = objectUrl;
-  });
-}
-
-async function noteImageFromFile(file: File | Blob, alt?: string): Promise<NoteImage> {
-  const dataUrl = await compressImageBlobToDataUrl(file);
-  return {
-    id: createImageId(),
-    src: dataUrl,
-    alt: alt || (file instanceof File ? file.name : 'Pasted image'),
-    sourceType: 'embedded',
-    createdAt: Date.now(),
-  };
-}
-
-/**
- * Downloads an image from a URL and compresses it to an embedded WebP data URL
- * so it is encrypted inside the vault. If the remote host blocks CORS fetch(),
- * falls back to verifying via <img> load and storing as an external URL with
- * referrerpolicy="no-referrer".
- */
-async function noteImageFromUrl(rawUrl: string, alt?: string): Promise<NoteImage> {
-  const url = rawUrl.trim();
-  if (!url) throw new Error('Empty image URL');
-
-  if (url.startsWith('data:image/')) {
-    const res = await fetch(url);
-    const blob = await res.blob();
-    return noteImageFromFile(blob, alt || 'Embedded image');
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error('Invalid URL format');
-  }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    throw new Error('Only http:// and https:// image URLs are supported');
-  }
-
-  // 1. Try CORS fetch to download & encrypt into vault offline
-  try {
-    const res = await fetch(parsed.href, {
-      mode: 'cors',
-      credentials: 'omit',
-      referrerPolicy: 'no-referrer',
-    });
-    if (res.ok) {
-      const blob = await res.blob();
-      if (blob.type.startsWith('image/') || blob.size > 0) {
-        const dataUrl = await compressImageBlobToDataUrl(blob);
-        return {
-          id: createImageId(),
-          src: dataUrl,
-          alt: alt || parsed.pathname.split('/').pop() || 'Downloaded image',
-          sourceType: 'embedded',
-          createdAt: Date.now(),
-        };
-      }
-    }
-  } catch {
-    // CORS blocked or fetch failed; fall back to direct <img> verification
-  }
-
-  // 2. Fallback: verify the URL loads in an <img> element (bypasses CORS) and attach as external link
-  await new Promise<void>((resolve, reject) => {
-    const img = new Image();
-    img.referrerPolicy = 'no-referrer';
-    img.onload = () => resolve();
-    img.onerror = () => reject(new Error('Could not load image from URL'));
-    img.src = parsed.href;
-  });
-
-  return {
-    id: createImageId(),
-    src: parsed.href,
-    alt: alt || parsed.pathname.split('/').pop() || 'External image',
-    sourceType: 'external',
-    createdAt: Date.now(),
-  };
-}
-
-function extractStandaloneImageUrl(text: string): { url: string; alt?: string | undefined } | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  const mdMatch = trimmed.match(/^!\[([^\]]*)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)$/i);
-  if (mdMatch && mdMatch[2]) {
-    return { url: mdMatch[2], alt: mdMatch[1] || undefined };
-  }
-  if (/\s/.test(trimmed)) return null;
-  if (trimmed.startsWith('data:image/')) {
-    return { url: trimmed };
-  }
-  if (/^https?:\/\/[^\s]+\.(?:png|jpe?g|gif|webp|svg|avif|bmp|ico)(?:[?#][^\s]*)?$/i.test(trimmed)) {
-    return { url: trimmed };
-  }
-  return null;
-}
-
-function extractImageUrlFromClipboardHtml(
-  html: string
-): { url: string; alt?: string | undefined } | null {
-  if (!html || !html.includes('<img')) return null;
-  try {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    const img = doc.querySelector('img[src]');
-    const src = img?.getAttribute('src')?.trim();
-    if (src && (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:image/'))) {
-      return { url: src, alt: img?.getAttribute('alt') || undefined };
-    }
-  } catch {
-    // ignore parse failure
-  }
-  return null;
-}
+let boardPersistTimer: number | null = null;
 
 function openVaultCacheDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -707,10 +536,39 @@ async function loadVaultEnvelopeFromCache(): Promise<EncryptedEnvelope | null> {
   }
 }
 
+function scheduleBoardPersist(immediate = false): void {
+  if (boardPersistTimer !== null) {
+    window.clearTimeout(boardPersistTimer);
+    boardPersistTimer = null;
+  }
+  if (immediate) {
+    void persistEncryptedVault();
+    return;
+  }
+  boardPersistTimer = window.setTimeout(() => {
+    boardPersistTimer = null;
+    void persistEncryptedVault();
+  }, 500);
+}
+
+function applyDecryptedPayload(decrypted: VaultPayload): void {
+  state.notes = Array.isArray(decrypted.notes) ? decrypted.notes : [];
+  state.tags = Array.isArray(decrypted.tags) ? decrypted.tags : [];
+  state.boards = Array.isArray(decrypted.boards) ? decrypted.boards : [];
+  if (state.activeBoardId && !state.boards.some((b) => b.id === state.activeBoardId)) {
+    state.activeBoardId = null;
+  }
+}
+
 async function persistEncryptedVault(): Promise<void> {
-  const payload = {
+  if (boardPersistTimer !== null) {
+    window.clearTimeout(boardPersistTimer);
+    boardPersistTimer = null;
+  }
+  const payload: VaultPayload = {
     notes: state.notes,
     tags: state.tags,
+    boards: state.boards,
   };
   const envelope = await CrypsyCrypto.encryptPayload(payload, state.passphrase);
   state.lastEncryptedEnvelope = envelope;
@@ -733,8 +591,7 @@ async function tryLoadEnvelope(envelope: EncryptedEnvelope): Promise<boolean> {
   await saveVaultEnvelopeToCache(envelope);
   try {
     const decrypted = await CrypsyCrypto.decryptPayload(envelope, state.passphrase);
-    state.notes = Array.isArray(decrypted.notes) ? decrypted.notes : [];
-    state.tags = Array.isArray(decrypted.tags) ? decrypted.tags : [];
+    applyDecryptedPayload(decrypted);
     renderAll();
     return true;
   } catch {
@@ -752,7 +609,11 @@ async function initVault(): Promise<void> {
 
   // Listen for external cloud folder updates (e.g. synced from another device)
   CrypsyCloudSync.onExternalUpdate(async (externalEnvelope) => {
-    await tryLoadEnvelope(externalEnvelope);
+    if (boardEditor.isGestureActive()) return;
+    const loaded = await tryLoadEnvelope(externalEnvelope);
+    if (loaded) {
+      boardEditor.refreshFromExternal();
+    }
     updateCloudStatusUI();
   });
 
@@ -790,6 +651,7 @@ async function initVault(): Promise<void> {
   const cachedEnvelope = await loadVaultEnvelopeFromCache();
   if (!cachedEnvelope) {
     state.notes = SEED_NOTES;
+    state.boards = [];
     await persistEncryptedVault();
     renderAll();
     return;
@@ -810,10 +672,11 @@ function updateLastUpdatedUI(): void {
       : 0;
   const syncedAtMs = meta && meta.lastSyncedAt ? Date.parse(meta.lastSyncedAt) : 0;
   const latestNoteMs = state.notes.reduce((max, n) => Math.max(max, n.updatedAt || 0), 0);
+  const latestBoardMs = state.boards.reduce((max, b) => Math.max(max, b.updatedAt || 0), 0);
 
   const bestTimestamp = isConnected
     ? Math.max(fileModifiedMs || 0, syncedAtMs || 0, envelopeUpdatedMs || 0)
-    : Math.max(envelopeUpdatedMs || 0, latestNoteMs || 0);
+    : Math.max(envelopeUpdatedMs || 0, latestNoteMs || 0, latestBoardMs || 0);
 
   if (!bestTimestamp) {
     els.lastUpdatedBadge.classList.add('hidden');
@@ -894,6 +757,13 @@ function applyViewModeUI(): void {
 }
 
 function applySidebarSectionsUI(): void {
+  if (els.toggleBoardsSectionBtn && els.sidebarBoardsContent) {
+    els.toggleBoardsSectionBtn.setAttribute('aria-expanded', String(state.boardsSectionExpanded));
+    els.toggleBoardsSectionBtn.title = state.boardsSectionExpanded
+      ? 'Collapse Boards'
+      : 'Expand Boards';
+    els.sidebarBoardsContent.classList.toggle('hidden', !state.boardsSectionExpanded);
+  }
   if (els.toggleTagsSectionBtn && els.sidebarTagsContent) {
     els.toggleTagsSectionBtn.setAttribute('aria-expanded', String(state.tagsSectionExpanded));
     els.toggleTagsSectionBtn.title = state.tagsSectionExpanded ? 'Collapse Tags' : 'Expand Tags';
@@ -908,8 +778,391 @@ function applySidebarSectionsUI(): void {
   }
 }
 
+// Shared Custom Context Menu & Spatial Boards Controller
+const contextMenu = new ContextMenuController();
+
+const boardEditor = new BoardEditorController({
+  getBoard: () => state.boards.find((b) => b.id === state.activeBoardId) ?? null,
+  getSearchQuery: () => state.searchQuery,
+  getAllTags: () => state.tags,
+  contextMenu,
+  isLocked: () => !els.lockScreenOverlay.classList.contains('hidden'),
+  onAddTagToVault: (tag) => {
+    const clean = tag.trim().toLowerCase().replace(/^#/, '');
+    if (clean && !state.tags.includes(clean)) {
+      state.tags.push(clean);
+    }
+  },
+  renderTagPopoverOptions,
+  updateColorDots,
+  onBoardMutated: (board, immediate = false) => {
+    board.updatedAt = Date.now();
+    renderSidebar();
+    renderNotes();
+    updateLastUpdatedUI();
+    scheduleBoardPersist(immediate);
+  },
+  onDeleteBoard: (boardId) => {
+    void deleteBoard(boardId);
+  },
+  onCloseBoard: () => {
+    if (boardPersistTimer !== null) {
+      void persistEncryptedVault();
+    }
+    state.activeBoardId = null;
+    renderAll();
+  },
+  onOpenLightbox: (src) => {
+    openLightbox(src);
+  },
+});
+
+async function createBoard(rawTitle?: string): Promise<void> {
+  const now = Date.now();
+  const trimmed = (rawTitle ?? '').trim();
+  const initialTags =
+    state.activeFilter.type === 'tag' && state.activeFilter.tag ? [state.activeFilter.tag] : [];
+  const board: Board = {
+    id: `board-${now}-${Math.random().toString(36).slice(2, 7)}`,
+    title: trimmed || `Untitled Board ${state.boards.length + 1}`,
+    tags: initialTags,
+    pinned: false,
+    color: 'default',
+    viewport: { panX: 0, panY: 0, zoom: 1 },
+    items: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  state.boards.unshift(board);
+  state.boardsSectionExpanded = true;
+  state.activeFilter = { type: 'boards', tag: null };
+  savePreferences();
+  applySidebarSectionsUI();
+  await persistEncryptedVault();
+  openBoardEditor(board.id);
+}
+
+function openBoardEditor(boardId: string): void {
+  const board = state.boards.find((b) => b.id === boardId);
+  if (!board) return;
+  state.activeBoardId = board.id;
+  renderAll();
+  boardEditor.open(board);
+}
+
+async function deleteBoard(boardId: string): Promise<void> {
+  state.boards = state.boards.filter((b) => b.id !== boardId);
+  if (state.activeBoardId === boardId) {
+    state.activeBoardId = null;
+    if (boardEditor.isOpen()) {
+      boardEditor.close();
+    }
+  }
+  await persistEncryptedVault();
+  renderAll();
+}
+
+async function toggleNotePin(noteId: string): Promise<void> {
+  const note = state.notes.find((n) => n.id === noteId);
+  if (!note) return;
+  note.pinned = !note.pinned;
+  note.updatedAt = Date.now();
+  await persistEncryptedVault();
+  renderAll();
+}
+
+async function deleteNote(noteId: string): Promise<void> {
+  state.notes = state.notes.filter((n) => n.id !== noteId);
+  await persistEncryptedVault();
+  renderAll();
+}
+
+async function duplicateNote(noteId: string): Promise<void> {
+  const note = state.notes.find((n) => n.id === noteId);
+  if (!note) return;
+  const now = Date.now();
+  const clone: Note = {
+    id: `note-${now}-${Math.random().toString(36).slice(2, 7)}`,
+    title: note.title ? `${note.title} (Copy)` : 'Untitled (Copy)',
+    description: note.description,
+    images: note.images ? note.images.map((img) => ({ ...img })) : [],
+    tags: [...(note.tags || [])],
+    pinned: false,
+    color: note.color,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const idx = state.notes.findIndex((n) => n.id === noteId);
+  state.notes.splice(idx >= 0 ? idx + 1 : 0, 0, clone);
+  await persistEncryptedVault();
+  renderAll();
+}
+
+async function setNoteColor(noteId: string, color: NoteColor): Promise<void> {
+  const note = state.notes.find((n) => n.id === noteId);
+  if (!note || note.color === color) return;
+  note.color = color;
+  note.updatedAt = Date.now();
+  await persistEncryptedVault();
+  renderAll();
+}
+
+async function toggleBoardPin(boardId: string): Promise<void> {
+  const board = state.boards.find((b) => b.id === boardId);
+  if (!board) return;
+  board.pinned = !board.pinned;
+  board.updatedAt = Date.now();
+  await persistEncryptedVault();
+  renderAll();
+}
+
+async function duplicateBoard(boardId: string): Promise<void> {
+  const board = state.boards.find((b) => b.id === boardId);
+  if (!board) return;
+  const now = Date.now();
+  const clone: Board = {
+    id: `board-${now}-${Math.random().toString(36).slice(2, 7)}`,
+    title: board.title ? `${board.title} (Copy)` : 'Untitled Board (Copy)',
+    tags: [...(board.tags || [])],
+    pinned: false,
+    color: board.color,
+    viewport: { ...board.viewport },
+    items: board.items.map((item) => ({
+      ...(JSON.parse(JSON.stringify(item)) as typeof item),
+      id: `bi-${now}-${Math.random().toString(36).slice(2, 7)}`,
+    })),
+    createdAt: now,
+    updatedAt: now,
+  };
+  const idx = state.boards.findIndex((b) => b.id === boardId);
+  state.boards.splice(idx >= 0 ? idx + 1 : 0, 0, clone);
+  await persistEncryptedVault();
+  renderAll();
+}
+
+async function setBoardColor(boardId: string, color: NoteColor): Promise<void> {
+  const board = state.boards.find((b) => b.id === boardId);
+  if (!board || board.color === color) return;
+  board.color = color;
+  board.updatedAt = Date.now();
+  await persistEncryptedVault();
+  renderAll();
+}
+
+async function deleteTag(tagToDelete: string): Promise<void> {
+  state.tags = state.tags.filter((t) => t !== tagToDelete);
+  state.notes.forEach((n) => {
+    n.tags = (n.tags || []).filter((t) => t !== tagToDelete);
+  });
+  state.boards.forEach((b) => {
+    b.tags = (b.tags || []).filter((t) => t !== tagToDelete);
+  });
+  if (state.activeFilter.tag === tagToDelete) {
+    state.activeFilter = { type: 'all', tag: null };
+  }
+  await persistEncryptedVault();
+  renderAll();
+}
+
+async function renameTag(oldTag: string, rawNextTag: string): Promise<void> {
+  const nextTag = rawNextTag.trim().toLowerCase().replace(/^#/, '');
+  if (!nextTag || nextTag === oldTag) {
+    renderSidebar();
+    return;
+  }
+
+  if (state.tags.includes(nextTag)) {
+    state.tags = state.tags.filter((t) => t !== oldTag);
+  } else {
+    state.tags = state.tags.map((t) => (t === oldTag ? nextTag : t));
+  }
+
+  const replaceTagList = (tags: string[] | undefined): string[] => {
+    const out: string[] = [];
+    for (const t of tags || []) {
+      const mapped = t === oldTag ? nextTag : t;
+      if (!out.includes(mapped)) out.push(mapped);
+    }
+    return out;
+  };
+
+  state.notes.forEach((n) => {
+    n.tags = replaceTagList(n.tags);
+  });
+  state.boards.forEach((b) => {
+    b.tags = replaceTagList(b.tags);
+  });
+
+  if (state.activeFilter.type === 'tag' && state.activeFilter.tag === oldTag) {
+    state.activeFilter = { type: 'tag', tag: nextTag };
+  }
+
+  await persistEncryptedVault();
+  renderAll();
+}
+
+function startInlineSidebarRename(
+  rowEl: HTMLElement,
+  initialValue: string,
+  onCommit: (nextValue: string) => void | Promise<void>
+): void {
+  const labelSpan = rowEl.querySelector<HTMLElement>('.nav-label');
+  if (!labelSpan) return;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'sidebar-inline-rename-input';
+  input.value = initialValue;
+  labelSpan.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const finish = (save: boolean): void => {
+    if (done) return;
+    done = true;
+    const val = input.value;
+    if (save) {
+      void onCommit(val);
+    } else {
+      renderSidebar();
+    }
+  };
+
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      finish(true);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      finish(false);
+    }
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+function openNoteContextMenu(clientX: number, clientY: number, note: Note): void {
+  contextMenu.open(clientX, clientY, [
+    {
+      type: 'action',
+      id: 'edit-note',
+      label: 'Edit Note',
+      onSelect: () => openEditModal(note.id),
+    },
+    {
+      type: 'action',
+      id: 'pin-note',
+      label: note.pinned ? 'Unpin Note' : 'Pin Note',
+      onSelect: () => toggleNotePin(note.id),
+    },
+    {
+      type: 'action',
+      id: 'dup-note',
+      label: 'Duplicate Note',
+      onSelect: () => duplicateNote(note.id),
+    },
+    {
+      type: 'action',
+      id: 'copy-note',
+      label: 'Copy Note Text',
+      onSelect: () => {
+        const text = [note.title, note.description].filter(Boolean).join('\n\n');
+        if (text && navigator.clipboard?.writeText) {
+          void navigator.clipboard.writeText(text).catch(() => {});
+        }
+      },
+    },
+    { type: 'divider' },
+    {
+      type: 'color-row',
+      label: 'Tint',
+      activeColor: note.color || 'default',
+      onSelectColor: (c) => setNoteColor(note.id, c),
+    },
+    { type: 'divider' },
+    {
+      type: 'action',
+      id: 'delete-note',
+      label: 'Delete Note',
+      danger: true,
+      onSelect: () => deleteNote(note.id),
+    },
+  ]);
+}
+
+function openBoardContextMenu(
+  clientX: number,
+  clientY: number,
+  board: Board,
+  sidebarRowEl?: HTMLElement
+): void {
+  contextMenu.open(clientX, clientY, [
+    {
+      type: 'action',
+      id: 'open-board',
+      label: 'Open Board',
+      onSelect: () => openBoardEditor(board.id),
+    },
+    ...(sidebarRowEl
+      ? [
+          {
+            type: 'action' as const,
+            id: 'rename-board',
+            label: 'Rename Board...',
+            onSelect: () =>
+              startInlineSidebarRename(sidebarRowEl, board.title || 'Untitled Board', async (val) => {
+                const nextTitle = val.trim();
+                if (nextTitle && nextTitle !== board.title) {
+                  board.title = nextTitle;
+                  board.updatedAt = Date.now();
+                  await persistEncryptedVault();
+                  renderAll();
+                  if (state.activeBoardId === board.id) {
+                    boardEditor.refreshFromExternal();
+                  }
+                } else {
+                  renderSidebar();
+                }
+              }),
+          },
+        ]
+      : []),
+    {
+      type: 'action',
+      id: 'pin-board',
+      label: board.pinned ? 'Unpin Board' : 'Pin Board',
+      onSelect: () => toggleBoardPin(board.id),
+    },
+    {
+      type: 'action',
+      id: 'dup-board',
+      label: 'Duplicate Board',
+      onSelect: () => duplicateBoard(board.id),
+    },
+    { type: 'divider' },
+    {
+      type: 'color-row',
+      label: 'Theme',
+      activeColor: board.color || 'default',
+      onSelectColor: (c) => setBoardColor(board.id, c),
+    },
+    { type: 'divider' },
+    {
+      type: 'action',
+      id: 'delete-board',
+      label: 'Delete Board',
+      danger: true,
+      onSelect: () => deleteBoard(board.id),
+    },
+  ]);
+}
+
 // Filtering & Search
 function getFilteredNotes(): Note[] {
+  if (state.activeFilter.type === 'boards') return [];
+
   const q = state.searchQuery.trim().toLowerCase();
   const cleanTagQuery = q.startsWith('#') ? q.slice(1) : q;
 
@@ -934,20 +1187,96 @@ function getFilteredNotes(): Note[] {
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+function getFilteredBoards(): Board[] {
+  const q = state.searchQuery.trim().toLowerCase();
+  const cleanTagQuery = q.startsWith('#') ? q.slice(1) : q;
+
+  // Keep default All Notes view Notes-only unless searching
+  if (state.activeFilter.type === 'all' && !q) {
+    return [];
+  }
+
+  return state.boards
+    .filter((board) => {
+      if (state.activeFilter.type === 'pinned' && !board.pinned) return false;
+      if (
+        state.activeFilter.type === 'tag' &&
+        state.activeFilter.tag &&
+        !(board.tags || []).includes(state.activeFilter.tag)
+      ) {
+        return false;
+      }
+
+      if (!q) return true;
+
+      const titleMatch = (board.title || '').toLowerCase().includes(q);
+      const tagMatch = (board.tags || []).some((t) => t.toLowerCase().includes(cleanTagQuery));
+      const itemMatch = (board.items || []).some((item) => {
+        if (item.type === 'text') return item.content.toLowerCase().includes(q);
+        if (item.type === 'link') {
+          return (
+            item.url.toLowerCase().includes(q) ||
+            (item.label || '').toLowerCase().includes(q) ||
+            (item.description || '').toLowerCase().includes(q)
+          );
+        }
+        if (item.type === 'image') return (item.image.alt || '').toLowerCase().includes(q);
+        return false;
+      });
+      return titleMatch || tagMatch || itemMatch;
+    })
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
 // Render Functions
 function renderSidebar(): void {
   els.countAll.textContent = String(state.notes.length);
-  els.countPinned.textContent = String(state.notes.filter((n) => n.pinned).length);
+  const pinnedCount =
+    state.notes.filter((n) => n.pinned).length + state.boards.filter((b) => b.pinned).length;
+  els.countPinned.textContent = String(pinnedCount);
+  if (els.countBoards) {
+    els.countBoards.textContent = String(state.boards.length);
+  }
 
-  document.querySelectorAll('.sidebar-nav > .nav-item').forEach((btn) => {
+  document.querySelectorAll('.sidebar-nav .nav-item[data-filter-type]').forEach((btn) => {
     const filterType = btn.getAttribute('data-filter-type');
-    const isActive = state.activeFilter.type === filterType && !state.activeFilter.tag;
+    const isActive =
+      state.activeFilter.type === filterType &&
+      !state.activeFilter.tag &&
+      !(filterType === 'boards' && state.activeBoardId);
     btn.classList.toggle('active', isActive);
   });
 
+  if (els.sidebarBoardsList) {
+    const sortedBoards = [...state.boards].sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return b.updatedAt - a.updatedAt;
+    });
+    els.sidebarBoardsList.innerHTML = sortedBoards
+      .map((board) => {
+        const isActive = state.activeBoardId === board.id;
+        return `
+          <div class="nav-item sidebar-board-item ${isActive ? 'active' : ''}" data-open-board="${escapeHtml(board.id)}">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <rect x="3" y="3" width="8" height="8" rx="1.5"></rect>
+              <rect x="13" y="3" width="8" height="5" rx="1.5"></rect>
+              <rect x="13" y="10" width="8" height="11" rx="1.5"></rect>
+              <rect x="3" y="13" width="8" height="8" rx="1.5"></rect>
+            </svg>
+            <span class="nav-label">${escapeHtml(board.title || 'Untitled Board')}</span>
+            <span class="nav-count">${board.items.length}</span>
+            <button type="button" class="tag-delete-btn" data-delete-board="${escapeHtml(board.id)}" title="Delete board">&times;</button>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
   els.sidebarTagsList.innerHTML = state.tags
     .map((tag) => {
-      const count = state.notes.filter((n) => n.tags.includes(tag)).length;
+      const count =
+        state.notes.filter((n) => n.tags.includes(tag)).length +
+        state.boards.filter((b) => (b.tags || []).includes(tag)).length;
       const isActive = state.activeFilter.type === 'tag' && state.activeFilter.tag === tag;
       return `
         <div class="nav-item ${isActive ? 'active' : ''}" data-tag="${escapeHtml(tag)}">
@@ -965,9 +1294,19 @@ function renderSidebar(): void {
 }
 
 function renderFilterBanner(): void {
+  const isBoardsView = state.activeFilter.type === 'boards';
+  if (els.boardsActionBar) {
+    els.boardsActionBar.classList.toggle('hidden', !isBoardsView);
+  }
+  if (els.composerWrapper) {
+    els.composerWrapper.classList.toggle('hidden', isBoardsView);
+  }
+
   const parts: string[] = [];
   if (state.activeFilter.type === 'pinned') {
     parts.push('Filtered by: <strong>Pinned</strong>');
+  } else if (isBoardsView && state.searchQuery.trim()) {
+    parts.push('Scope: <strong>Boards</strong>');
   } else if (state.activeFilter.type === 'tag' && state.activeFilter.tag) {
     parts.push(`Filtered by tag: <strong>#${escapeHtml(state.activeFilter.tag)}</strong>`);
   }
@@ -1153,36 +1492,193 @@ function createNoteCardHtml(note: Note): string {
   `;
 }
 
-function renderNotes(): void {
-  const filtered = getFilteredNotes();
-  const pinnedNotes = filtered.filter((n) => n.pinned);
-  const otherNotes = filtered.filter((n) => !n.pinned);
+function renderBoardMinimapHtml(board: Board): string {
+  const colorAttr = escapeHtml(board.color || 'default');
+  const items = Array.isArray(board.items) ? board.items : [];
+  if (items.length === 0) {
+    return `<div class="board-card-minimap" data-color="${colorAttr}"><div class="board-minimap-empty">Empty board canvas</div></div>`;
+  }
 
-  if (filtered.length === 0) {
+  const q = state.searchQuery;
+  const originX = items.reduce((m, it) => Math.min(m, it.x), Infinity);
+  const originY = items.reduce((m, it) => Math.min(m, it.y), Infinity);
+  const sorted = [...items].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
+  const itemsHtml = sorted
+    .map((item) =>
+      renderBoardItemHtml(item, q, {
+        minimap: true,
+        offsetX: originX,
+        offsetY: originY,
+      })
+    )
+    .join('');
+
+  return `<div class="board-card-minimap" data-color="${colorAttr}"><div class="board-minimap-world">${itemsHtml}</div></div>`;
+}
+
+function fitBoardMinimaps(): void {
+  document.querySelectorAll<HTMLElement>('.board-card-minimap').forEach((container) => {
+    const world = container.querySelector<HTMLElement>('.board-minimap-world');
+    if (!world) return;
+    const cw = container.clientWidth;
+    const ch = container.clientHeight;
+    if (!cw || !ch) return;
+
+    const itemEls = Array.from(world.children).filter((el): el is HTMLElement =>
+      el.classList.contains('board-item')
+    );
+    if (itemEls.length === 0) return;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const el of itemEls) {
+      const w = el.offsetWidth || parseFloat(el.style.width) || 220;
+      const h = el.offsetHeight || parseFloat(el.style.height) || 60;
+      const x = el.offsetLeft;
+      const y = el.offsetTop;
+      const rot = parseFloat(el.getAttribute('data-rotation') || '0');
+      const aabb = getRotatedRectAabb(x, y, w, h, rot);
+      minX = Math.min(minX, aabb.minX);
+      minY = Math.min(minY, aabb.minY);
+      maxX = Math.max(maxX, aabb.maxX);
+      maxY = Math.max(maxY, aabb.maxY);
+    }
+
+    const pad = 28;
+    const boxMinX = minX - pad;
+    const boxMinY = minY - pad;
+    const boxW = Math.max(200, maxX - minX + pad * 2);
+    const boxH = Math.max(100, maxY - minY + pad * 2);
+
+    const scale = Math.min(cw / boxW, ch / boxH, 0.85);
+    const tx = (cw - boxW * scale) / 2 - boxMinX * scale;
+    const ty = (ch - boxH * scale) / 2 - boxMinY * scale;
+    world.style.transform = `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${scale.toFixed(4)})`;
+  });
+}
+
+function createBoardCardHtml(board: Board): string {
+  const q = state.searchQuery;
+  const titleHtml = board.title ? highlightText(board.title, q) : '';
+  const tagsHtml = (board.tags || [])
+    .map(
+      (tag) =>
+        `<span class="tag-chip" data-filter-tag="${escapeHtml(tag)}" title="Filter by #${escapeHtml(tag)}">#${highlightText(tag, q)}</span>`
+    )
+    .join('');
+
+  const itemCount = board.items.length;
+
+  return `
+    <article class="note-card board-card" data-board-id="${escapeHtml(board.id)}" data-color="${escapeHtml(board.color || 'default')}">
+      ${renderBoardMinimapHtml(board)}
+      <div class="note-card-header">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
+          <h3 class="note-card-title">${titleHtml || '<span style="color:var(--text-muted);font-weight:400">Untitled Board</span>'}</h3>
+          <span class="board-card-badge">Board</span>
+        </div>
+        <button
+          type="button"
+          class="icon-btn pin-btn note-card-pin ${board.pinned ? 'active' : ''}"
+          data-toggle-board-pin="${escapeHtml(board.id)}"
+          title="${board.pinned ? 'Unpin board' : 'Pin board'}"
+          aria-label="${board.pinned ? 'Unpin board' : 'Pin board'}"
+        >
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M12 17v5"></path>
+            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>
+          </svg>
+        </button>
+      </div>
+
+      ${tagsHtml ? `<div class="note-tags-row">${tagsHtml}</div>` : ''}
+
+      <div class="note-card-footer">
+        <span class="note-card-date">${itemCount} item${itemCount === 1 ? '' : 's'} &bull; Edited ${formatTimestamp(board.updatedAt)}</span>
+        <button
+          type="button"
+          class="icon-btn danger-btn"
+          data-delete-board="${escapeHtml(board.id)}"
+          title="Delete board"
+          aria-label="Delete board"
+        >
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+type WorkspaceCardEntry =
+  | { kind: 'note'; item: Note; pinned: boolean; updatedAt: number }
+  | { kind: 'board'; item: Board; pinned: boolean; updatedAt: number };
+
+function renderWorkspaceCardHtml(entry: WorkspaceCardEntry): string {
+  return entry.kind === 'board' ? createBoardCardHtml(entry.item) : createNoteCardHtml(entry.item);
+}
+
+function renderNotes(): void {
+  const entries: WorkspaceCardEntry[] = [
+    ...getFilteredNotes().map((item) => ({
+      kind: 'note' as const,
+      item,
+      pinned: item.pinned,
+      updatedAt: item.updatedAt,
+    })),
+    ...getFilteredBoards().map((item) => ({
+      kind: 'board' as const,
+      item,
+      pinned: item.pinned,
+      updatedAt: item.updatedAt,
+    })),
+  ].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  const pinnedEntries = entries.filter((e) => e.pinned);
+  const otherEntries = entries.filter((e) => !e.pinned);
+
+  if (entries.length === 0) {
     els.pinnedSection.classList.add('hidden');
     els.othersSection.classList.add('hidden');
+    if (els.emptyStateTitle) {
+      els.emptyStateTitle.textContent =
+        state.activeFilter.type === 'boards' ? 'No encrypted boards yet' : 'No encrypted notes found';
+    }
+    if (els.emptyStateSubtitle) {
+      els.emptyStateSubtitle.textContent =
+        state.activeFilter.type === 'boards'
+          ? 'Create a spatial board above or from the Boards menu in the sidebar.'
+          : 'Create a note above or try adjusting your search or tag filter.';
+    }
     els.emptyState.classList.remove('hidden');
     return;
   }
 
   els.emptyState.classList.add('hidden');
 
-  if (pinnedNotes.length > 0) {
+  if (pinnedEntries.length > 0) {
     els.pinnedSection.classList.remove('hidden');
-    els.pinnedGrid.innerHTML = pinnedNotes.map(createNoteCardHtml).join('');
+    els.pinnedGrid.innerHTML = pinnedEntries.map(renderWorkspaceCardHtml).join('');
   } else {
     els.pinnedSection.classList.add('hidden');
     els.pinnedGrid.innerHTML = '';
   }
 
-  if (otherNotes.length > 0) {
+  if (otherEntries.length > 0) {
     els.othersSection.classList.remove('hidden');
-    els.othersSectionLabel.classList.toggle('hidden', pinnedNotes.length === 0);
-    els.othersGrid.innerHTML = otherNotes.map(createNoteCardHtml).join('');
+    els.othersSectionLabel.classList.toggle('hidden', pinnedEntries.length === 0);
+    els.othersGrid.innerHTML = otherEntries.map(renderWorkspaceCardHtml).join('');
   } else {
     els.othersSection.classList.add('hidden');
     els.othersGrid.innerHTML = '';
   }
+
+  fitBoardMinimaps();
 }
 
 function renderAll(): void {
@@ -1538,17 +2034,65 @@ function bindEvents(): void {
   // Sidebar toggle
   els.sidebarToggleBtn.addEventListener('click', () => {
     els.sidebar.classList.toggle('collapsed');
+    fitBoardMinimaps();
+    window.setTimeout(fitBoardMinimaps, 220);
   });
 
-  // Sidebar navigation (All / Pinned)
-  document.querySelectorAll('.sidebar-nav > .nav-item').forEach((btn) => {
+  // Sidebar navigation (All / Pinned / Boards)
+  document.querySelectorAll('.sidebar-nav .nav-item[data-filter-type]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const type = btn.getAttribute('data-filter-type');
-      if (type === 'all' || type === 'pinned') {
+      if (type === 'all' || type === 'pinned' || type === 'boards') {
         state.activeFilter = { type, tag: null };
+        if (boardEditor.isOpen()) {
+          boardEditor.close();
+          return;
+        }
         renderAll();
       }
     });
+  });
+
+  // Sidebar Boards expand, list & creation
+  els.toggleBoardsSectionBtn?.addEventListener('click', () => {
+    state.boardsSectionExpanded = !state.boardsSectionExpanded;
+    applySidebarSectionsUI();
+    savePreferences();
+  });
+
+  els.newBoardForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const raw = els.newBoardInput?.value ?? '';
+    if (els.newBoardInput) els.newBoardInput.value = '';
+    await createBoard(raw);
+  });
+
+  els.createBoardHeroBtn?.addEventListener('click', () => {
+    void createBoard();
+  });
+
+  els.sidebarBoardsList?.addEventListener('click', async (e) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+
+    const deleteBtn = target.closest('[data-delete-board]');
+    if (deleteBtn) {
+      e.stopPropagation();
+      const boardId = deleteBtn.getAttribute('data-delete-board');
+      if (boardId) {
+        await deleteBoard(boardId);
+      }
+      return;
+    }
+
+    const boardItem = target.closest('[data-open-board]');
+    if (boardItem) {
+      const boardId = boardItem.getAttribute('data-open-board');
+      if (boardId) {
+        state.activeFilter = { type: 'boards', tag: null };
+        openBoardEditor(boardId);
+      }
+    }
   });
 
   // Sidebar tags click & delete
@@ -1560,16 +2104,9 @@ function bindEvents(): void {
     if (deleteBtn) {
       e.stopPropagation();
       const tagToDelete = deleteBtn.getAttribute('data-delete-tag');
-      if (!tagToDelete) return;
-      state.tags = state.tags.filter((t) => t !== tagToDelete);
-      state.notes.forEach((n) => {
-        n.tags = (n.tags || []).filter((t) => t !== tagToDelete);
-      });
-      if (state.activeFilter.tag === tagToDelete) {
-        state.activeFilter = { type: 'all', tag: null };
+      if (tagToDelete) {
+        await deleteTag(tagToDelete);
       }
-      await persistEncryptedVault();
-      renderAll();
       return;
     }
 
@@ -1578,8 +2115,63 @@ function bindEvents(): void {
       const tag = tagItem.getAttribute('data-tag');
       if (!tag) return;
       state.activeFilter = { type: 'tag', tag };
+      if (boardEditor.isOpen()) {
+        boardEditor.close();
+        return;
+      }
       renderAll();
     }
+  });
+
+  els.sidebarBoardsList?.addEventListener('contextmenu', (e) => {
+    if (shouldBypassCustomContextMenu(e, els.lockScreenOverlay)) return;
+    const target = e.target as HTMLElement | null;
+    const row = target?.closest<HTMLElement>('[data-open-board]');
+    if (!row) return;
+    const boardId = row.getAttribute('data-open-board');
+    const board = state.boards.find((b) => b.id === boardId);
+    if (!board) return;
+    e.preventDefault();
+    openBoardContextMenu(e.clientX, e.clientY, board, row);
+  });
+
+  els.sidebarTagsList.addEventListener('contextmenu', (e) => {
+    if (shouldBypassCustomContextMenu(e, els.lockScreenOverlay)) return;
+    const target = e.target as HTMLElement | null;
+    const row = target?.closest<HTMLElement>('[data-tag]');
+    if (!row) return;
+    const tag = row.getAttribute('data-tag');
+    if (!tag) return;
+    e.preventDefault();
+    contextMenu.open(e.clientX, e.clientY, [
+      {
+        type: 'action',
+        id: 'filter-tag',
+        label: `Filter by #${tag}`,
+        onSelect: () => {
+          state.activeFilter = { type: 'tag', tag };
+          if (boardEditor.isOpen()) {
+            boardEditor.close();
+            return;
+          }
+          renderAll();
+        },
+      },
+      {
+        type: 'action',
+        id: 'rename-tag',
+        label: 'Rename Tag...',
+        onSelect: () => startInlineSidebarRename(row, tag, (next) => renameTag(tag, next)),
+      },
+      { type: 'divider' },
+      {
+        type: 'action',
+        id: 'delete-tag',
+        label: `Delete #${tag}`,
+        danger: true,
+        onSelect: () => deleteTag(tag),
+      },
+    ]);
   });
 
   // Create new tag in sidebar
@@ -1639,8 +2231,20 @@ function bindEvents(): void {
   els.viewToggleBtn.addEventListener('click', () => {
     state.viewMode = state.viewMode === 'grid' ? 'list' : 'grid';
     applyViewModeUI();
+    fitBoardMinimaps();
     savePreferences();
   });
+
+  window.addEventListener('resize', fitBoardMinimaps);
+  els.notesWorkspace.addEventListener(
+    'load',
+    (e) => {
+      if ((e.target as HTMLElement | null)?.closest('.board-card-minimap')) {
+        fitBoardMinimaps();
+      }
+    },
+    true
+  );
 
   // Theme toggle
   els.themeToggleBtn.addEventListener('click', () => {
@@ -1915,14 +2519,7 @@ function bindEvents(): void {
     const cd = e.clipboardData;
     if (!cd) return false;
 
-    const imageFiles: File[] = [];
-    for (let i = 0; i < cd.items.length; i++) {
-      const item = cd.items[i];
-      if (item && item.type.startsWith('image/')) {
-        const f = item.getAsFile();
-        if (f) imageFiles.push(f);
-      }
-    }
+    const imageFiles = extractClipboardImages(cd);
     if (imageFiles.length > 0) {
       e.preventDefault();
       await handleImageFiles(targetMode, imageFiles);
@@ -2137,17 +2734,27 @@ function bindEvents(): void {
       return;
     }
 
+    const boardPinBtn = target.closest('[data-toggle-board-pin]');
+    if (boardPinBtn) {
+      e.stopPropagation();
+      const id = boardPinBtn.getAttribute('data-toggle-board-pin');
+      if (id) await toggleBoardPin(id);
+      return;
+    }
+
+    const deleteBoardBtn = target.closest('[data-delete-board]');
+    if (deleteBoardBtn) {
+      e.stopPropagation();
+      const id = deleteBoardBtn.getAttribute('data-delete-board');
+      if (id) await deleteBoard(id);
+      return;
+    }
+
     const pinBtn = target.closest('[data-toggle-pin]');
     if (pinBtn) {
       e.stopPropagation();
       const id = pinBtn.getAttribute('data-toggle-pin');
-      const note = state.notes.find((n) => n.id === id);
-      if (note) {
-        note.pinned = !note.pinned;
-        note.updatedAt = Date.now();
-        await persistEncryptedVault();
-        renderAll();
-      }
+      if (id) await toggleNotePin(id);
       return;
     }
 
@@ -2155,9 +2762,7 @@ function bindEvents(): void {
     if (deleteBtn) {
       e.stopPropagation();
       const id = deleteBtn.getAttribute('data-delete-note');
-      state.notes = state.notes.filter((n) => n.id !== id);
-      await persistEncryptedVault();
-      renderAll();
+      if (id) await deleteNote(id);
       return;
     }
 
@@ -2181,10 +2786,39 @@ function bindEvents(): void {
 
     const card = target.closest('.note-card');
     if (card) {
+      const boardId = card.getAttribute('data-board-id');
+      if (boardId) {
+        openBoardEditor(boardId);
+        return;
+      }
       const noteId = card.getAttribute('data-note-id');
       if (noteId) {
         openEditModal(noteId);
       }
+    }
+  });
+
+  els.notesWorkspace.addEventListener('contextmenu', (e) => {
+    if (shouldBypassCustomContextMenu(e, els.lockScreenOverlay)) return;
+    const target = e.target as HTMLElement | null;
+    const card = target?.closest('.note-card');
+    if (!card) return;
+
+    const boardId = card.getAttribute('data-board-id');
+    if (boardId) {
+      const board = state.boards.find((b) => b.id === boardId);
+      if (!board) return;
+      e.preventDefault();
+      openBoardContextMenu(e.clientX, e.clientY, board);
+      return;
+    }
+
+    const noteId = card.getAttribute('data-note-id');
+    if (noteId) {
+      const note = state.notes.find((n) => n.id === noteId);
+      if (!note) return;
+      e.preventDefault();
+      openNoteContextMenu(e.clientX, e.clientY, note);
     }
   });
 
@@ -2373,14 +3007,17 @@ function bindEvents(): void {
     }
   });
 
-  // Global paste (when no text input is focused, paste image directly into active modal or composer)
+  // Global paste (routes to active Board Editor, or to modal/composer when not typing in inputs)
   document.addEventListener('paste', (e) => {
+    if (boardEditor.isOpen()) {
+      void boardEditor.handlePaste(e);
+      return;
+    }
     const target = e.target as Node | null;
     if (target && (els.noteComposer.contains(target) || els.editModalCard.contains(target))) {
       return;
     }
-    const active = document.activeElement;
-    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+    if (isEditableElement(document.activeElement)) {
       return;
     }
     const mode = !els.editModalBackdrop.classList.contains('hidden') ? 'modal' : 'composer';
@@ -2459,11 +3096,11 @@ function bindEvents(): void {
       if (!envelope) throw new Error('No vault found');
       const decrypted = await CrypsyCrypto.decryptPayload(envelope, attempt);
       state.passphrase = attempt;
-      state.notes = decrypted.notes || [];
-      state.tags = decrypted.tags || [];
+      applyDecryptedPayload(decrypted);
       els.lockScreenOverlay.classList.add('hidden');
       els.unlockErrorMsg.classList.add('hidden');
       renderAll();
+      boardEditor.refreshFromExternal();
     } catch {
       els.unlockErrorMsg.classList.remove('hidden');
     }
@@ -2547,13 +3184,26 @@ function bindEvents(): void {
 
   // Global keyboard shortcuts
   document.addEventListener('keydown', (e) => {
+    if (!els.lockScreenOverlay.classList.contains('hidden')) {
+      return;
+    }
+
+    if (contextMenu.handleKeyDown(e)) {
+      return;
+    }
+
     if (e.key === 'Escape') {
       if (
         els.imageLightboxBackdrop &&
         !els.imageLightboxBackdrop.classList.contains('hidden')
       ) {
         closeLightbox();
-      } else if (!els.editModalBackdrop.classList.contains('hidden')) {
+        return;
+      }
+      if (boardEditor.handleEscapeKey()) {
+        return;
+      }
+      if (!els.editModalBackdrop.classList.contains('hidden')) {
         void saveAndCloseEditModal();
       } else if (!els.cloudOnboardingBackdrop.classList.contains('hidden')) {
         els.cloudOnboardingBackdrop.classList.add('hidden');
@@ -2567,17 +3217,28 @@ function bindEvents(): void {
       } else if (state.composer.expanded) {
         void saveComposerNote();
       }
+      return;
     }
 
-    const tag = document.activeElement ? document.activeElement.tagName : '';
-    const isTyping = tag === 'INPUT' || tag === 'TEXTAREA';
     if (
-      (e.key === '/' && !isTyping) ||
-      ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')
+      (!els.imageLightboxBackdrop || els.imageLightboxBackdrop.classList.contains('hidden')) &&
+      boardEditor.handleKeyDown(e)
+    ) {
+      return;
+    }
+
+    const isTyping = isEditableElement(document.activeElement);
+    if (
+      !boardEditor.isOpen() &&
+      ((e.key === '/' && !isTyping) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'))
     ) {
       e.preventDefault();
       els.searchInput.focus();
     }
+  });
+
+  document.addEventListener('keyup', (e) => {
+    boardEditor.handleKeyUp(e);
   });
 }
 

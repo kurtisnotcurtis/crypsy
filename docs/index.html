@@ -653,7 +653,7 @@
       </h1>
 
       <p class="hero-sub">
-        Crypsy encrypts your notes, tags, and pins in-browser using WebCrypto <strong>AES-256-GCM</strong> and syncs directly through your existing cloud folder, with zero servers, accounts, or subscriptions.
+        Crypsy encrypts your notes, spatial boards, pasted images, and tags in-browser using WebCrypto <strong>AES-256-GCM</strong> and syncs directly through your existing cloud folder, with zero servers, accounts, or subscriptions.
       </p>
 
       <div class="hero-cta">
@@ -732,10 +732,11 @@
               </div>
             </div>
             <div class="mock-card amber">
-              <h4>Instant Keyboard Flow</h4>
-              <p>Press "/" or Ctrl+K to search across titles, descriptions, and #tags with live match highlighting.</p>
+              <h4>Spatial Boards &amp; Context Menus</h4>
+              <p>Type anywhere on an infinite OneNote-style canvas, rotate/resize items, paste links or images, and right-click for quick actions.</p>
               <div class="mock-tags">
-                <span class="mock-tag">#shortcuts</span>
+                <span class="mock-tag">#boards</span>
+                <span class="mock-tag">#canvas</span>
               </div>
             </div>
             <div class="mock-card sage">
@@ -755,7 +756,7 @@
               </div>
               <pre class="mock-cipher-code">{
   "version": 1,
-  "appVersion": "1.0.0",
+  "appVersion": "1.4.0",
   "cipher": "AES-256-GCM",
   "kdf": "PBKDF2-SHA256",
   "iterations": 150000,
@@ -789,7 +790,15 @@
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="10" width="18" height="12" rx="2" ry="2"></rect><path d="M7 10V7a5 5 0 0 1 10 0v3"></path><line x1="7" y1="14" x2="17" y2="14"></line><line x1="7" y1="18" x2="13" y2="18"></line></svg>
           </div>
           <h3>Transparent AES-256-GCM</h3>
-          <p>Every note, tag, and pasted WebP image is encrypted in-browser via the native WebCrypto API using PBKDF2-SHA256 (150,000 iterations) and authenticated AES-256-GCM.</p>
+          <p>Every note, spatial board, tag, and pasted WebP image is encrypted in-browser via the native WebCrypto API using PBKDF2-SHA256 (150,000 iterations) and authenticated AES-256-GCM.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="5" rx="1.5"></rect><rect x="13" y="10" width="8" height="11" rx="1.5"></rect><rect x="3" y="13" width="8" height="8" rx="1.5"></rect></svg>
+          </div>
+          <h3>OneNote-Style Spatial Boards</h3>
+          <p>Click anywhere on a pannable, zoomable canvas to place text boxes, pasted screenshots, and link cards—with free move, resize, rotation, alignment, and live thumbnail previews.</p>
         </div>
 
         <div class="feature-card">
@@ -804,8 +813,8 @@
           <div class="feature-icon">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           </div>
-          <h3>Instant Search &amp; Highlighting</h3>
-          <p>Press <code>/</code> or <code>Ctrl+K</code> to filter across note titles, descriptions, and <code>#tags</code> in real time with live match highlighting.</p>
+          <h3>Instant Search &amp; Context Menus</h3>
+          <p>Press <code>/</code> or <code>Ctrl+K</code> to filter notes and boards with live highlighting, or right-click cards, sidebar tags, and board items for fast editing (<code>Shift+Right-Click</code> keeps native menus).</p>
         </div>
 
         <div class="feature-card">
@@ -813,15 +822,7 @@
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
           </div>
           <h3>Tags, Pins &amp; Color Palettes</h3>
-          <p>Organize thoughts with collapsible sidebar <code>#tags</code>, pin priority cards to the top, attach clipboard images or links, and customize notes with 7 Dark/Light themes.</p>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect></svg>
-          </div>
-          <h3>Card Grid &amp; List Layouts</h3>
-          <p>Switch effortlessly between a responsive multi-column masonry grid and a focused single-column list view.</p>
+          <p>Organize notes and boards with collapsible sidebar <code>#tags</code>, pin priority cards to the top, attach clipboard images or links, and customize with 7 Dark/Light themes.</p>
         </div>
 
         <div class="feature-card">

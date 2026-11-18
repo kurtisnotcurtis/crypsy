@@ -3,6 +3,19 @@
 All notable changes to **Crypsy Note** are documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-11-18
+### Added
+- **Spatial Boards (OneNote-Style Free-Form Canvas)**: Added **Boards** as a first-class encrypted object type alongside Notes in the AES-256-GCM vault (`VaultPayload.boards`), organized in the sidebar under **All Notes** (Notes-only default), **Pinned**, and **Boards** with a collapsible board list and inline `+ New board...` creation.
+- **Full-Screen Board Canvas Editor**: Added a pannable, zoomable dot-grid canvas (`Space+Drag` / middle-mouse pan, `Ctrl+Scroll` zoom, fit-to-view, 16px grid snap), click-anywhere text boxes, perimeter drag border (`7px` outer rim) vs. interior text editing, corner/edge resize handles with rotated aspect/anchor compensation, rotation handle with 15° `Shift` snapping, zero-shift floating formatting bar (font size, bold, italic, text alignment, multi-item AABB align, palette tinting, z-order, duplicate/delete), in-session undo/redo (`Ctrl+Z`/`Ctrl+Y`), drag-and-drop images, and `Ctrl+V` paste for images, image URLs, link cards, and plain text.
+- **Proportionally Scaled Board Thumbnails**: Added live miniature board card previews (`.board-card-minimap` / `.board-minimap-world`) reflecting each board's theme color, item colors, typography, rotation, links, and images.
+- **Custom Right-Click Context Menu**: Intercepted right-click (`contextmenu`) across Board canvas space & items, note cards, board cards, sidebar boards, and sidebar `#tags` with viewport collision flipping, full keyboard navigation (`ArrowUp`/`ArrowDown`/`Home`/`End`/`Enter`/`Esc`), note/board duplication, inline sidebar tag/board renaming, inline color tint pickers, and Board `Copy`/`Cut`/`Paste`/`Select All` (`Ctrl+C`/`Ctrl+X`/`Ctrl+A`), while preserving native browser spellcheck/edit menus inside `<input>`/`<textarea>` controls and via `Shift + Right-Click`.
+
+### Changed
+- **Shared Rendering & Media Modules**: Extracted shared DOM/text/rotation utilities (`src/utils.ts`), clipboard/WebP compression helpers (`src/media.ts`), and accessible context menu logic (`src/context-menu.ts`), and updated `sanitizeClonedPortableDom()` in `src/cloud-sync.ts` for new Board and Context Menu overlays.
+
+### Fixed
+- **Board Selection & Formatting Bar Stability**: Floated `#boardSelectionBar` above the canvas stage so toggling selection never shifts the canvas vertically, kept single-selection resize/rotate handles visible while typing, and separated border clicks from interior text clicks so clicking a box border never flashes or jumps straight back into `<textarea>` editing.
+
 ## [1.3.0] - 2026-11-17
 ### Added
 - **Encrypted Image Attachments & URL Import**: Paste screenshots or image URLs directly via `Ctrl+V`, drag-and-drop image files, upload files, or link image URLs in both the quick composer and note editor. Images are resized and compressed on-device to WebP before AES-256-GCM encryption, with CORS fallback to `no-referrer` external links, inline `![alt](url)` Markdown rendering, card galleries, and a click-to-zoom lightbox.

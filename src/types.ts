@@ -30,9 +30,64 @@ export interface Note {
   updatedAt: number;
 }
 
+export interface BoardViewport {
+  panX: number;
+  panY: number;
+  zoom: number;
+}
+
+export type BoardTextAlign = 'left' | 'center' | 'right';
+
+export interface BoardItemBase {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height?: number | undefined;
+  rotation: number;
+  zIndex: number;
+  color?: NoteColor | undefined;
+}
+
+export interface BoardTextItem extends BoardItemBase {
+  type: 'text';
+  content: string;
+  align: BoardTextAlign;
+  fontSize: number;
+  bold?: boolean | undefined;
+  italic?: boolean | undefined;
+}
+
+export interface BoardImageItem extends BoardItemBase {
+  type: 'image';
+  image: NoteImage;
+}
+
+export interface BoardLinkItem extends BoardItemBase {
+  type: 'link';
+  url: string;
+  label?: string | undefined;
+  description?: string | undefined;
+}
+
+export type BoardItem = BoardTextItem | BoardImageItem | BoardLinkItem;
+
+export interface Board {
+  id: string;
+  title: string;
+  tags: string[];
+  pinned: boolean;
+  color: NoteColor;
+  viewport: BoardViewport;
+  items: BoardItem[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface VaultPayload {
   notes: Note[];
   tags: string[];
+  boards?: Board[];
 }
 
 export interface EncryptedEnvelope {
@@ -90,7 +145,7 @@ export type ViewMode = 'grid' | 'list';
 export type ThemeMode = 'dark' | 'light';
 
 export type ActiveFilter =
-  | { type: 'all' | 'pinned'; tag: null }
+  | { type: 'all' | 'pinned' | 'boards'; tag: null }
   | { type: 'tag'; tag: string };
 
 export interface ComposerState {
@@ -112,11 +167,13 @@ export interface EditingDraft {
 
 export interface AppState {
   notes: Note[];
+  boards: Board[];
   tags: string[];
   searchQuery: string;
   activeFilter: ActiveFilter;
   viewMode: ViewMode;
   theme: ThemeMode;
+  boardsSectionExpanded: boolean;
   tagsSectionExpanded: boolean;
   guideSectionExpanded: boolean;
   autoCheckUpdates: boolean;
@@ -126,4 +183,5 @@ export interface AppState {
   composer: ComposerState;
   editingNoteId: string | null;
   editingDraft: EditingDraft | null;
+  activeBoardId: string | null;
 }
