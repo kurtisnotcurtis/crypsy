@@ -168,10 +168,21 @@ body {
 /* Search Bar */
 .search-container {
   flex: 1;
+  min-width: 0;
   max-width: 680px;
   position: relative;
   display: flex;
   align-items: center;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background-color: var(--bg-input);
+  transition: all 0.15s ease;
+}
+
+.search-container:focus-within {
+  background-color: var(--bg-elevated);
+  border-color: var(--border-focus);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .search-icon {
@@ -179,25 +190,50 @@ body {
   left: 14px;
   color: var(--text-secondary);
   pointer-events: none;
+  z-index: 1;
 }
 
 #searchInput {
   width: 100%;
-  height: 44px;
-  padding: 0 40px 0 42px;
-  border-radius: 10px;
-  border: 1px solid transparent;
-  background-color: var(--bg-input);
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px 0 42px;
+  border: none;
+  background: transparent;
   color: var(--text-primary);
   font-size: 0.95rem;
-  transition: all 0.15s ease;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 0%,
+    #000 max(42px, calc(100% - 36px)),
+    transparent calc(100% - 12px)
+  );
+  mask-image: linear-gradient(
+    to right,
+    #000 0%,
+    #000 max(42px, calc(100% - 36px)),
+    transparent calc(100% - 12px)
+  );
+}
+
+#searchInput:not(:placeholder-shown) {
+  padding-right: 40px;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 0%,
+    #000 max(42px, calc(100% - 64px)),
+    transparent calc(100% - 40px)
+  );
+  mask-image: linear-gradient(
+    to right,
+    #000 0%,
+    #000 max(42px, calc(100% - 64px)),
+    transparent calc(100% - 40px)
+  );
 }
 
 #searchInput:focus {
   outline: none;
-  background-color: var(--bg-elevated);
-  border-color: var(--border-focus);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .search-clear {
@@ -312,14 +348,40 @@ body {
 }
 
 .sidebar-section-header {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 18px 16px 6px 22px;
+  border: none;
+  background: transparent;
+  font-family: inherit;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.sidebar-section-header:hover {
+  color: var(--text-primary);
+}
+
+.section-chevron {
+  transition: transform 0.2s ease;
+  color: currentColor;
+  flex-shrink: 0;
+}
+
+.sidebar-section-header[aria-expanded="false"] .section-chevron {
+  transform: rotate(-90deg);
+}
+
+.sidebar-section-content {
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar-tags-list {

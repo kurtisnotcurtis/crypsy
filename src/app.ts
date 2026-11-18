@@ -37,6 +37,8 @@ const state: AppState = {
   activeFilter: { type: 'all', tag: null },
   viewMode: 'grid',
   theme: 'dark',
+  tagsSectionExpanded: true,
+  guideSectionExpanded: true,
   autoCheckUpdates: false,
   passphrase: DEFAULT_DEVICE_SECRET,
   lastEncryptedEnvelope: null,
@@ -115,9 +117,13 @@ function maybeById<T extends HTMLElement = HTMLElement>(id: string): T | null {
 const els = {
   sidebar: byId('sidebar'),
   sidebarToggleBtn: byId<HTMLButtonElement>('sidebarToggleBtn'),
+  toggleTagsSectionBtn: maybeById<HTMLButtonElement>('toggleTagsSectionBtn'),
+  sidebarTagsContent: maybeById('sidebarTagsContent'),
   sidebarTagsList: byId('sidebarTagsList'),
   newTagForm: byId<HTMLFormElement>('newTagForm'),
   newTagInput: byId<HTMLInputElement>('newTagInput'),
+  toggleGuideSectionBtn: maybeById<HTMLButtonElement>('toggleGuideSectionBtn'),
+  sidebarGuideContent: maybeById('sidebarGuideContent'),
   countAll: byId('countAll'),
   countPinned: byId('countPinned'),
 
@@ -332,6 +338,8 @@ function handleListEnterKeydown(e: KeyboardEvent): void {
 interface StoredPrefs {
   viewMode?: unknown;
   theme?: unknown;
+  tagsSectionExpanded?: unknown;
+  guideSectionExpanded?: unknown;
   autoCheckUpdates?: unknown;
 }
 
@@ -345,6 +353,12 @@ function loadPreferences(): void {
     }
     if (prefs.theme === 'light' || prefs.theme === 'dark') {
       state.theme = prefs.theme;
+    }
+    if (typeof prefs.tagsSectionExpanded === 'boolean') {
+      state.tagsSectionExpanded = prefs.tagsSectionExpanded;
+    }
+    if (typeof prefs.guideSectionExpanded === 'boolean') {
+      state.guideSectionExpanded = prefs.guideSectionExpanded;
     }
     if (typeof prefs.autoCheckUpdates === 'boolean') {
       state.autoCheckUpdates = prefs.autoCheckUpdates;
@@ -360,6 +374,8 @@ function savePreferences(): void {
     JSON.stringify({
       viewMode: state.viewMode,
       theme: state.theme,
+      tagsSectionExpanded: state.tagsSectionExpanded,
+      guideSectionExpanded: state.guideSectionExpanded,
       autoCheckUpdates: state.autoCheckUpdates,
     })
   );
@@ -491,6 +507,7 @@ async function initVault(): Promise<void> {
   loadPreferences();
   applyThemeUI();
   applyViewModeUI();
+  applySidebarSectionsUI();
 
   // Listen for external cloud folder updates (e.g. synced from another device)
   CrypsyCloudSync.onExternalUpdate(async (externalEnvelope) => {
@@ -639,6 +656,21 @@ function applyViewModeUI(): void {
     els.viewIconGrid.classList.add('hidden');
     els.viewIconList.classList.remove('hidden');
     els.viewToggleBtn.title = 'Switch to List view';
+  }
+}
+
+function applySidebarSectionsUI(): void {
+  if (els.toggleTagsSectionBtn && els.sidebarTagsContent) {
+    els.toggleTagsSectionBtn.setAttribute('aria-expanded', String(state.tagsSectionExpanded));
+    els.toggleTagsSectionBtn.title = state.tagsSectionExpanded ? 'Collapse Tags' : 'Expand Tags';
+    els.sidebarTagsContent.classList.toggle('hidden', !state.tagsSectionExpanded);
+  }
+  if (els.toggleGuideSectionBtn && els.sidebarGuideContent) {
+    els.toggleGuideSectionBtn.setAttribute('aria-expanded', String(state.guideSectionExpanded));
+    els.toggleGuideSectionBtn.title = state.guideSectionExpanded
+      ? 'Collapse Quick Guide'
+      : 'Expand Quick Guide';
+    els.sidebarGuideContent.classList.toggle('hidden', !state.guideSectionExpanded);
   }
 }
 
@@ -1224,6 +1256,19 @@ function bindEvents(): void {
     els.newTagInput.value = '';
     state.activeFilter = { type: 'tag', tag: raw };
     renderAll();
+  });
+
+  // Expand / collapse sidebar sections
+  els.toggleTagsSectionBtn?.addEventListener('click', () => {
+    state.tagsSectionExpanded = !state.tagsSectionExpanded;
+    applySidebarSectionsUI();
+    savePreferences();
+  });
+
+  els.toggleGuideSectionBtn?.addEventListener('click', () => {
+    state.guideSectionExpanded = !state.guideSectionExpanded;
+    applySidebarSectionsUI();
+    savePreferences();
   });
 
   // Search input

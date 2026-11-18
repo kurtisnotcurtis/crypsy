@@ -106,6 +106,8 @@ export interface AppState {
   activeFilter: ActiveFilter;
   viewMode: ViewMode;
   theme: ThemeMode;
+  tagsSectionExpanded: boolean;
+  guideSectionExpanded: boolean;
   autoCheckUpdates: boolean;
   passphrase: string;
   lastEncryptedEnvelope: EncryptedEnvelope | null;

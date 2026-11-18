@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Crypsy — Transparently Encrypted Notes</title>
+  <title>Crypsy - Transparently Encrypted Notes</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238ab4f8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='10' width='18' height='12' rx='2' ry='2'/%3E%3Cpath d='M7 10V7a5 5 0 0 1 10 0v3'/%3E%3Cline x1='7' y1='14' x2='17' y2='14'/%3E%3Cline x1='7' y1='18' x2='13' y2='18'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -140,27 +140,35 @@
           <span id="countPinned" class="nav-count">0</span>
         </button>
 
-        <div class="sidebar-section-header">
+        <button type="button" id="toggleTagsSectionBtn" class="sidebar-section-header" aria-expanded="true" title="Collapse Tags">
           <span>TAGS</span>
+          <svg class="section-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+
+        <div id="sidebarTagsContent" class="sidebar-section-content">
+          <div id="sidebarTagsList" class="sidebar-tags-list"></div>
+
+          <form id="newTagForm" class="new-tag-form">
+            <input
+              type="text"
+              id="newTagInput"
+              placeholder="+ Create new tag..."
+              maxlength="24"
+              autocomplete="off"
+            />
+          </form>
         </div>
 
-        <div id="sidebarTagsList" class="sidebar-tags-list"></div>
-
-        <form id="newTagForm" class="new-tag-form">
-          <input
-            type="text"
-            id="newTagInput"
-            placeholder="+ Create new tag..."
-            maxlength="24"
-            autocomplete="off"
-          />
-        </form>
-
-        <div class="sidebar-section-header">
+        <button type="button" id="toggleGuideSectionBtn" class="sidebar-section-header" aria-expanded="true" title="Collapse Quick Guide">
           <span>QUICK GUIDE</span>
-        </div>
+          <svg class="section-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
 
-        <div class="sidebar-guide">
+        <div id="sidebarGuideContent" class="sidebar-guide">
           <div class="guide-block">
             <div class="guide-title">Markdown</div>
             <ul class="guide-list">
