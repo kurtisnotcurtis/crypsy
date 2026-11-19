@@ -1437,6 +1437,13 @@
       color: var(--accent);
     }
 
+    .footer-disclaimer {
+      margin-top: 16px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
     @media (max-width: 960px) {
       .comparison-stage {
         grid-template-columns: 1fr;
@@ -2140,16 +2147,21 @@ node install.js --build-only</pre>
 
   <!-- Footer -->
   <footer class="footer">
-    <div class="container footer-inner">
-      <div>
-        <strong>Crypsy Note</strong>: Transparent Client-Side Encrypted Notes.
+    <div class="container">
+      <div class="footer-inner">
+        <div>
+          <strong>Crypsy Note</strong>: Transparent Client-Side Encrypted Notes.
+        </div>
+        <div class="footer-links">
+          <a href="./app.html">Launch Web App</a>
+          <a href="./Crypsy-Portable.html" download="Crypsy-Portable.html">Download Portable HTML</a>
+          <a href="https://github.com/kurtisnotcurtis/crypsy" target="_blank" rel="noopener">GitHub Repository</a>
+          <a href="https://github.com/kurtisnotcurtis/crypsy/releases" target="_blank" rel="noopener">Release Notes</a>
+        </div>
       </div>
-      <div class="footer-links">
-        <a href="./app.html">Launch Web App</a>
-        <a href="./Crypsy-Portable.html" download="Crypsy-Portable.html">Download Portable HTML</a>
-        <a href="https://github.com/kurtisnotcurtis/crypsy" target="_blank" rel="noopener">GitHub Repository</a>
-        <a href="https://github.com/kurtisnotcurtis/crypsy/releases" target="_blank" rel="noopener">Release Notes</a>
-      </div>
+      <p class="footer-disclaimer">
+        All product and service names are trademarks of their respective owners. Crypsy is not affiliated with or endorsed by them.
+      </p>
     </div>
   </footer>
 
