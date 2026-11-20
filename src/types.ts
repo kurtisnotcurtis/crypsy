@@ -197,7 +197,10 @@ export interface AppState {
   tagsSectionExpanded: boolean;
   guideSectionExpanded: boolean;
   autoCheckUpdates: boolean;
-  passphrase: string;
+  autoLockMinutes: number;
+  lockOnHide: boolean;
+  blockExternalMedia: boolean;
+  passphrase: string | null;
   lastEncryptedEnvelope: EncryptedEnvelope | null;
   selectedProviderId: CloudProviderId;
   composer: ComposerState;

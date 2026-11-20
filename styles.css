@@ -1418,6 +1418,91 @@ mark.search-highlight {
   border-color: var(--accent);
 }
 
+.vault-feedback {
+  font-size: 0.82rem;
+  margin-top: 8px;
+}
+
+.vault-feedback.error {
+  color: var(--danger);
+}
+
+.vault-feedback.success {
+  color: var(--emerald);
+}
+
+.vault-privacy-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+}
+
+.vault-privacy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.vault-privacy-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.vault-privacy-label strong {
+  color: var(--text-primary);
+}
+
+.vault-select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.vault-privacy-check {
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+}
+
+.blocked-external-image,
+.blocked-external-board-image {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.blocked-external-board-image {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.blocked-external-load-btn {
+  font-size: 0.78rem;
+  padding: 2px 6px;
+}
+
 .vault-inspector-header {
   display: flex;
   align-items: center;
@@ -1498,6 +1583,16 @@ mark.search-highlight {
 .unlock-btn {
   width: 100%;
   padding: 10px;
+}
+
+.lock-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 16px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 @media (max-width: 768px) {

@@ -5,7 +5,7 @@
 import { renderBoardStrokeSvg } from './ink';
 import type { BoardItem } from './types';
 
-export const APP_VERSION = '1.5.0';
+export const APP_VERSION = '1.6.0';
 
 export function byId<T extends HTMLElement = HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -143,6 +143,11 @@ export interface RenderBoardItemOptions {
   minimap?: boolean | undefined;
   offsetX?: number | undefined;
   offsetY?: number | undefined;
+  allowExternalUrl?: ((url: string) => boolean) | undefined;
+}
+
+export function isExternalHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim());
 }
 
 export function renderBoardItemHtml(
@@ -184,6 +189,30 @@ export function renderBoardItemHtml(
   }
 
   if (item.type === 'image') {
+    const blockedExternal =
+      isExternalHttpUrl(item.image.src) &&
+      options.allowExternalUrl &&
+      !options.allowExternalUrl(item.image.src);
+    if (blockedExternal) {
+      let host = 'external host';
+      try {
+        host = new URL(item.image.src).hostname || host;
+      } catch {
+        // ignore invalid URL
+      }
+      return `
+        <div class="board-item type-image ${isSelected ? 'selected' : ''}" ${idAttr} data-color="${colorAttr}" style="${baseStyle}">
+          <div class="blocked-external-board-image">
+            <span>External image blocked (${escapeHtml(host)})</span>
+            ${
+              options.minimap
+                ? ''
+                : `<button type="button" class="btn-link blocked-external-load-btn" data-allow-external-url="${escapeHtml(item.image.src)}">Load once</button>`
+            }
+          </div>
+        </div>
+      `;
+    }
     return `
       <div class="board-item type-image ${isSelected ? 'selected' : ''}" ${idAttr} data-color="${colorAttr}" style="${baseStyle}">
         <img src="${escapeHtml(item.image.src)}" alt="${escapeHtml(item.image.alt || 'Board image')}" referrerpolicy="no-referrer" loading="lazy" />

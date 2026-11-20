@@ -529,7 +529,7 @@ export async function provisionCloudFolderAssets(includePortableHtml = true): Pr
     'FILES IN THIS FOLDER:',
     `  1. ${VAULT_FILENAME}`,
     '     Your encrypted notes & tags payload (Cipher: AES-256-GCM,',
-    '     Key Derivation: PBKDF2-SHA256, 150,000 iterations).',
+    '     Key Derivation: PBKDF2-SHA256, 600,000 iterations).',
     '     Do NOT delete or manually edit this file.',
     '',
     `  2. ${PORTABLE_HTML_FILENAME}`,
@@ -574,16 +574,22 @@ function sanitizeClonedPortableDom(): string {
     'composerTagsRow',
     'editModalImagesRow',
     'editModalTagsRow',
+    'editModalTimestamp',
     'boardItemsLayer',
     'boardTagsRow',
     'ciphertextPreview',
     'activeFilterText',
+    'reconnectBannerMsg',
+    'lastUpdatedText',
     'crypsyContextMenu',
   ];
   for (const id of clearIds) {
     const el = clone.querySelector(`#${id}`);
     if (el) el.innerHTML = '';
   }
+  clone.querySelectorAll('textarea').forEach((ta) => {
+    ta.textContent = '';
+  });
 
   const hideIds = [
     'reconnectCloudBanner',
@@ -616,8 +622,11 @@ function sanitizeClonedPortableDom(): string {
     'wizardMobileSyncBox',
     'cloudOnboardingBackdrop',
     'vaultModalBackdrop',
+    'vaultPassphraseFeedback',
     'updatesModalBackdrop',
     'lockScreenOverlay',
+    'unlockErrorMsg',
+    'unlockConfirmWrapper',
     'imageLightboxBackdrop',
     'crypsyContextMenu',
   ];
@@ -630,9 +639,14 @@ function sanitizeClonedPortableDom(): string {
   if (manifestLink) manifestLink.remove();
 
   const cloudBtn = clone.querySelector('#cloudSetupBtn');
-  if (cloudBtn) cloudBtn.classList.remove('synced', 'detected');
+  if (cloudBtn) {
+    cloudBtn.classList.remove('synced', 'detected');
+    cloudBtn.setAttribute('title', 'Connect or manage synced cloud provider folder');
+  }
   const cloudLabel = clone.querySelector('#cloudSetupBtnLabel');
   if (cloudLabel) cloudLabel.textContent = 'Setup Cloud Folder';
+  const lastUpdatedBadge = clone.querySelector('#lastUpdatedBadge');
+  if (lastUpdatedBadge) lastUpdatedBadge.setAttribute('title', 'Last vault update');
 
   return '<!DOCTYPE html>\n' + clone.outerHTML;
 }

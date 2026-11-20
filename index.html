@@ -2,6 +2,10 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; connect-src 'self' https: http:; object-src 'none'; base-uri 'none';"
+  />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#202124" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -29,7 +33,7 @@
           </svg>
         </div>
         <span class="brand-name">Crypsy</span>
-        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.5.0 — Click to check for updates">v1.5.0</button>
+        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.6.0 — Click to check for updates">v1.6.0</button>
         <span id="encryptionBadge" class="crypto-badge" title="Click to inspect encrypted cloud payload or manage vault key">
           <span class="status-dot"></span>
           AES-256-GCM
@@ -95,6 +99,13 @@
           <rect x="14" y="3" width="7" height="7" rx="1"></rect>
           <rect x="14" y="14" width="7" height="7" rx="1"></rect>
           <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+        </svg>
+      </button>
+
+      <button id="topbarLockBtn" class="icon-btn" title="Lock Vault Now (Ctrl+Shift+L)" aria-label="Lock Vault">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
         </svg>
       </button>
 
@@ -272,6 +283,7 @@
             id="composerDescription"
             class="composer-desc-input"
             placeholder="Take an encrypted note..."
+            autocomplete="off"
             rows="1"
           ></textarea>
 
@@ -397,6 +409,7 @@
         id="editModalDescription"
         class="composer-desc-input modal-desc-input"
         placeholder="Note description..."
+        autocomplete="off"
         rows="5"
       ></textarea>
 
@@ -684,17 +697,58 @@
       </div>
 
       <div class="vault-controls">
-        <label for="vaultPassphraseInput" class="vault-label">Vault Passphrase (PBKDF2-SHA256 Key Derivation)</label>
+        <label for="vaultPassphraseInput" class="vault-label">Change Vault Passphrase (PBKDF2-SHA256, 600,000 iterations)</label>
         <div class="vault-pass-row">
           <input
             type="password"
             id="vaultPassphraseInput"
             class="vault-input"
-            placeholder="Enter custom vault passphrase..."
+            placeholder="New passphrase (min 8 chars)..."
+            autocomplete="new-password"
+          />
+          <input
+            type="password"
+            id="vaultConfirmPassphraseInput"
+            class="vault-input"
+            placeholder="Confirm new passphrase..."
+            autocomplete="new-password"
           />
           <button id="updatePassphraseBtn" class="btn-primary">Re-key &amp; Encrypt</button>
           <button id="lockVaultNowBtn" class="btn-ghost">Lock Screen</button>
         </div>
+        <p id="vaultPassphraseFeedback" class="vault-feedback hidden"></p>
+      </div>
+
+      <div class="vault-privacy-grid">
+        <div class="vault-privacy-row">
+          <label for="autoLockSelect" class="vault-privacy-label">
+            <strong>Auto-lock after inactivity</strong>
+            <span>Clears passphrase and decrypted data from memory when idle.</span>
+          </label>
+          <select id="autoLockSelect" class="vault-select">
+            <option value="5">5 minutes</option>
+            <option value="15" selected>15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60">60 minutes</option>
+            <option value="0">Never</option>
+          </select>
+        </div>
+
+        <label class="checkbox-row vault-privacy-check">
+          <input type="checkbox" id="lockOnHideCb" />
+          <div>
+            <strong>Lock immediately when tab or app is hidden</strong>
+            <p>Wipes decrypted memory whenever you switch away from Crypsy.</p>
+          </div>
+        </label>
+
+        <label class="checkbox-row vault-privacy-check">
+          <input type="checkbox" id="blockExternalMediaCb" checked />
+          <div>
+            <strong>Strict Media Privacy (block external image requests)</strong>
+            <p>Prevents remote image URLs from leaking your IP/timing until you click "Load external image".</p>
+          </div>
+        </label>
       </div>
 
       <div class="vault-inspector">
@@ -720,7 +774,7 @@
         <div>
           <h3>Crypsy Updates &amp; Releases</h3>
           <p class="vault-subtitle">
-            Installed version: <strong id="installedVersionLabel">v1.5.0</strong>
+            Installed version: <strong id="installedVersionLabel">v1.6.0</strong>
           </p>
         </div>
         <button id="closeUpdatesModalBtn" class="icon-btn" aria-label="Close updates modal">
@@ -769,19 +823,38 @@
           <path d="M13.9 14.93C14.15 14.78 15.36 14.49 15.38 14.03C15.39 13.56 14.76 12.43 14.01 12.15C13.27 11.86 11.88 11.91 10.9 12.31C9.92 12.71 8.64 13.58 8.14 14.52C7.65 15.46 7.53 17.05 7.93 17.94C8.32 18.84 9.46 19.76 10.52 19.89C11.58 20.02 13.14 19.44 14.28 18.73C15.43 18.01 16.85 16.11 17.36 15.59A0.39 0.39 0 0 1 16.84 15.01C16.22 15.53 14.14 17.6 13.1 18.15C12.07 18.7 11.21 18.51 10.62 18.31C10.02 18.11 9.64 17.45 9.53 16.93C9.43 16.42 9.59 15.76 9.97 15.23C10.34 14.7 11.15 14.05 11.79 13.76C12.43 13.47 13.35 13.55 13.79 13.47C14.22 13.39 14.5 13.26 14.42 13.29C14.33 13.33 13.48 13.61 13.3 13.67A0.7 0.7 0 0 1 13.9 14.93Z" fill="currentColor" stroke="none"></path>
         </svg>
       </div>
-      <h2>Crypsy Vault Locked</h2>
-      <p>Your notes are encrypted with AES-256-GCM. Enter your vault passphrase to decrypt locally.</p>
+      <h2 id="lockScreenTitle">Crypsy Vault Locked</h2>
+      <p id="lockScreenSubtitle">Your notes are encrypted with AES-256-GCM. Enter your vault passphrase to decrypt locally.</p>
       <form id="unlockVaultForm" class="unlock-form">
         <input
           type="password"
           id="unlockPassphraseInput"
           class="vault-input"
           placeholder="Vault passphrase..."
+          autocomplete="current-password"
           required
         />
+        <div id="unlockConfirmWrapper" class="hidden">
+          <input
+            type="password"
+            id="unlockConfirmPassphraseInput"
+            class="vault-input"
+            style="width:100%;"
+            placeholder="Confirm vault passphrase (min 8 chars)..."
+            autocomplete="new-password"
+          />
+        </div>
         <p id="unlockErrorMsg" class="unlock-error hidden">Incorrect passphrase — AES-GCM authentication tag verification failed.</p>
-        <button type="submit" class="btn-primary unlock-btn">Decrypt &amp; Unlock</button>
+        <button type="submit" id="unlockSubmitBtn" class="btn-primary unlock-btn">Decrypt &amp; Unlock</button>
       </form>
+      <div id="lockSecondaryActions" class="lock-secondary-actions">
+        <button type="button" id="lockResumeCloudBtn" class="btn-link hidden">Resume Cloud Sync</button>
+        <button type="button" id="lockLinkCloudBtn" class="btn-link hidden">Link Existing Cloud Folder</button>
+        <label class="btn-link" style="cursor:pointer;">
+          Import .crypsy File
+          <input type="file" id="lockImportVaultInput" accept=".json,.crypsy" class="hidden" />
+        </label>
+      </div>
     </div>
   </div>
 

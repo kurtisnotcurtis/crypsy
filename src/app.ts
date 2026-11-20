@@ -13,7 +13,7 @@
 import { BoardEditorController } from './board-editor';
 import { CrypsyCloudSync } from './cloud-sync';
 import { ContextMenuController, shouldBypassCustomContextMenu } from './context-menu';
-import { CrypsyCrypto } from './crypto';
+import { CrypsyCrypto, MIN_PASSPHRASE_LENGTH } from './crypto';
 import {
   extractClipboardImages,
   extractImageUrlFromClipboardHtml,
@@ -43,6 +43,7 @@ import {
   getRotatedRectAabb,
   highlightText,
   isEditableElement,
+  isExternalHttpUrl,
   maybeById,
   renderBoardItemHtml,
 } from './utils';
@@ -52,7 +53,14 @@ const STORAGE_KEY_PREFS = 'crypsy_ui_prefs_v1';
 const VAULT_IDB_NAME = 'crypsy_vault_cache_db_v1';
 const VAULT_IDB_STORE = 'vault';
 const VAULT_IDB_KEY = 'encrypted_envelope';
-const DEFAULT_DEVICE_SECRET = 'crypsy-local-device-default-key-v1';
+const LEGACY_DEFAULT_DEVICE_SECRET = 'crypsy-local-device-default-key-v1';
+
+type LockScreenMode = 'unlock' | 'setup' | 'upgrade';
+let lockScreenMode: LockScreenMode = 'unlock';
+let pendingLegacyUpgradePayload: VaultPayload | null = null;
+let pendingCloudNeedsPermission = false;
+const sessionAllowedExternalUrls = new Set<string>();
+let lastActivityAt = Date.now();
 
 window.CRYPSY_VERSION = APP_VERSION;
 
@@ -69,7 +77,10 @@ const state: AppState = {
   tagsSectionExpanded: true,
   guideSectionExpanded: true,
   autoCheckUpdates: false,
-  passphrase: DEFAULT_DEVICE_SECRET,
+  autoLockMinutes: 15,
+  lockOnHide: false,
+  blockExternalMedia: true,
+  passphrase: null,
   lastEncryptedEnvelope: null,
   selectedProviderId: 'onedrive',
   composer: {
@@ -266,6 +277,8 @@ const els = {
   vaultModalBackdrop: byId('vaultModalBackdrop'),
   closeVaultModalBtn: byId<HTMLButtonElement>('closeVaultModalBtn'),
   vaultPassphraseInput: byId<HTMLInputElement>('vaultPassphraseInput'),
+  vaultConfirmPassphraseInput: byId<HTMLInputElement>('vaultConfirmPassphraseInput'),
+  vaultPassphraseFeedback: byId('vaultPassphraseFeedback'),
   updatePassphraseBtn: byId<HTMLButtonElement>('updatePassphraseBtn'),
   lockVaultNowBtn: byId<HTMLButtonElement>('lockVaultNowBtn'),
   ciphertextPreview: byId('ciphertextPreview'),
@@ -274,7 +287,11 @@ const els = {
 
   // Updates Modal
   appVersionBadge: maybeById('appVersionBadge'),
+  topbarLockBtn: maybeById<HTMLButtonElement>('topbarLockBtn'),
   topbarUpdatesBtn: maybeById<HTMLButtonElement>('topbarUpdatesBtn'),
+  autoLockSelect: maybeById<HTMLSelectElement>('autoLockSelect'),
+  lockOnHideCb: maybeById<HTMLInputElement>('lockOnHideCb'),
+  blockExternalMediaCb: maybeById<HTMLInputElement>('blockExternalMediaCb'),
   updatesModalBackdrop: maybeById('updatesModalBackdrop'),
   closeUpdatesModalBtn: maybeById<HTMLButtonElement>('closeUpdatesModalBtn'),
   installedVersionLabel: maybeById('installedVersionLabel'),
@@ -283,9 +300,17 @@ const els = {
   checkUpdatesNowBtn: maybeById<HTMLButtonElement>('checkUpdatesNowBtn'),
 
   lockScreenOverlay: byId('lockScreenOverlay'),
+  lockScreenTitle: byId('lockScreenTitle'),
+  lockScreenSubtitle: byId('lockScreenSubtitle'),
   unlockVaultForm: byId<HTMLFormElement>('unlockVaultForm'),
   unlockPassphraseInput: byId<HTMLInputElement>('unlockPassphraseInput'),
+  unlockConfirmWrapper: byId('unlockConfirmWrapper'),
+  unlockConfirmPassphraseInput: byId<HTMLInputElement>('unlockConfirmPassphraseInput'),
   unlockErrorMsg: byId('unlockErrorMsg'),
+  unlockSubmitBtn: byId<HTMLButtonElement>('unlockSubmitBtn'),
+  lockResumeCloudBtn: byId<HTMLButtonElement>('lockResumeCloudBtn'),
+  lockLinkCloudBtn: byId<HTMLButtonElement>('lockLinkCloudBtn'),
+  lockImportVaultInput: byId<HTMLInputElement>('lockImportVaultInput'),
 
   imageLightboxBackdrop: maybeById('imageLightboxBackdrop'),
   closeLightboxBtn: maybeById<HTMLButtonElement>('closeLightboxBtn'),
@@ -353,6 +378,9 @@ interface StoredPrefs {
   tagsSectionExpanded?: unknown;
   guideSectionExpanded?: unknown;
   autoCheckUpdates?: unknown;
+  autoLockMinutes?: unknown;
+  lockOnHide?: unknown;
+  blockExternalMedia?: unknown;
 }
 
 function loadPreferences(): void {
@@ -378,6 +406,18 @@ function loadPreferences(): void {
     if (typeof prefs.autoCheckUpdates === 'boolean') {
       state.autoCheckUpdates = prefs.autoCheckUpdates;
     }
+    if (
+      typeof prefs.autoLockMinutes === 'number' &&
+      [0, 5, 15, 30, 60].includes(prefs.autoLockMinutes)
+    ) {
+      state.autoLockMinutes = prefs.autoLockMinutes;
+    }
+    if (typeof prefs.lockOnHide === 'boolean') {
+      state.lockOnHide = prefs.lockOnHide;
+    }
+    if (typeof prefs.blockExternalMedia === 'boolean') {
+      state.blockExternalMedia = prefs.blockExternalMedia;
+    }
   } catch (e) {
     console.warn('Failed to load UI prefs:', e);
   }
@@ -393,6 +433,9 @@ function savePreferences(): void {
       tagsSectionExpanded: state.tagsSectionExpanded,
       guideSectionExpanded: state.guideSectionExpanded,
       autoCheckUpdates: state.autoCheckUpdates,
+      autoLockMinutes: state.autoLockMinutes,
+      lockOnHide: state.lockOnHide,
+      blockExternalMedia: state.blockExternalMedia,
     })
   );
 }
@@ -566,7 +609,132 @@ function applyDecryptedPayload(decrypted: VaultPayload): void {
   }
 }
 
+function validateNewPassphrase(pass: string, confirm: string): string | null {
+  if (!pass || pass.trim().length === 0) {
+    return 'Enter a passphrase to encrypt your vault.';
+  }
+  if (pass.length < MIN_PASSPHRASE_LENGTH) {
+    return `Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters long.`;
+  }
+  if (pass !== confirm) {
+    return 'Passphrases do not match.';
+  }
+  return null;
+}
+
+function setLockScreenMode(mode: LockScreenMode, errorMsg?: string): void {
+  lockScreenMode = mode;
+  const isCreate = mode === 'setup' || mode === 'upgrade';
+
+  if (mode === 'setup') {
+    els.lockScreenTitle.textContent = 'Create Your Vault Passphrase';
+    els.lockScreenSubtitle.textContent =
+      'Your passphrase derives the AES-256-GCM encryption key locally and is never stored. If forgotten, your vault cannot be recovered.';
+    els.unlockPassphraseInput.placeholder = `Create passphrase (min ${MIN_PASSPHRASE_LENGTH} chars)...`;
+    els.unlockSubmitBtn.textContent = 'Create Encrypted Vault';
+  } else if (mode === 'upgrade') {
+    els.lockScreenTitle.textContent = 'Passphrase Required — Upgrade Vault';
+    els.lockScreenSubtitle.textContent =
+      'This vault was encrypted with Crypsy’s legacy default key. Set a strong passphrase now to re-encrypt your existing notes and boards.';
+    els.unlockPassphraseInput.placeholder = `New passphrase (min ${MIN_PASSPHRASE_LENGTH} chars)...`;
+    els.unlockSubmitBtn.textContent = 'Re-key & Unlock Vault';
+  } else {
+    els.lockScreenTitle.textContent = 'Crypsy Vault Locked';
+    els.lockScreenSubtitle.textContent =
+      'Your notes are encrypted with AES-256-GCM. Enter your vault passphrase to decrypt locally.';
+    els.unlockPassphraseInput.placeholder = 'Vault passphrase...';
+    els.unlockSubmitBtn.textContent = 'Decrypt & Unlock';
+  }
+
+  els.unlockPassphraseInput.setAttribute('autocomplete', isCreate ? 'new-password' : 'current-password');
+  els.unlockConfirmWrapper.classList.toggle('hidden', !isCreate);
+  els.unlockConfirmPassphraseInput.required = isCreate;
+  els.unlockPassphraseInput.value = '';
+  els.unlockConfirmPassphraseInput.value = '';
+
+  if (errorMsg) {
+    els.unlockErrorMsg.textContent = errorMsg;
+    els.unlockErrorMsg.classList.remove('hidden');
+  } else {
+    els.unlockErrorMsg.classList.add('hidden');
+  }
+
+  els.lockResumeCloudBtn.classList.toggle('hidden', !pendingCloudNeedsPermission);
+  els.lockLinkCloudBtn.classList.toggle(
+    'hidden',
+    !(mode === 'setup' && CrypsyCloudSync.isFileSystemAccessSupported() && !CrypsyCloudSync.isConnected())
+  );
+
+  els.lockScreenOverlay.classList.remove('hidden');
+  els.unlockPassphraseInput.focus();
+}
+
+async function lockVault(flushPending = false, errorMsg?: string): Promise<void> {
+  if (flushPending && state.passphrase && boardPersistTimer !== null) {
+    await persistEncryptedVault();
+  }
+  if (boardPersistTimer !== null) {
+    window.clearTimeout(boardPersistTimer);
+    boardPersistTimer = null;
+  }
+
+  state.passphrase = null;
+  pendingLegacyUpgradePayload = null;
+  sessionAllowedExternalUrls.clear();
+  state.notes = [];
+  state.boards = [];
+  state.tags = [];
+  state.activeBoardId = null;
+  state.editingNoteId = null;
+  state.editingDraft = null;
+  state.searchQuery = '';
+  els.searchInput.value = '';
+  els.clearSearchBtn.classList.add('hidden');
+
+  boardEditor.clearSensitiveMemory();
+  contextMenu.close();
+  resetComposer();
+  closeLightbox();
+  els.editModalTitle.value = '';
+  els.editModalDescription.value = '';
+  if (els.editModalImagesRow) els.editModalImagesRow.innerHTML = '';
+  els.editModalTagsRow.innerHTML = '';
+  els.editModalTimestamp.textContent = '';
+  els.composerTagSearch.value = '';
+  els.editModalTagSearch.value = '';
+  if (els.composerImageUrlInput) els.composerImageUrlInput.value = '';
+  if (els.editModalImageUrlInput) els.editModalImageUrlInput.value = '';
+  if (els.newBoardInput) els.newBoardInput.value = '';
+  els.newTagInput.value = '';
+  els.vaultPassphraseInput.value = '';
+  els.vaultConfirmPassphraseInput.value = '';
+  els.activeFilterText.innerHTML = '';
+  els.activeFilterBanner.classList.add('hidden');
+
+  els.editModalBackdrop.classList.add('hidden');
+  els.vaultModalBackdrop.classList.add('hidden');
+  els.cloudOnboardingBackdrop.classList.add('hidden');
+  els.updatesModalBackdrop?.classList.add('hidden');
+
+  els.pinnedSection.classList.add('hidden');
+  els.othersSection.classList.add('hidden');
+  els.emptyState.classList.add('hidden');
+  els.pinnedGrid.innerHTML = '';
+  els.othersGrid.innerHTML = '';
+  if (els.sidebarBoardsList) els.sidebarBoardsList.innerHTML = '';
+  els.sidebarTagsList.innerHTML = '';
+  els.ciphertextPreview.textContent = '';
+  els.countAll.textContent = '0';
+  els.countPinned.textContent = '0';
+  if (els.countBoards) els.countBoards.textContent = '0';
+
+  setLockScreenMode(state.lastEncryptedEnvelope ? 'unlock' : 'setup', errorMsg);
+}
+
 async function persistEncryptedVault(): Promise<void> {
+  if (!state.passphrase) {
+    throw new Error('Cannot persist vault while locked without a passphrase.');
+  }
   if (boardPersistTimer !== null) {
     window.clearTimeout(boardPersistTimer);
     boardPersistTimer = null;
@@ -595,14 +763,37 @@ async function persistEncryptedVault(): Promise<void> {
 async function tryLoadEnvelope(envelope: EncryptedEnvelope): Promise<boolean> {
   state.lastEncryptedEnvelope = envelope;
   await saveVaultEnvelopeToCache(envelope);
+
+  if (state.passphrase) {
+    try {
+      const decrypted = await CrypsyCrypto.decryptPayload(envelope, state.passphrase);
+      pendingLegacyUpgradePayload = null;
+      applyDecryptedPayload(decrypted);
+      els.lockScreenOverlay.classList.add('hidden');
+      renderAll();
+      return true;
+    } catch {
+      await lockVault(
+        false,
+        'Vault passphrase changed or does not match this session. Enter passphrase to unlock.'
+      );
+      return false;
+    }
+  }
+
+  // Detect unmigrated legacy vaults encrypted with the old hardcoded default key
+  // and force the user to re-key with a personal passphrase before accessing data.
   try {
-    const decrypted = await CrypsyCrypto.decryptPayload(envelope, state.passphrase);
-    applyDecryptedPayload(decrypted);
-    renderAll();
-    return true;
+    const legacyDecrypted = await CrypsyCrypto.decryptPayload(
+      envelope,
+      LEGACY_DEFAULT_DEVICE_SECRET
+    );
+    pendingLegacyUpgradePayload = legacyDecrypted;
+    setLockScreenMode('upgrade');
+    return false;
   } catch {
-    els.lockScreenOverlay.classList.remove('hidden');
-    els.unlockPassphraseInput.focus();
+    pendingLegacyUpgradePayload = null;
+    setLockScreenMode('unlock');
     return false;
   }
 }
@@ -634,6 +825,7 @@ async function initVault(): Promise<void> {
 
   // Check if a cloud folder was previously linked
   const cloudState = await CrypsyCloudSync.restoreSavedConnection();
+  pendingCloudNeedsPermission = cloudState.status === 'needs_permission';
   updateCloudStatusUI(cloudState);
 
   setInterval(updateLastUpdatedUI, 30000);
@@ -659,10 +851,7 @@ async function initVault(): Promise<void> {
 
   const cachedEnvelope = await loadVaultEnvelopeFromCache();
   if (!cachedEnvelope) {
-    state.notes = SEED_NOTES;
-    state.boards = [];
-    await persistEncryptedVault();
-    renderAll();
+    setLockScreenMode('setup');
     return;
   }
 
@@ -889,7 +1078,41 @@ const boardEditor = new BoardEditorController({
   onOpenLightbox: (src) => {
     openLightbox(src);
   },
+  isExternalImageAllowed: (url) => isExternalImageAllowed(url),
+  onAllowExternalUrl: (url) => {
+    sessionAllowedExternalUrls.add(url);
+  },
 });
+
+function isExternalImageAllowed(src: string): boolean {
+  if (!isExternalHttpUrl(src)) return true;
+  if (!state.blockExternalMedia) return true;
+  return sessionAllowedExternalUrls.has(src);
+}
+
+function renderImageOrPrivacyPlaceholderHtml(
+  src: string,
+  alt: string,
+  options: { className?: string; lazy?: boolean } = {}
+): string {
+  if (isExternalImageAllowed(src)) {
+    const cls = options.className ? ` class="${options.className}"` : '';
+    const lazyAttr = options.lazy ? ' loading="lazy"' : '';
+    return `<img${cls} src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" data-lightbox-src="${escapeHtml(src)}" referrerpolicy="no-referrer"${lazyAttr} />`;
+  }
+  let host = 'external host';
+  try {
+    host = new URL(src).hostname || host;
+  } catch {
+    // ignore invalid URL
+  }
+  return (
+    `<div class="blocked-external-image">` +
+    `<span>External image blocked (${escapeHtml(host)})</span>` +
+    `<button type="button" class="btn-link blocked-external-load-btn" data-allow-external-url="${escapeHtml(src)}">Load external image</button>` +
+    `</div>`
+  );
+}
 
 async function createBoard(rawTitle?: string): Promise<void> {
   const now = Date.now();
@@ -1462,7 +1685,10 @@ function renderMarkdownDescription(noteId: string, text: string, query: string):
       const altText = imgMatch[1] ?? '';
       const imgSrc = imgMatch[2];
       out.push(
-        `<img class="md-inline-image" src="${escapeHtml(imgSrc)}" alt="${escapeHtml(altText || 'Inline note image')}" data-lightbox-src="${escapeHtml(imgSrc)}" referrerpolicy="no-referrer" loading="lazy" />`
+        renderImageOrPrivacyPlaceholderHtml(imgSrc, altText || 'Inline note image', {
+          className: 'md-inline-image',
+          lazy: true,
+        })
       );
       return;
     }
@@ -1508,7 +1734,7 @@ function createNoteCardHtml(note: Note): string {
           .map(
             (img) => `
             <div class="note-image-item">
-              <img src="${escapeHtml(img.src)}" alt="${escapeHtml(img.alt || 'Note image')}" data-lightbox-src="${escapeHtml(img.src)}" referrerpolicy="no-referrer" loading="lazy" />
+              ${renderImageOrPrivacyPlaceholderHtml(img.src, img.alt || 'Note image', { lazy: true })}
               <span class="note-image-badge">${img.sourceType === 'external' ? 'External URL' : 'Encrypted WebP'}</span>
             </div>
           `
@@ -1584,6 +1810,7 @@ function renderBoardMinimapHtml(board: Board): string {
         minimap: true,
         offsetX: originX,
         offsetY: originY,
+        allowExternalUrl: isExternalImageAllowed,
       })
     )
     .join('');
@@ -1817,7 +2044,7 @@ function renderComposerImages(): void {
     .map(
       (img) => `
       <div class="note-edit-image-item">
-        <img src="${escapeHtml(img.src)}" alt="${escapeHtml(img.alt || 'Note image')}" data-lightbox-src="${escapeHtml(img.src)}" referrerpolicy="no-referrer" />
+        ${renderImageOrPrivacyPlaceholderHtml(img.src, img.alt || 'Note image')}
         <span class="note-image-badge">${img.sourceType === 'external' ? 'External URL' : 'Encrypted WebP'}</span>
         <button type="button" class="note-image-remove-btn" data-remove-composer-image="${escapeHtml(img.id)}" title="Remove image" aria-label="Remove image">&times;</button>
       </div>
@@ -1974,7 +2201,7 @@ function renderEditModalImages(): void {
     .map(
       (img) => `
       <div class="note-edit-image-item">
-        <img src="${escapeHtml(img.src)}" alt="${escapeHtml(img.alt || 'Note image')}" data-lightbox-src="${escapeHtml(img.src)}" referrerpolicy="no-referrer" />
+        ${renderImageOrPrivacyPlaceholderHtml(img.src, img.alt || 'Note image')}
         <span class="note-image-badge">${img.sourceType === 'external' ? 'External URL' : 'Encrypted WebP'}</span>
         <button type="button" class="note-image-remove-btn" data-remove-modal-image="${escapeHtml(img.id)}" title="Remove image" aria-label="Remove image">&times;</button>
       </div>
@@ -2353,10 +2580,11 @@ function bindEvents(): void {
   els.resumeCloudSyncBtn.addEventListener('click', async () => {
     const ok = await CrypsyCloudSync.reconnectSavedHandle();
     if (ok) {
+      pendingCloudNeedsPermission = false;
       const existingCloudVault = await CrypsyCloudSync.readVaultFromCloudFolder();
       if (existingCloudVault) {
         await tryLoadEnvelope(existingCloudVault);
-      } else {
+      } else if (state.passphrase) {
         await persistEncryptedVault();
       }
       updateCloudStatusUI({ status: 'connected' });
@@ -2443,7 +2671,10 @@ function bindEvents(): void {
       // Check if an encrypted vault already exists in that cloud folder
       const existingEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
       if (existingEnvelope) {
-        await tryLoadEnvelope(existingEnvelope);
+        const loaded = await tryLoadEnvelope(existingEnvelope);
+        if (!loaded) {
+          els.cloudOnboardingBackdrop.classList.add('hidden');
+        }
       } else {
         await persistEncryptedVault();
       }
@@ -3170,9 +3401,90 @@ function bindEvents(): void {
   // Vault Inspector Modal
   const openVaultModal = (): void => {
     updateVaultInspectorUI();
+    els.vaultPassphraseInput.value = '';
+    els.vaultConfirmPassphraseInput.value = '';
+    els.vaultPassphraseFeedback.className = 'vault-feedback hidden';
+    els.vaultPassphraseFeedback.textContent = '';
+    if (els.autoLockSelect) {
+      els.autoLockSelect.value = String(state.autoLockMinutes);
+    }
+    if (els.lockOnHideCb) {
+      els.lockOnHideCb.checked = state.lockOnHide;
+    }
+    if (els.blockExternalMediaCb) {
+      els.blockExternalMediaCb.checked = state.blockExternalMedia;
+    }
     els.vaultModalBackdrop.classList.remove('hidden');
   };
   els.encryptionBadge.addEventListener('click', openVaultModal);
+  els.topbarLockBtn?.addEventListener('click', () => {
+    if (state.passphrase) {
+      void lockVault(true);
+    }
+  });
+
+  els.autoLockSelect?.addEventListener('change', () => {
+    if (!els.autoLockSelect) return;
+    const val = parseInt(els.autoLockSelect.value, 10);
+    state.autoLockMinutes = Number.isFinite(val) ? val : 15;
+    lastActivityAt = Date.now();
+    savePreferences();
+  });
+
+  els.lockOnHideCb?.addEventListener('change', () => {
+    if (!els.lockOnHideCb) return;
+    state.lockOnHide = els.lockOnHideCb.checked;
+    savePreferences();
+  });
+
+  els.blockExternalMediaCb?.addEventListener('change', () => {
+    if (!els.blockExternalMediaCb) return;
+    state.blockExternalMedia = els.blockExternalMediaCb.checked;
+    if (state.blockExternalMedia) {
+      sessionAllowedExternalUrls.clear();
+    }
+    savePreferences();
+    renderNotes();
+    renderComposerImages();
+    renderEditModalImages();
+    if (boardEditor.isOpen()) {
+      boardEditor.refreshFromExternal();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement | null;
+    const allowBtn = target?.closest<HTMLElement>('[data-allow-external-url]');
+    if (!allowBtn) return;
+    e.stopPropagation();
+    const url = allowBtn.getAttribute('data-allow-external-url');
+    if (!url) return;
+    sessionAllowedExternalUrls.add(url);
+    renderNotes();
+    renderComposerImages();
+    renderEditModalImages();
+  });
+
+  const recordUserActivity = (): void => {
+    lastActivityAt = Date.now();
+  };
+  for (const evt of ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const) {
+    document.addEventListener(evt, recordUserActivity, { passive: true });
+  }
+  window.setInterval(() => {
+    if (
+      state.passphrase &&
+      state.autoLockMinutes > 0 &&
+      Date.now() - lastActivityAt >= state.autoLockMinutes * 60_000
+    ) {
+      void lockVault(true, `Vault auto-locked after ${state.autoLockMinutes} minutes of inactivity.`);
+    }
+  }, 15_000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && state.lockOnHide && state.passphrase) {
+      void lockVault(true, 'Vault locked when tab was hidden.');
+    }
+  });
 
   els.closeVaultModalBtn.addEventListener('click', () => {
     els.vaultModalBackdrop.classList.add('hidden');
@@ -3185,37 +3497,151 @@ function bindEvents(): void {
   });
 
   els.updatePassphraseBtn.addEventListener('click', async () => {
-    const nextPass = els.vaultPassphraseInput.value.trim();
-    if (!nextPass) return;
-    state.passphrase = nextPass;
-    els.vaultPassphraseInput.value = '';
-    await persistEncryptedVault();
+    const nextPass = els.vaultPassphraseInput.value;
+    const confirmPass = els.vaultConfirmPassphraseInput.value;
+    const validationError = validateNewPassphrase(nextPass, confirmPass);
+    if (validationError) {
+      els.vaultPassphraseFeedback.className = 'vault-feedback error';
+      els.vaultPassphraseFeedback.textContent = validationError;
+      return;
+    }
+    const prevBtnText = els.updatePassphraseBtn.textContent;
+    els.updatePassphraseBtn.disabled = true;
+    els.updatePassphraseBtn.textContent = 'Encrypting...';
+    try {
+      state.passphrase = nextPass;
+      await persistEncryptedVault();
+      els.vaultPassphraseInput.value = '';
+      els.vaultConfirmPassphraseInput.value = '';
+      els.vaultPassphraseFeedback.className = 'vault-feedback success';
+      els.vaultPassphraseFeedback.textContent =
+        'Vault re-keyed and encrypted with your new passphrase.';
+    } catch (err) {
+      els.vaultPassphraseFeedback.className = 'vault-feedback error';
+      els.vaultPassphraseFeedback.textContent =
+        err instanceof Error ? err.message : 'Failed to re-key vault.';
+    } finally {
+      els.updatePassphraseBtn.disabled = false;
+      els.updatePassphraseBtn.textContent = prevBtnText;
+    }
   });
 
   els.lockVaultNowBtn.addEventListener('click', () => {
-    els.vaultModalBackdrop.classList.add('hidden');
-    els.unlockErrorMsg.classList.add('hidden');
-    els.unlockPassphraseInput.value = '';
-    els.lockScreenOverlay.classList.remove('hidden');
-    els.unlockPassphraseInput.focus();
+    void lockVault(true);
   });
 
   els.unlockVaultForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const attempt = els.unlockPassphraseInput.value;
+    els.unlockErrorMsg.classList.add('hidden');
+
+    if (lockScreenMode === 'setup' || lockScreenMode === 'upgrade') {
+      const confirm = els.unlockConfirmPassphraseInput.value;
+      const validationError = validateNewPassphrase(attempt, confirm);
+      if (validationError) {
+        els.unlockErrorMsg.textContent = validationError;
+        els.unlockErrorMsg.classList.remove('hidden');
+        return;
+      }
+
+      const prevBtnText = els.unlockSubmitBtn.textContent;
+      els.unlockSubmitBtn.disabled = true;
+      els.unlockSubmitBtn.textContent = 'Encrypting...';
+      try {
+        state.passphrase = attempt;
+        if (lockScreenMode === 'upgrade' && pendingLegacyUpgradePayload) {
+          applyDecryptedPayload(pendingLegacyUpgradePayload);
+          pendingLegacyUpgradePayload = null;
+        } else {
+          state.notes = SEED_NOTES.map((n) => ({ ...n, tags: [...n.tags] }));
+          state.boards = [];
+        }
+        await persistEncryptedVault();
+        els.unlockPassphraseInput.value = '';
+        els.unlockConfirmPassphraseInput.value = '';
+        els.lockScreenOverlay.classList.add('hidden');
+        renderAll();
+      } catch (err) {
+        state.passphrase = null;
+        els.unlockErrorMsg.textContent =
+          err instanceof Error ? err.message : 'Failed to create encrypted vault.';
+        els.unlockErrorMsg.classList.remove('hidden');
+      } finally {
+        els.unlockSubmitBtn.disabled = false;
+        els.unlockSubmitBtn.textContent = prevBtnText;
+      }
+      return;
+    }
+
+    const prevBtnText = els.unlockSubmitBtn.textContent;
+    els.unlockSubmitBtn.disabled = true;
+    els.unlockSubmitBtn.textContent = 'Decrypting...';
     try {
       const envelope = state.lastEncryptedEnvelope ?? (await loadVaultEnvelopeFromCache());
       if (!envelope) throw new Error('No vault found');
       const decrypted = await CrypsyCrypto.decryptPayload(envelope, attempt);
       state.passphrase = attempt;
       applyDecryptedPayload(decrypted);
+      els.unlockPassphraseInput.value = '';
       els.lockScreenOverlay.classList.add('hidden');
       els.unlockErrorMsg.classList.add('hidden');
       renderAll();
       boardEditor.refreshFromExternal();
     } catch {
+      els.unlockErrorMsg.textContent =
+        'Incorrect passphrase — AES-GCM authentication tag verification failed.';
+      els.unlockErrorMsg.classList.remove('hidden');
+    } finally {
+      els.unlockSubmitBtn.disabled = false;
+      els.unlockSubmitBtn.textContent = prevBtnText;
+    }
+  });
+
+  els.lockResumeCloudBtn.addEventListener('click', async () => {
+    try {
+      const ok = await CrypsyCloudSync.reconnectSavedHandle();
+      if (!ok) return;
+      pendingCloudNeedsPermission = false;
+      els.lockResumeCloudBtn.classList.add('hidden');
+      updateCloudStatusUI({ status: 'connected' });
+      const cloudEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
+      if (cloudEnvelope) {
+        await tryLoadEnvelope(cloudEnvelope);
+      }
+    } catch (err) {
+      els.unlockErrorMsg.textContent =
+        err instanceof Error ? err.message : 'Could not resume cloud folder sync.';
       els.unlockErrorMsg.classList.remove('hidden');
     }
+  });
+
+  els.lockLinkCloudBtn.addEventListener('click', async () => {
+    try {
+      await CrypsyCloudSync.pickCloudFolder(state.selectedProviderId, true);
+      updateCloudStatusUI({ status: 'connected' });
+      const existingCloudVault = await CrypsyCloudSync.readVaultFromCloudFolder();
+      if (existingCloudVault) {
+        await tryLoadEnvelope(existingCloudVault);
+      } else {
+        setLockScreenMode('setup');
+        els.unlockErrorMsg.textContent =
+          'Cloud folder linked (no existing vault found). Create a passphrase above to initialize your vault.';
+        els.unlockErrorMsg.classList.remove('hidden');
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      els.unlockErrorMsg.textContent =
+        err instanceof Error ? err.message : 'Could not link cloud folder.';
+      els.unlockErrorMsg.classList.remove('hidden');
+    }
+  });
+
+  els.lockImportVaultInput.addEventListener('change', async (e) => {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    await importEncryptedVaultFile(file);
+    input.value = '';
   });
 
   els.exportEncryptedBtn.addEventListener('click', () => {
@@ -3316,6 +3742,14 @@ function bindEvents(): void {
       (!els.imageLightboxBackdrop || els.imageLightboxBackdrop.classList.contains('hidden')) &&
       boardEditor.handleKeyDown(e)
     ) {
+      return;
+    }
+
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
+      e.preventDefault();
+      if (state.passphrase) {
+        void lockVault(true);
+      }
       return;
     }
 

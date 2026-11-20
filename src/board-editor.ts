@@ -71,6 +71,8 @@ export interface BoardEditorHost {
   onDeleteBoard: (boardId: string) => void;
   onCloseBoard: () => void;
   onOpenLightbox: (src: string) => void;
+  isExternalImageAllowed?: (url: string) => boolean;
+  onAllowExternalUrl?: (url: string) => void;
 }
 
 type HandleDir = 'nw' | 'ne' | 'sw' | 'se' | 'w' | 'e' | 'rotate';
@@ -428,13 +430,42 @@ export class BoardEditorController {
     this.editingItemId = null;
     this.editingLinkLabelId = null;
     this.gesture = null;
+    this.undoStack = [];
+    this.redoStack = [];
     this.activeTouchPoints.clear();
     this.clearLongPressTimer();
     this.clearLiveCanvas();
+    this.els.itemsLayer.innerHTML = '';
+    this.els.titleInput.value = '';
+    this.els.tagsRow.innerHTML = '';
+    this.updateHistoryButtons();
     this.host.contextMenu.close();
     this.closePopovers();
     this.els.backdrop.classList.add('hidden');
     this.host.onCloseBoard();
+  }
+
+  /**
+   * Clears all decrypted board snapshots, clipboard copies, and DOM nodes from memory on lock.
+   */
+  public clearSensitiveMemory(): void {
+    this.undoStack = [];
+    this.redoStack = [];
+    this.copiedItems = [];
+    this.lastCopiedSummary = '';
+    this.selectedIds.clear();
+    this.editingItemId = null;
+    this.editingLinkLabelId = null;
+    this.gesture = null;
+    this.activeTouchPoints.clear();
+    this.clearLongPressTimer();
+    this.clearLiveCanvas();
+    this.els.itemsLayer.innerHTML = '';
+    this.els.titleInput.value = '';
+    this.els.tagsRow.innerHTML = '';
+    this.updateHistoryButtons();
+    this.updateSelectionBar();
+    this.els.backdrop.classList.add('hidden');
   }
 
   public refreshFromExternal(): void {
@@ -1172,6 +1203,7 @@ export class BoardEditorController {
             selected: this.selectedIds.has(item.id),
             editingText: this.editingItemId === item.id,
             editingLinkLabel: this.editingLinkLabelId === item.id,
+            allowExternalUrl: this.host.isExternalImageAllowed,
           })
         )
         .join('');
@@ -2480,6 +2512,19 @@ export class BoardEditorController {
     this.els.selectionBar.addEventListener('mousedown', (e) => {
       if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
         e.preventDefault();
+      }
+    });
+
+    this.els.itemsLayer.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement | null;
+      const allowBtn = target?.closest<HTMLElement>('[data-allow-external-url]');
+      if (allowBtn) {
+        e.stopPropagation();
+        const url = allowBtn.getAttribute('data-allow-external-url');
+        if (url) {
+          this.host.onAllowExternalUrl?.(url);
+          this.renderItems();
+        }
       }
     });
 
