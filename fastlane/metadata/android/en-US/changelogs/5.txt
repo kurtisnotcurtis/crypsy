@@ -1,0 +1,1 @@
+- Bumped release version to 1.6.2 (versionCode 5) with updated release signing key

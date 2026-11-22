@@ -3,6 +3,10 @@
 All notable changes to **Crypsy Note** are documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.2] - 2026-11-22
+### Changed
+- **Release Signing Key Refresh**: Bumped Android `versionCode` to `5` (`1.6.2`) for initial signed APK distribution with the updated release signing keystore.
+
 ## [1.6.1] - 2026-11-22
 ### Changed
 - **F-Droid & IzzyOnDroid Android Release Readiness (`android/`, `.github/workflows/release.yml`, `fastlane/`)**: Removed unused `com.google.gms:google-services` Gradle plugin boilerplate, added conditional release APK signing configuration to `android/app/build.gradle`, made `crypsy-note/` self-contained with its own `package-lock.json` and `../node_modules/...` Capacitor project paths, added Fastlane store metadata (`fastlane/metadata/android/en-US/`), and updated the GitHub Release workflow to build and attach the Android APK alongside `Crypsy-Portable.html`.

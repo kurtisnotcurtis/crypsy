@@ -5,7 +5,7 @@
 import { renderBoardStrokeSvg } from './ink';
 import type { BoardItem } from './types';
 
-export const APP_VERSION = '1.6.1';
+export const APP_VERSION = '1.6.2';
 
 export function byId<T extends HTMLElement = HTMLElement>(id: string): T {
   const el = document.getElementById(id);

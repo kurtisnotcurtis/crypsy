@@ -1,6 +1,6 @@
 {
   "name": "crypsy-note",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "description": "Client-side AES-256-GCM encrypted quick-notes and free-form spatial boards web app with Bring Your Own Cloud (BYOC) folder installer",
   "license": "MIT",
   "private": true,
