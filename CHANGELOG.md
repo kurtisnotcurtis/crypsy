@@ -3,6 +3,10 @@
 All notable changes to **Crypsy Note** are documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.4] - 2026-11-22
+### Changed
+- **Mobile Topbar Overflow Fix & Settings Theme Toggle (`index.html`, `src/app.ts`, `styles.css`)**: Moved the Light/Dark theme toggle button out of `.topbar-right` into the **Settings & Updates** modal (`#updatesModalBackdrop`) and tightened narrow-viewport topbar sizing (`min-width: 0`, `overflow-x: clip`, icon-only cloud button below `420px`) so the top navigation bar no longer overflows or scrolls horizontally on mobile.
+
 ## [1.6.3] - 2026-11-22
 ### Fixed
 - **Native App Icons & Splash Screens (`android/`, `ios/`, `fastlane/`)**: Replaced Capacitor's default template launcher icons and splash screens with Crypsy's `#8AB4F8` padlock logo on `#202124`, including Android adaptive vector icons (with `<monochrome>` support), legacy mipmap PNGs, dark splash screens, iOS `AppIcon-512@2x.png`, and the `512x512` Fastlane store icon.

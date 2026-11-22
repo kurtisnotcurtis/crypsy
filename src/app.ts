@@ -175,7 +175,10 @@ const els = {
   viewToggleBtn: byId<HTMLButtonElement>('viewToggleBtn'),
   viewIconList: byId('viewIconList'),
   viewIconGrid: byId('viewIconGrid'),
-  themeToggleBtn: byId<HTMLButtonElement>('themeToggleBtn'),
+  themeToggleBtn: maybeById<HTMLButtonElement>('themeToggleBtn'),
+  themeIconSun: maybeById('themeIconSun'),
+  themeIconMoon: maybeById('themeIconMoon'),
+  themeToggleLabel: maybeById('themeToggleLabel'),
   encryptionBadge: byId('encryptionBadge'),
 
   reconnectCloudBanner: byId('reconnectCloudBanner'),
@@ -936,9 +939,21 @@ function updateCloudStatusUI(restoredState?: Pick<RestoreConnectionResult, 'stat
 // Theme & View Mode UI
 function applyThemeUI(): void {
   document.documentElement.setAttribute('data-theme', state.theme);
+  const isLight = state.theme === 'light';
   const metaTheme = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
   if (metaTheme) {
-    metaTheme.setAttribute('content', state.theme === 'light' ? '#ffffff' : '#202124');
+    metaTheme.setAttribute('content', isLight ? '#ffffff' : '#202124');
+  }
+  if (els.themeToggleLabel) {
+    els.themeToggleLabel.textContent = isLight ? 'Light mode' : 'Dark mode';
+  }
+  if (els.themeIconSun && els.themeIconMoon) {
+    els.themeIconSun.classList.toggle('hidden', isLight);
+    els.themeIconMoon.classList.toggle('hidden', !isLight);
+  }
+  if (els.themeToggleBtn) {
+    els.themeToggleBtn.title = isLight ? 'Switch to Dark theme' : 'Switch to Light theme';
+    els.themeToggleBtn.setAttribute('aria-pressed', String(isLight));
   }
 }
 
@@ -2566,7 +2581,7 @@ function bindEvents(): void {
   );
 
   // Theme toggle
-  els.themeToggleBtn.addEventListener('click', () => {
+  els.themeToggleBtn?.addEventListener('click', () => {
     state.theme = state.theme === 'dark' ? 'light' : 'dark';
     applyThemeUI();
     savePreferences();

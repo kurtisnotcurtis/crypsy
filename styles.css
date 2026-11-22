@@ -82,6 +82,8 @@ body {
   top: 0;
   z-index: 50;
   height: 64px;
+  max-width: 100%;
+  overflow-x: clip;
   background-color: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
@@ -611,6 +613,26 @@ body {
 /* Updates Modal */
 .updates-modal {
   max-width: 540px;
+}
+
+.theme-setting-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.theme-setting-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-bg);
 }
 
 .update-status-box {
@@ -3031,15 +3053,38 @@ html[data-theme="light"] .context-menu {
 }
 
 @media (max-width: 600px) {
+  .topbar {
+    gap: 6px;
+  }
+
+  .topbar-left {
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .brand {
+    gap: 6px;
+  }
+
+  .brand-logo {
+    width: 32px;
+    height: 32px;
+  }
+
   .version-badge,
   .crypto-badge {
     display: none;
   }
 
+  .search-container {
+    min-width: 56px;
+  }
+
   .cloud-pill-btn {
-    padding: 6px 9px;
-    max-width: 118px;
-    font-size: 0.74rem;
+    padding: 6px 8px;
+    max-width: 104px;
+    font-size: 0.72rem;
+    gap: 5px;
   }
 
   #cloudSetupBtnLabel {
@@ -3049,7 +3094,8 @@ html[data-theme="light"] .context-menu {
   }
 
   .topbar-right {
-    gap: 3px;
+    gap: 2px;
+    flex-shrink: 0;
   }
 
   .icon-btn {
@@ -3059,6 +3105,17 @@ html[data-theme="light"] .context-menu {
 
   .lock-card {
     padding: 24px 18px;
+  }
+}
+
+@media (max-width: 420px) {
+  #cloudSetupBtnLabel {
+    display: none;
+  }
+
+  .cloud-pill-btn {
+    padding: 7px 9px;
+    max-width: none;
   }
 }
 

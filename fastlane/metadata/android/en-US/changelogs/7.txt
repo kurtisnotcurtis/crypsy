@@ -1,0 +1,2 @@
+- Moved Light/Dark theme toggle into Settings & Updates modal
+- Tightened mobile top navigation bar layout to prevent horizontal overflow

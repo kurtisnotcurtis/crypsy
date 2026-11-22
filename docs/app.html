@@ -33,7 +33,7 @@
           </svg>
         </div>
         <span class="brand-name">Crypsy</span>
-        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.6.3 — Click to check for updates">v1.6.3</button>
+        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.6.4 — Click to check for updates">v1.6.4</button>
         <span id="encryptionBadge" class="crypto-badge" title="Click to inspect encrypted cloud payload or manage vault key">
           <span class="status-dot"></span>
           AES-256-GCM
@@ -61,9 +61,9 @@
       </button>
     </div>
 
-    <!-- Right Actions: Cloud Setup, Last Updated, Theme, View Mode, Updates -->
+    <!-- Right Actions: Cloud Setup, Last Updated, View Mode, Lock, Settings -->
     <div class="topbar-right">
-      <button id="cloudSetupBtn" class="cloud-pill-btn" title="Connect or manage synced cloud provider folder">
+      <button id="cloudSetupBtn" class="cloud-pill-btn" title="Connect or manage synced cloud provider folder" aria-label="Cloud Folder &amp; Vault Sync">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
         </svg>
@@ -74,20 +74,6 @@
         <span class="last-updated-dot"></span>
         <span id="lastUpdatedText">Updated just now</span>
       </span>
-
-      <button id="themeToggleBtn" class="icon-btn" title="Toggle Dark/Light theme" aria-label="Toggle theme">
-        <svg id="themeIconSun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <circle cx="12" cy="12" r="5"></circle>
-          <line x1="12" y1="1" x2="12" y2="3"></line>
-          <line x1="12" y1="21" x2="12" y2="23"></line>
-          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-          <line x1="1" y1="12" x2="3" y2="12"></line>
-          <line x1="21" y1="12" x2="23" y2="12"></line>
-          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-        </svg>
-      </button>
 
       <button id="viewToggleBtn" class="icon-btn" title="Switch to List view" aria-label="Toggle Card or List view">
         <svg id="viewIconList" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -109,7 +95,7 @@
         </svg>
       </button>
 
-      <button id="topbarUpdatesBtn" class="icon-btn" title="Check for Updates & Releases" aria-label="Check for Updates">
+      <button id="topbarUpdatesBtn" class="icon-btn" title="Settings &amp; Updates" aria-label="Settings and Updates">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"></circle>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -767,22 +753,48 @@
     </div>
   </div>
 
-  <!-- Updates & Release Checker Modal -->
+  <!-- Settings & Updates Modal -->
   <div id="updatesModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
     <div class="modal-card vault-modal updates-modal">
       <div class="vault-modal-header">
         <div>
-          <h3>Crypsy Updates &amp; Releases</h3>
+          <h3>Crypsy Settings &amp; Updates</h3>
           <p class="vault-subtitle">
-            Installed version: <strong id="installedVersionLabel">v1.6.3</strong>
+            Installed version: <strong id="installedVersionLabel">v1.6.4</strong>
           </p>
         </div>
-        <button id="closeUpdatesModalBtn" class="icon-btn" aria-label="Close updates modal">
+        <button id="closeUpdatesModalBtn" class="icon-btn" aria-label="Close settings modal">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </button>
+      </div>
+
+      <div class="vault-privacy-grid">
+        <div class="vault-privacy-row">
+          <div class="vault-privacy-label">
+            <strong>Appearance</strong>
+            <span>Switch between Dark and Light themes.</span>
+          </div>
+          <button type="button" id="themeToggleBtn" class="btn-ghost theme-setting-btn" title="Toggle Dark/Light theme" aria-label="Toggle theme">
+            <svg id="themeIconSun" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg id="themeIconMoon" class="hidden" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+            <span id="themeToggleLabel">Dark mode</span>
+          </button>
+        </div>
       </div>
 
       <label class="checkbox-row">
