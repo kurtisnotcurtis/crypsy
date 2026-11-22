@@ -1,0 +1,5 @@
+- Enforced vault passphrase setup and legacy vault re-keying migration
+- Upgraded PBKDF2-SHA256 key derivation from 150,000 to 600,000 iterations
+- Full memory, undo/redo stack, and DOM wiping on lock
+- Added quick lock, configurable auto-lock, lock-on-hide, and Strict Media Privacy
+- Hardened Content Security Policy and disabled Android cloud auto-backup (allowBackup=false)

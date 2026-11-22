@@ -1,0 +1,8 @@
+Crypsy is a lightweight, privacy-focused encrypted notes and free-form spatial boards application powered by client-side AES-256-GCM encryption.
+
+Features:
+- Enforced on-device encryption: All notes, spatial boards, freehand ink strokes, embedded WebP images, and tags are encrypted using WebCrypto (PBKDF2-SHA256, 600,000 iterations + AES-256-GCM) before touching storage.
+- Spatial Boards: Free-form infinite canvas with text boxes, pressure/velocity-modulated pen & highlighter drawing, swept stroke eraser, lasso selection, Dots/Grid/Ruled/Blank paper styles, resize/rotate handles, undo/redo, and scaled preview thumbnails.
+- Rich Quick Notes: Multi-column Card Grid or List view, interactive Markdown task checkboxes, smart list continuation, encrypted image attachments, tags, pins, Dark/Light themes, and instant client-side search.
+- Local & Portable Vault Sync: Auto-persists encrypted vaults locally (Documents/Crypsy/vault.crypsy.json) with native share-sheet export and file import, compatible with Crypsy's desktop BYOC cloud folder and Crypsy-Portable.html workflows.
+- Security & Privacy Controls: Quick lock, idle auto-lock, optional lock-on-hide, full memory & DOM wiping on lock, Strict Media Privacy for external image URLs, and android:allowBackup="false".

@@ -3,6 +3,10 @@
 All notable changes to **Crypsy Note** are documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.1] - 2026-11-22
+### Changed
+- **F-Droid & IzzyOnDroid Android Release Readiness (`android/`, `.github/workflows/release.yml`, `fastlane/`)**: Removed unused `com.google.gms:google-services` Gradle plugin boilerplate, added conditional release APK signing configuration to `android/app/build.gradle`, made `crypsy-note/` self-contained with its own `package-lock.json` and `../node_modules/...` Capacitor project paths, added Fastlane store metadata (`fastlane/metadata/android/en-US/`), and updated the GitHub Release workflow to build and attach the Android APK alongside `Crypsy-Portable.html`.
+
 ## [1.6.0] - 2026-11-19
 ### Security
 - **Enforced Vault Passphrase & Legacy Vault Migration (`src/app.ts`, `src/crypto.ts`, `src/types.ts`)**: Removed silent encryption/decryption using the hardcoded default device secret (`state.passphrase` now defaults to `null`). New vaults require creating and confirming an 8+ character passphrase before initialization, while legacy default-key vaults are detected in `tryLoadEnvelope()` and forced through an in-place re-keying upgrade flow (`setLockScreenMode('upgrade')`) before exposing decrypted notes or boards.

@@ -24,12 +24,62 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
 
-      - name: Install devDependencies
-        run: npm install --no-audit --no-fund
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
 
-      - name: Build Crypsy-Portable.html
-        run: npm run build
+      - name: Build Crypsy-Portable.html & Capacitor web assets
+        run: |
+          npm run build
+          npm run cap:prepare
+          npx cap sync android
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode Android signing keystore (if configured)
+        id: keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/crypsy-release.jks"
+            echo "keystore_path=$RUNNER_TEMP/crypsy-release.jks" >> "$GITHUB_OUTPUT"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::ANDROID_KEYSTORE_BASE64 secret not set; building an unsigned Android APK."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Android APK
+        working-directory: android
+        env:
+          CRYPSY_KEYSTORE_PATH: ${{ steps.keystore.outputs.keystore_path }}
+          CRYPSY_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          CRYPSY_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CRYPSY_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Stage Release APK
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          mkdir -p release-assets
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk "release-assets/Crypsy-${RELEASE_TAG}-android.apk"
+          elif [ -f android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk "release-assets/Crypsy-${RELEASE_TAG}-android-unsigned.apk"
+          else
+            echo "Release APK not found!" >&2
+            exit 1
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -39,3 +89,4 @@ jobs:
           generate_release_notes: true
           files: |
             Crypsy-Portable.html
+            release-assets/*.apk

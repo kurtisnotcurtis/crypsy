@@ -1,0 +1,1 @@
+Client-side AES-256-GCM encrypted notes and free-form spatial boards.
