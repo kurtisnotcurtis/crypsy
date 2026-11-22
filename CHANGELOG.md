@@ -3,6 +3,10 @@
 All notable changes to **Crypsy Note** are documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.3] - 2026-11-22
+### Fixed
+- **Native App Icons & Splash Screens (`android/`, `ios/`, `fastlane/`)**: Replaced Capacitor's default template launcher icons and splash screens with Crypsy's `#8AB4F8` padlock logo on `#202124`, including Android adaptive vector icons (with `<monochrome>` support), legacy mipmap PNGs, dark splash screens, iOS `AppIcon-512@2x.png`, and the `512x512` Fastlane store icon.
+
 ## [1.6.2] - 2026-11-22
 ### Changed
 - **Release Signing Key Refresh**: Bumped Android `versionCode` to `5` (`1.6.2`) for initial signed APK distribution with the updated release signing keystore.

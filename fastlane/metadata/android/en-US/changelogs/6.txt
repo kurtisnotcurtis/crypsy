@@ -1,0 +1,2 @@
+- Replaced default Capacitor app icons and splash screens with Crypsy's padlock icon and dark splash theme
+- Updated Android adaptive icons (with monochrome themed icon support) and Fastlane store icon
