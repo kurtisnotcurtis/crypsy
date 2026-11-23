@@ -6,30 +6,46 @@
  */
 
 import {
+  type BoardClipboardHost,
+  handleBoardPasteEvent,
+  pasteFromBoardSystemClipboard,
+} from './board-clipboard';
+import {
+  GRID_STYLES,
+  GRID_STYLE_LABELS,
+  buildCanvasContextMenuEntries,
+  buildItemContextMenuEntries,
+} from './board-context-menu';
+import {
+  type ItemMetrics,
+  type ResizeHandleDir,
+  clamp,
+  computeResizedItemRect,
+  normalizeAngleDeg,
+} from './board-geometry';
+import { BoardHistory } from './board-history';
+import { BoardInkToolbar } from './board-ink-toolbar';
+import { BoardLiveCanvas } from './board-live-canvas';
+import {
+  alignBoardItemsInPlace,
+  cloneItemsForPaste,
+  summarizeBoardItemsForClipboard,
+} from './board-ops';
+import { renderBoardItemHtml } from './board-render';
+import { BoardSelectionBar } from './board-selection-bar';
+import {
   type ContextMenuController,
-  type ContextMenuEntry,
   shouldBypassCustomContextMenu,
 } from './context-menu';
 import {
-  AUTO_INK_TOKEN,
-  INK_SWATCHES,
   type StrokePoint,
   computePointPressure,
   lassoSelectsRect,
   lassoSelectsStroke,
   normalizeRawStroke,
-  renderStrokeToCanvas2d,
-  resolveLiveInkColor,
   segmentHitsStroke,
 } from './ink';
-import {
-  extractClipboardImages,
-  extractImageUrlFromClipboardHtml,
-  extractStandaloneImageUrl,
-  extractStandaloneWebUrl,
-  noteImageFromFile,
-  noteImageFromUrl,
-} from './media';
+import { noteImageFromFile, noteImageFromUrl } from './media';
 import type {
   Board,
   BoardGridStyle,
@@ -46,11 +62,11 @@ import type {
 import {
   autoResizeTextarea,
   byId,
+  createId,
   escapeHtml,
   getRotatedRectAabb,
   isEditableElement,
   maybeById,
-  renderBoardItemHtml,
 } from './utils';
 
 export interface BoardEditorHost {
@@ -75,32 +91,7 @@ export interface BoardEditorHost {
   onAllowExternalUrl?: (url: string) => void;
 }
 
-type HandleDir = 'nw' | 'ne' | 'sw' | 'se' | 'w' | 'e' | 'rotate';
-type BoardActiveTool = 'select' | 'lasso' | 'eraser' | 'pen' | 'highlighter';
-
-interface InkPreset {
-  slot: number;
-  tool: BoardInkTool;
-  color: string;
-  width: number;
-  opacity: number;
-}
-
-const GRID_STYLES: readonly BoardGridStyle[] = ['dots', 'grid', 'ruled', 'blank'];
-const GRID_STYLE_LABELS: Record<BoardGridStyle, string> = {
-  dots: 'Dots',
-  grid: 'Grid',
-  ruled: 'Ruled',
-  blank: 'Blank',
-};
-
-interface ItemMetrics {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  rotation: number;
-}
+type HandleDir = ResizeHandleDir | 'rotate';
 
 type ActiveGesture =
   | {
@@ -194,22 +185,11 @@ const MAX_ZOOM = 2.5;
 const MAX_UNDO_HISTORY = 40;
 
 function createItemId(): string {
-  return `bi-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-function clamp(val: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, val));
-}
-
-function normalizeAngleDeg(deg: number): number {
-  let a = Math.round(deg) % 360;
-  if (a > 180) a -= 360;
-  if (a <= -180) a += 360;
-  return a === 0 ? 0 : a;
+  return createId('bi');
 }
 
 function cloneItems(items: BoardItem[]): BoardItem[] {
-  return JSON.parse(JSON.stringify(items)) as BoardItem[];
+  return structuredClone(items);
 }
 
 export class BoardEditorController {
@@ -226,21 +206,6 @@ export class BoardEditorController {
     tagOptions: byId('boardTagOptions'),
     tagsRow: byId('boardTagsRow'),
     colorPicker: byId('boardColorPicker'),
-    drawRack: byId('boardDrawRack'),
-    toolSelectBtn: byId<HTMLButtonElement>('boardToolSelectBtn'),
-    toolLassoBtn: byId<HTMLButtonElement>('boardToolLassoBtn'),
-    toolEraserBtn: byId<HTMLButtonElement>('boardToolEraserBtn'),
-    penSlot0Btn: byId<HTMLButtonElement>('boardPenSlot0Btn'),
-    penSlot1Btn: byId<HTMLButtonElement>('boardPenSlot1Btn'),
-    penSlot2Btn: byId<HTMLButtonElement>('boardPenSlot2Btn'),
-    highlighterSlotBtn: byId<HTMLButtonElement>('boardHighlighterSlotBtn'),
-    touchDrawBtn: byId<HTMLButtonElement>('boardTouchDrawBtn'),
-    inkPopover: byId('boardInkPopover'),
-    inkPopoverTitle: byId('boardInkPopoverTitle'),
-    inkWidthLabel: byId('boardInkWidthLabel'),
-    inkWidthRange: byId<HTMLInputElement>('boardInkWidthRange'),
-    inkWidthQuick: byId('boardInkWidthQuick'),
-    inkColorSwatches: byId('boardInkColorSwatches'),
     addTextBtn: byId<HTMLButtonElement>('boardAddTextBtn'),
     addImageBtn: byId<HTMLButtonElement>('boardAddImageBtn'),
     imagePopover: byId('boardImagePopover'),
@@ -265,32 +230,6 @@ export class BoardEditorController {
     fitBtn: byId<HTMLButtonElement>('boardFitBtn'),
     deleteBtn: byId<HTMLButtonElement>('boardDeleteBtn'),
 
-    selectionBar: byId('boardSelectionBar'),
-    selTextGroup: byId('boardSelTextGroup'),
-    selFontDecBtn: byId<HTMLButtonElement>('boardSelFontDecBtn'),
-    selFontSizeLabel: byId('boardSelFontSizeLabel'),
-    selFontIncBtn: byId<HTMLButtonElement>('boardSelFontIncBtn'),
-    selBoldBtn: byId<HTMLButtonElement>('boardSelBoldBtn'),
-    selItalicBtn: byId<HTMLButtonElement>('boardSelItalicBtn'),
-    selAlignLeftBtn: byId<HTMLButtonElement>('boardSelAlignLeftBtn'),
-    selAlignCenterBtn: byId<HTMLButtonElement>('boardSelAlignCenterBtn'),
-    selAlignRightBtn: byId<HTMLButtonElement>('boardSelAlignRightBtn'),
-    selStrokeGroup: byId('boardSelStrokeGroup'),
-    selStrokeDecBtn: byId<HTMLButtonElement>('boardSelStrokeDecBtn'),
-    selStrokeWidthLabel: byId('boardSelStrokeWidthLabel'),
-    selStrokeIncBtn: byId<HTMLButtonElement>('boardSelStrokeIncBtn'),
-    selStrokeColorPicker: byId('boardSelStrokeColorPicker'),
-    selColorGroup: byId('boardSelColorGroup'),
-    selColorPicker: byId('boardSelColorPicker'),
-    selRotateLeftBtn: byId<HTMLButtonElement>('boardSelRotateLeftBtn'),
-    selRotationLabel: byId<HTMLButtonElement>('boardSelRotationLabel'),
-    selRotateRightBtn: byId<HTMLButtonElement>('boardSelRotateRightBtn'),
-    selMultiAlignGroup: byId('boardSelMultiAlignGroup'),
-    selSendBackBtn: byId<HTMLButtonElement>('boardSelSendBackBtn'),
-    selBringFrontBtn: byId<HTMLButtonElement>('boardSelBringFrontBtn'),
-    selDuplicateBtn: byId<HTMLButtonElement>('boardSelDuplicateBtn'),
-    selDeleteBtn: byId<HTMLButtonElement>('boardSelDeleteBtn'),
-
     viewport: byId('boardCanvasViewport'),
     world: byId('boardCanvasWorld'),
     itemsLayer: byId('boardItemsLayer'),
@@ -305,10 +244,6 @@ export class BoardEditorController {
   private editingLinkLabelId: string | null = null;
   private snapToGrid = false;
   private spacePressed = false;
-  private activeTool: BoardActiveTool = 'select';
-  private activeInkSlot = 0;
-  private editingInkSlot = 0;
-  private touchDrawEnabled = false;
   private activeTouchPoints = new Map<number, { clientX: number; clientY: number }>();
   private longPressState: {
     timerId: number;
@@ -316,17 +251,13 @@ export class BoardEditorController {
     startClientX: number;
     startClientY: number;
   } | null = null;
-  private inkPresets: InkPreset[] = [
-    { slot: 0, tool: 'pen', color: AUTO_INK_TOKEN, width: 3, opacity: 1 },
-    { slot: 1, tool: 'pen', color: '#4285f4', width: 3, opacity: 1 },
-    { slot: 2, tool: 'pen', color: '#ea4335', width: 4.5, opacity: 1 },
-    { slot: 3, tool: 'highlighter', color: '#fbbc04', width: 18, opacity: 0.42 },
-  ];
   private lastCanvasCursor: { x: number; y: number } | null = null;
   private gesture: ActiveGesture | null = null;
   private isRenderingItems = false;
-  private undoStack: BoardItem[][] = [];
-  private redoStack: BoardItem[][] = [];
+  private readonly history = new BoardHistory(MAX_UNDO_HISTORY);
+  private readonly liveCanvas: BoardLiveCanvas;
+  private readonly inkToolbar: BoardInkToolbar;
+  private readonly selectionBar: BoardSelectionBar;
   private copiedItems: BoardItem[] = [];
   private lastCopiedSummary = '';
   private hintResetTimer: number | null = null;
@@ -335,8 +266,36 @@ export class BoardEditorController {
 
   constructor(host: BoardEditorHost) {
     this.host = host;
-    this.initInkPickers();
-    this.updateDrawToolbarUi();
+    this.liveCanvas = new BoardLiveCanvas(this.els.inkLiveCanvas, this.els.viewport);
+    this.inkToolbar = new BoardInkToolbar({
+      viewport: this.els.viewport,
+      onBeforeToolChange: () => {
+        this.commitActiveTextEdit();
+        this.renderItems();
+      },
+      onCloseAllPopovers: () => this.closePopovers(),
+      onShowHint: (msg) => this.showTransientHint(msg),
+    });
+    this.selectionBar = new BoardSelectionBar({
+      updateColorDots: (pickerEl, color) => this.host.updateColorDots(pickerEl, color),
+      onAdjustFontSize: (delta) =>
+        this.mutateSelectedTextItems((it) => {
+          it.fontSize = Math.max(11, Math.min(48, (it.fontSize || 15) + delta));
+        }),
+      onToggleBold: () => this.toggleSelectedBold(),
+      onToggleItalic: () => this.toggleSelectedItalic(),
+      onSetTextAlign: (align) => this.setSelectedTextAlign(align),
+      onAdjustStrokeWidth: (delta) => this.adjustSelectedStrokeWidth(delta),
+      onSetStrokeColor: (color) => this.setSelectedStrokeColor(color),
+      onSetColor: (color) => this.setSelectedColor(color),
+      onRotateBy: (deg) => this.rotateSelectedBy(deg),
+      onResetRotation: () => this.resetSelectedRotation(),
+      onAlign: (axis) => this.alignSelectedItems(axis),
+      onBringToFront: () => this.bringSelectedToFront(),
+      onSendToBack: () => this.sendSelectedToBack(),
+      onDuplicate: () => this.duplicateSelected(),
+      onDelete: () => this.deleteSelected(),
+    });
     this.bindEvents();
   }
 
@@ -346,6 +305,10 @@ export class BoardEditorController {
 
   public isGestureActive(): boolean {
     return this.gesture !== null;
+  }
+
+  public isEditingText(): boolean {
+    return this.editingItemId !== null || this.editingLinkLabelId !== null;
   }
 
   private clearLongPressTimer(): void {
@@ -400,8 +363,7 @@ export class BoardEditorController {
     this.activeTouchPoints.clear();
     this.clearLongPressTimer();
     this.clearLiveCanvas();
-    this.undoStack = [];
-    this.redoStack = [];
+    this.history.clear();
     this.lastCanvasCursor = null;
     if (this.els.canvasHint?.textContent) {
       this.defaultCanvasHint = this.els.canvasHint.textContent;
@@ -416,7 +378,7 @@ export class BoardEditorController {
     this.closePopovers();
     this.els.backdrop.classList.remove('hidden');
     this.renderBoardMeta(board);
-    this.updateDrawToolbarUi();
+    this.inkToolbar.updateUi();
     this.applyViewport(board);
     this.renderItems();
     this.updateSelectionBar();
@@ -430,8 +392,7 @@ export class BoardEditorController {
     this.editingItemId = null;
     this.editingLinkLabelId = null;
     this.gesture = null;
-    this.undoStack = [];
-    this.redoStack = [];
+    this.history.clear();
     this.activeTouchPoints.clear();
     this.clearLongPressTimer();
     this.clearLiveCanvas();
@@ -449,8 +410,7 @@ export class BoardEditorController {
    * Clears all decrypted board snapshots, clipboard copies, and DOM nodes from memory on lock.
    */
   public clearSensitiveMemory(): void {
-    this.undoStack = [];
-    this.redoStack = [];
+    this.history.clear();
     this.copiedItems = [];
     this.lastCopiedSummary = '';
     this.selectedIds.clear();
@@ -496,7 +456,7 @@ export class BoardEditorController {
       !this.els.tagPopover.classList.contains('hidden') ||
       !this.els.imagePopover.classList.contains('hidden') ||
       !this.els.linkPopover.classList.contains('hidden') ||
-      !this.els.inkPopover.classList.contains('hidden')
+      this.inkToolbar.isPopoverOpen()
     ) {
       this.closePopovers();
       return true;
@@ -518,8 +478,8 @@ export class BoardEditorController {
       return true;
     }
 
-    if (this.activeTool !== 'select') {
-      this.setActiveTool('select');
+    if (this.inkToolbar.getActiveTool() !== 'select') {
+      this.inkToolbar.setActiveTool('select');
       return true;
     }
 
@@ -592,6 +552,21 @@ export class BoardEditorController {
     }
   }
 
+  private getClipboardHost(): BoardClipboardHost {
+    return {
+      getInsertCanvasPoint: (b) => this.getInsertCanvasPoint(b),
+      isEditingItemText: () => Boolean(this.editingItemId || this.editingLinkLabelId),
+      hasCopiedItems: () => this.copiedItems.length > 0,
+      getLastCopiedSummary: () => this.lastCopiedSummary,
+      pasteCopiedItemsAt: (b, x, y) => this.pasteCopiedItemsAt(b, x, y),
+      insertImageItem: (img, x, y) => this.insertImageItem(img, x, y),
+      insertLinkItem: (url, label, x, y) => this.insertLinkItem(url, label, x, y),
+      createTextItem: (x, y, content, startEditing) =>
+        this.createTextItem(x, y, content, startEditing),
+      showTransientHint: (msg) => this.showTransientHint(msg),
+    };
+  }
+
   /**
    * Handles clipboard paste (images, image URLs, web links) onto the open Board canvas.
    */
@@ -611,183 +586,15 @@ export class BoardEditorController {
       return false;
     }
 
-    const cd = e.clipboardData;
-    if (!cd) return false;
-
-    const images = extractClipboardImages(cd);
-    if (images.length > 0) {
-      e.preventDefault();
-      const pos = this.getInsertCanvasPoint(board);
-      for (let i = 0; i < images.length; i++) {
-        const file = images[i];
-        if (!file) continue;
-        try {
-          const noteImg = await noteImageFromFile(file);
-          await this.insertImageItem(noteImg, pos.x + i * 24, pos.y + i * 24);
-        } catch (err) {
-          console.warn('Could not paste image onto board:', err);
-        }
-      }
-      return true;
-    }
-
-    // If actively editing inside a text box, let plain-text / URL paste go into the textarea normally
-    if (this.editingItemId || this.editingLinkLabelId) {
-      return false;
-    }
-
-    const plainText = cd.getData('text/plain');
-    const htmlData = cd.getData('text/html');
-
-    if (
-      this.copiedItems.length > 0 &&
-      ((this.lastCopiedSummary && plainText === this.lastCopiedSummary) ||
-        (!plainText.trim() && !extractImageUrlFromClipboardHtml(htmlData)))
-    ) {
-      e.preventDefault();
-      const pos = this.getInsertCanvasPoint(board);
-      this.pasteCopiedItemsAt(board, pos.x, pos.y);
-      return true;
-    }
-
-    const imgUrl = extractStandaloneImageUrl(plainText);
-    if (imgUrl) {
-      e.preventDefault();
-      try {
-        const noteImg = await noteImageFromUrl(imgUrl.url, imgUrl.alt);
-        const pos = this.getInsertCanvasPoint(board);
-        await this.insertImageItem(noteImg, pos.x, pos.y);
-        return true;
-      } catch (err) {
-        console.warn('Could not load pasted image URL onto board:', err);
-      }
-    }
-
-    const webUrl = extractStandaloneWebUrl(plainText);
-    if (webUrl) {
-      e.preventDefault();
-      const pos = this.getInsertCanvasPoint(board);
-      this.insertLinkItem(webUrl.url, webUrl.label, pos.x, pos.y);
-      return true;
-    }
-
-    if (!plainText.trim()) {
-      const htmlImg = extractImageUrlFromClipboardHtml(htmlData);
-      if (htmlImg) {
-        e.preventDefault();
-        try {
-          const noteImg = await noteImageFromUrl(htmlImg.url, htmlImg.alt);
-          const pos = this.getInsertCanvasPoint(board);
-          await this.insertImageItem(noteImg, pos.x, pos.y);
-          return true;
-        } catch {
-          return false;
-        }
-      }
-    }
-
-    // Plain text pasted onto canvas with no active text box -> create a text box at cursor!
-    if (plainText.trim()) {
-      e.preventDefault();
-      const pos = this.getInsertCanvasPoint(board);
-      this.createTextItem(pos.x, pos.y, plainText.trim(), false);
-      return true;
-    }
-
-    return false;
+    return handleBoardPasteEvent(e, board, this.getClipboardHost());
   }
 
   private closePopovers(): void {
     this.els.tagPopover.classList.add('hidden');
     this.els.imagePopover.classList.add('hidden');
     this.els.linkPopover.classList.add('hidden');
-    this.els.inkPopover.classList.add('hidden');
+    this.inkToolbar.closePopover();
     this.els.linkError.classList.add('hidden');
-  }
-
-  private renderSwatchButtonsHtml(includeAuto: boolean): string {
-    return INK_SWATCHES.filter((s) => includeAuto || s.color !== AUTO_INK_TOKEN)
-      .map(
-        (s) =>
-          `<button type="button" class="ink-swatch-btn" data-ink-color="${s.color}" title="${s.label}" aria-label="${s.label}"${
-            s.color === AUTO_INK_TOKEN ? '' : ` style="background:${s.color};"`
-          }></button>`
-      )
-      .join('');
-  }
-
-  private initInkPickers(): void {
-    this.els.inkColorSwatches.innerHTML = this.renderSwatchButtonsHtml(true);
-    this.els.selStrokeColorPicker.innerHTML = this.renderSwatchButtonsHtml(true);
-  }
-
-  private getActiveInkPreset(): InkPreset {
-    return this.inkPresets[this.activeInkSlot] ?? this.inkPresets[0]!;
-  }
-
-  private setActiveTool(tool: BoardActiveTool, slotIndex?: number): void {
-    if (slotIndex !== undefined && this.inkPresets[slotIndex]) {
-      this.activeInkSlot = slotIndex;
-    }
-    this.activeTool = tool;
-    this.updateDrawToolbarUi();
-  }
-
-  private updateDrawToolbarUi(): void {
-    this.els.toolSelectBtn.classList.toggle('active', this.activeTool === 'select');
-    this.els.toolLassoBtn.classList.toggle('active', this.activeTool === 'lasso');
-    this.els.toolEraserBtn.classList.toggle('active', this.activeTool === 'eraser');
-    this.els.touchDrawBtn.classList.toggle('active', this.touchDrawEnabled);
-
-    const presetBtns = [
-      this.els.penSlot0Btn,
-      this.els.penSlot1Btn,
-      this.els.penSlot2Btn,
-      this.els.highlighterSlotBtn,
-    ];
-    for (let i = 0; i < this.inkPresets.length; i++) {
-      const preset = this.inkPresets[i]!;
-      const btn = presetBtns[i];
-      if (!btn) continue;
-      const isActive =
-        (this.activeTool === 'pen' || this.activeTool === 'highlighter') &&
-        this.activeInkSlot === i;
-      btn.classList.toggle('active', isActive);
-      const swatchEl = btn.querySelector<HTMLElement>('[data-swatch-slot]');
-      if (swatchEl) {
-        swatchEl.setAttribute('data-ink-token', preset.color);
-        swatchEl.style.background = preset.color === AUTO_INK_TOKEN ? '' : preset.color;
-      }
-    }
-
-    this.els.viewport.setAttribute('data-tool', this.activeTool);
-  }
-
-  private openInkPopoverForSlot(slot: number): void {
-    const preset = this.inkPresets[slot];
-    if (!preset) return;
-    this.closePopovers();
-    this.editingInkSlot = slot;
-    this.els.inkPopoverTitle.textContent =
-      preset.tool === 'highlighter' ? 'Customize Highlighter' : `Customize Pen ${slot + 1}`;
-    this.els.inkWidthRange.min = preset.tool === 'highlighter' ? '10' : '1.5';
-    this.els.inkWidthRange.max = preset.tool === 'highlighter' ? '32' : '10';
-    this.els.inkWidthRange.step = preset.tool === 'highlighter' ? '2' : '0.5';
-    this.els.inkWidthRange.value = String(preset.width);
-    this.els.inkWidthLabel.textContent = `${preset.width}px`;
-
-    const quickWidths = preset.tool === 'highlighter' ? [12, 18, 24, 30] : [1.5, 3, 5, 8];
-    this.els.inkWidthQuick.innerHTML = quickWidths
-      .map(
-        (w) =>
-          `<button type="button" class="tool-btn${preset.width === w ? ' active' : ''}" data-ink-quick-w="${w}">${w}px</button>`
-      )
-      .join('');
-
-    this.els.inkColorSwatches.querySelectorAll<HTMLElement>('[data-ink-color]').forEach((btn) => {
-      btn.classList.toggle('active', btn.getAttribute('data-ink-color') === preset.color);
-    });
-    this.els.inkPopover.classList.remove('hidden');
   }
 
   private cycleBoardGridStyle(): void {
@@ -800,43 +607,12 @@ export class BoardEditorController {
     this.host.onBoardMutated(board, true);
   }
 
-  private getLiveCanvasCtx(board: Board): CanvasRenderingContext2D | null {
-    const canvas = this.els.inkLiveCanvas;
-    const w = this.els.viewport.clientWidth;
-    const h = this.els.viewport.clientHeight;
-    if (w <= 0 || h <= 0) return null;
-
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const targetW = Math.round(w * dpr);
-    const targetH = Math.round(h * dpr);
-    if (canvas.width !== targetW || canvas.height !== targetH) {
-      canvas.width = targetW;
-      canvas.height = targetH;
-    }
-    canvas.classList.remove('hidden');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const z = board.viewport.zoom;
-    ctx.setTransform(dpr * z, 0, 0, dpr * z, board.viewport.panX * dpr, board.viewport.panY * dpr);
-    return ctx;
-  }
-
   private clearLiveCanvas(): void {
-    const canvas = this.els.inkLiveCanvas;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-    canvas.classList.add('hidden');
+    this.liveCanvas.clear();
   }
 
   private renderLiveDrawOverlay(board: Board, pt?: { x: number; y: number }): void {
     if (!this.gesture) return;
-    const ctx = this.getLiveCanvasCtx(board);
-    if (!ctx) return;
 
     if (this.gesture.kind === 'draw') {
       const pts: StrokePoint[] = this.gesture.straightLinePt
@@ -845,8 +621,8 @@ export class BoardEditorController {
             [this.gesture.straightLinePt.x, this.gesture.straightLinePt.y, 0.58],
           ]
         : this.gesture.rawPoints;
-      renderStrokeToCanvas2d(
-        ctx,
+      this.liveCanvas.renderDrawStroke(
+        board,
         pts,
         this.gesture.tool,
         this.gesture.strokeColor,
@@ -854,30 +630,9 @@ export class BoardEditorController {
         this.gesture.opacity
       );
     } else if (this.gesture.kind === 'erase' && pt) {
-      const r = 10 / board.viewport.zoom;
-      ctx.save();
-      ctx.strokeStyle = resolveLiveInkColor(AUTO_INK_TOKEN);
-      ctx.lineWidth = 1.5 / board.viewport.zoom;
-      ctx.globalAlpha = 0.7;
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
+      this.liveCanvas.renderEraserCursor(board, pt);
     } else if (this.gesture.kind === 'lasso' && this.gesture.points.length >= 2) {
-      ctx.save();
-      ctx.strokeStyle = '#8ab4f8';
-      ctx.fillStyle = 'rgba(138, 180, 248, 0.1)';
-      ctx.lineWidth = 1.75 / board.viewport.zoom;
-      ctx.setLineDash([6 / board.viewport.zoom, 4 / board.viewport.zoom]);
-      ctx.beginPath();
-      ctx.moveTo(this.gesture.points[0]![0], this.gesture.points[0]![1]);
-      for (let i = 1; i < this.gesture.points.length; i++) {
-        ctx.lineTo(this.gesture.points[i]![0], this.gesture.points[i]![1]);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.restore();
+      this.liveCanvas.renderLassoPolygon(board, this.gesture.points);
     }
   }
 
@@ -1016,20 +771,15 @@ export class BoardEditorController {
   }
 
   private pushUndoSnapshot(board: Board): void {
-    this.undoStack.push(cloneItems(board.items));
-    if (this.undoStack.length > MAX_UNDO_HISTORY) {
-      this.undoStack.shift();
-    }
-    this.redoStack = [];
+    this.history.push(board.items);
     this.updateHistoryButtons();
   }
 
   private undo(): void {
     const board = this.host.getBoard();
-    if (!board || this.undoStack.length === 0) return;
-    const prev = this.undoStack.pop();
+    if (!board) return;
+    const prev = this.history.undo(board.items);
     if (!prev) return;
-    this.redoStack.push(cloneItems(board.items));
     board.items = prev;
     this.selectedIds.clear();
     this.editingItemId = null;
@@ -1042,10 +792,9 @@ export class BoardEditorController {
 
   private redo(): void {
     const board = this.host.getBoard();
-    if (!board || this.redoStack.length === 0) return;
-    const next = this.redoStack.pop();
+    if (!board) return;
+    const next = this.history.redo(board.items);
     if (!next) return;
-    this.undoStack.push(cloneItems(board.items));
     board.items = next;
     this.selectedIds.clear();
     this.editingItemId = null;
@@ -1057,8 +806,8 @@ export class BoardEditorController {
   }
 
   private updateHistoryButtons(): void {
-    this.els.undoBtn.disabled = this.undoStack.length === 0;
-    this.els.redoBtn.disabled = this.redoStack.length === 0;
+    this.els.undoBtn.disabled = !this.history.canUndo();
+    this.els.redoBtn.disabled = !this.history.canRedo();
   }
 
   private applyViewport(board: Board): void {
@@ -1243,6 +992,14 @@ export class BoardEditorController {
     this.updateSelectionOverlay();
   }
 
+  private syncSelectionClasses(): void {
+    this.els.itemsLayer.querySelectorAll<HTMLElement>('[data-board-item-id]').forEach((el) => {
+      const id = el.getAttribute('data-board-item-id');
+      el.classList.toggle('selected', Boolean(id && this.selectedIds.has(id)));
+    });
+    this.updateSelectionOverlay();
+  }
+
   private updateSelectionOverlay(): void {
     const board = this.host.getBoard();
     if (!board || this.selectedIds.size !== 1) {
@@ -1287,53 +1044,11 @@ export class BoardEditorController {
   private updateSelectionBar(): void {
     const board = this.host.getBoard();
     if (!board || this.selectedIds.size === 0) {
-      this.els.selectionBar.classList.add('hidden');
+      this.selectionBar.hide();
       return;
     }
-
     const selectedItems = board.items.filter((it) => this.selectedIds.has(it.id));
-    if (selectedItems.length === 0) {
-      this.els.selectionBar.classList.add('hidden');
-      return;
-    }
-
-    this.els.selectionBar.classList.remove('hidden');
-    const textItems = selectedItems.filter((it): it is BoardTextItem => it.type === 'text');
-    const strokeItems = selectedItems.filter((it): it is BoardStrokeItem => it.type === 'stroke');
-    const allStrokes = strokeItems.length > 0 && strokeItems.length === selectedItems.length;
-
-    if (textItems.length > 0 && textItems.length === selectedItems.length) {
-      this.els.selTextGroup.classList.remove('hidden');
-      const primary = textItems[0]!;
-      this.els.selFontSizeLabel.textContent = `${primary.fontSize || 15}px`;
-      this.els.selBoldBtn.classList.toggle('active', Boolean(primary.bold));
-      this.els.selItalicBtn.classList.toggle('active', Boolean(primary.italic));
-      this.els.selAlignLeftBtn.classList.toggle('active', (primary.align || 'left') === 'left');
-      this.els.selAlignCenterBtn.classList.toggle('active', primary.align === 'center');
-      this.els.selAlignRightBtn.classList.toggle('active', primary.align === 'right');
-    } else {
-      this.els.selTextGroup.classList.add('hidden');
-    }
-
-    if (allStrokes) {
-      this.els.selStrokeGroup.classList.remove('hidden');
-      this.els.selColorGroup.classList.add('hidden');
-      const primaryStroke = strokeItems[0]!;
-      this.els.selStrokeWidthLabel.textContent = `${primaryStroke.strokeWidth}px`;
-      this.els.selStrokeColorPicker
-        .querySelectorAll<HTMLElement>('[data-ink-color]')
-        .forEach((btn) => {
-          btn.classList.toggle('active', btn.getAttribute('data-ink-color') === primaryStroke.strokeColor);
-        });
-    } else {
-      this.els.selStrokeGroup.classList.add('hidden');
-      this.els.selColorGroup.classList.remove('hidden');
-    }
-
-    const first = selectedItems[0]!;
-    this.host.updateColorDots(this.els.selColorPicker, first.color || 'default');
-    this.els.selRotationLabel.textContent = `${normalizeAngleDeg(first.rotation || 0)}°`;
-    this.els.selMultiAlignGroup.classList.toggle('hidden', selectedItems.length < 2);
+    this.selectionBar.update(selectedItems);
   }
 
   private commitActiveTextEdit(preserveItemId?: string): void {
@@ -1500,22 +1215,8 @@ export class BoardEditorController {
 
   private alignSelectedItems(axis: 'left' | 'centerX' | 'right' | 'top' | 'centerY'): void {
     this.mutateSelectedItems((selected) => {
-      if (selected.length < 2) return;
       const entries = selected.map((item) => ({ item, aabb: this.getItemAabb(item) }));
-      const minX = Math.min(...entries.map((e) => e.aabb.minX));
-      const maxX = Math.max(...entries.map((e) => e.aabb.maxX));
-      const minY = Math.min(...entries.map((e) => e.aabb.minY));
-      const maxY = Math.max(...entries.map((e) => e.aabb.maxY));
-      const midX = (minX + maxX) / 2;
-      const midY = (minY + maxY) / 2;
-
-      for (const { item, aabb } of entries) {
-        if (axis === 'left') item.x += minX - aabb.minX;
-        if (axis === 'right') item.x += maxX - aabb.maxX;
-        if (axis === 'centerX') item.x += midX - (aabb.minX + aabb.maxX) / 2;
-        if (axis === 'top') item.y += minY - aabb.minY;
-        if (axis === 'centerY') item.y += midY - (aabb.minY + aabb.maxY) / 2;
-      }
+      alignBoardItemsInPlace(entries, axis);
     });
   }
 
@@ -1528,7 +1229,7 @@ export class BoardEditorController {
     let nextZ = this.nextZIndex(board);
     const nextSel = new Set<string>();
     for (const orig of selected) {
-      const copy = JSON.parse(JSON.stringify(orig)) as BoardItem;
+      const copy = structuredClone(orig);
       copy.id = createItemId();
       copy.x += 24;
       copy.y += 24;
@@ -1573,13 +1274,7 @@ export class BoardEditorController {
     if (selected.length === 0) return;
 
     this.copiedItems = cloneItems(selected);
-    const summaryParts = selected.map((it) => {
-      if (it.type === 'text') return it.content;
-      if (it.type === 'link') return it.url;
-      if (it.type === 'stroke') return '';
-      return it.image.sourceType === 'external' ? it.image.src : it.image.alt || '[Board Image]';
-    });
-    this.lastCopiedSummary = summaryParts.filter(Boolean).join('\n\n');
+    this.lastCopiedSummary = summarizeBoardItemsForClipboard(selected);
 
     if (this.lastCopiedSummary && navigator.clipboard?.writeText) {
       void navigator.clipboard.writeText(this.lastCopiedSummary).catch(() => {
@@ -1601,23 +1296,15 @@ export class BoardEditorController {
     this.commitActiveTextEdit();
     this.pushUndoSnapshot(board);
 
-    const minX = this.copiedItems.reduce((m, it) => Math.min(m, it.x), Infinity);
-    const minY = this.copiedItems.reduce((m, it) => Math.min(m, it.y), Infinity);
-    let dx = Math.round(targetX - minX);
-    let dy = Math.round(targetY - minY);
-    if (dx === 0 && dy === 0) {
-      dx = 24;
-      dy = 24;
-    }
-
-    let z = this.nextZIndex(board);
+    const copies = cloneItemsForPaste(
+      this.copiedItems,
+      targetX,
+      targetY,
+      this.nextZIndex(board),
+      (v) => this.snapValue(v)
+    );
     const nextSel = new Set<string>();
-    for (const src of this.copiedItems) {
-      const copy = JSON.parse(JSON.stringify(src)) as BoardItem;
-      copy.id = createItemId();
-      copy.x = this.snapValue(src.x + dx);
-      copy.y = this.snapValue(src.y + dy);
-      copy.zIndex = z++;
+    for (const copy of copies) {
       board.items.push(copy);
       nextSel.add(copy.id);
     }
@@ -1632,57 +1319,7 @@ export class BoardEditorController {
     const board = this.host.getBoard();
     if (!board) return;
     this.lastCanvasCursor = { x: Math.round(x), y: Math.round(y) };
-
-    if (navigator.clipboard?.read) {
-      try {
-        const clipItems = await navigator.clipboard.read();
-        for (const clip of clipItems) {
-          const imgMime = clip.types.find((t) => t.startsWith('image/'));
-          if (imgMime) {
-            const blob = await clip.getType(imgMime);
-            const noteImg = await noteImageFromFile(blob);
-            await this.insertImageItem(noteImg, x, y);
-            return;
-          }
-        }
-      } catch {
-        // Fall through to readText / internal clipboard
-      }
-    }
-
-    if (navigator.clipboard?.readText) {
-      try {
-        const text = await navigator.clipboard.readText();
-        if (this.copiedItems.length > 0 && text === this.lastCopiedSummary) {
-          this.pasteCopiedItemsAt(board, x, y);
-          return;
-        }
-        const imgUrl = extractStandaloneImageUrl(text);
-        if (imgUrl) {
-          const noteImg = await noteImageFromUrl(imgUrl.url, imgUrl.alt);
-          await this.insertImageItem(noteImg, x, y);
-          return;
-        }
-        const webUrl = extractStandaloneWebUrl(text);
-        if (webUrl) {
-          this.insertLinkItem(webUrl.url, webUrl.label, x, y);
-          return;
-        }
-        if (text.trim()) {
-          this.createTextItem(x, y, text.trim(), false);
-          return;
-        }
-      } catch {
-        // Fall through to internal clipboard / Ctrl+V hint
-      }
-    }
-
-    if (this.copiedItems.length > 0) {
-      this.pasteCopiedItemsAt(board, x, y);
-      return;
-    }
-
-    this.showTransientHint('Clipboard read is restricted here — press Ctrl+V to paste.');
+    await pasteFromBoardSystemClipboard(board, x, y, this.getClipboardHost());
   }
 
   private showTransientHint(message: string): void {
@@ -1803,86 +1440,24 @@ export class BoardEditorController {
     board: Board,
     pt: { x: number; y: number }
   ): void {
-    const entries: ContextMenuEntry[] = [];
-    if (this.activeTool !== 'select') {
-      entries.push(
-        {
-          type: 'action',
-          id: 'tool-select',
-          label: 'Switch to Select / Type Tool',
-          shortcut: 'Esc',
-          onSelect: () => this.setActiveTool('select'),
-        },
-        { type: 'divider' }
-      );
-    }
-
-    entries.push(
-      {
-        type: 'action',
-        id: 'new-text',
-        label: 'New Text Box Here',
-        shortcut: 'Click',
-        onSelect: () => this.createTextItem(pt.x, pt.y, '', true),
+    const entries = buildCanvasContextMenuEntries(board, pt, {
+      activeTool: this.inkToolbar.getActiveTool(),
+      snapToGrid: this.snapToGrid,
+      gridStyleLabel: GRID_STYLE_LABELS[board.gridStyle ?? 'dots'],
+      setSelectTool: () => this.inkToolbar.setActiveTool('select'),
+      createTextAt: (x, y) => this.createTextItem(x, y, '', true),
+      pasteAt: (x, y) => this.pasteFromContextMenu(x, y),
+      openImagePopover: () => this.openImagePopover(),
+      openLinkPopover: () => this.openLinkPopover(),
+      selectAll: () => this.selectAll(),
+      fitBoardToView: () => this.fitBoardToView(),
+      resetZoomAt: () => this.setZoomAroundClientPoint(1, clientX, clientY),
+      toggleSnapToGrid: () => {
+        this.snapToGrid = !this.snapToGrid;
+        this.els.snapBtn.classList.toggle('active', this.snapToGrid);
       },
-      {
-        type: 'action',
-        id: 'paste',
-        label: 'Paste',
-        shortcut: 'Ctrl+V',
-        onSelect: () => this.pasteFromContextMenu(pt.x, pt.y),
-      },
-      {
-        type: 'action',
-        id: 'add-image',
-        label: 'Add Image...',
-        onSelect: () => this.openImagePopover(),
-      },
-      {
-        type: 'action',
-        id: 'add-link',
-        label: 'Add Link...',
-        onSelect: () => this.openLinkPopover(),
-      },
-      { type: 'divider' },
-      {
-        type: 'action',
-        id: 'select-all',
-        label: 'Select All Items',
-        shortcut: 'Ctrl+A',
-        disabled: board.items.length === 0,
-        onSelect: () => this.selectAll(),
-      },
-      {
-        type: 'action',
-        id: 'fit-board',
-        label: 'Fit Contents to View',
-        onSelect: () => this.fitBoardToView(),
-      },
-      {
-        type: 'action',
-        id: 'zoom-reset',
-        label: 'Reset Zoom (100%)',
-        onSelect: () => this.setZoomAroundClientPoint(1, clientX, clientY),
-      },
-      {
-        type: 'action',
-        id: 'toggle-grid',
-        label: 'Snap to Grid',
-        checked: this.snapToGrid,
-        onSelect: () => {
-          this.snapToGrid = !this.snapToGrid;
-          this.els.snapBtn.classList.toggle('active', this.snapToGrid);
-        },
-      },
-      {
-        type: 'action',
-        id: 'cycle-paper',
-        label: `Paper: ${GRID_STYLE_LABELS[board.gridStyle ?? 'dots']} (Switch)`,
-        onSelect: () => this.cycleBoardGridStyle(),
-      }
-    );
-
+      cyclePaperStyle: () => this.cycleBoardGridStyle(),
+    });
     this.host.contextMenu.open(clientX, clientY, entries);
   }
 
@@ -1890,240 +1465,48 @@ export class BoardEditorController {
     const selected = board.items.filter((it) => this.selectedIds.has(it.id));
     if (selected.length === 0) return;
 
-    const single = selected.length === 1 ? selected[0] : undefined;
-    const allText = selected.every((it): it is BoardTextItem => it.type === 'text');
-    const allStrokes = selected.every((it): it is BoardStrokeItem => it.type === 'stroke');
-    const entries: ContextMenuEntry[] = [];
-
-    if (single?.type === 'text') {
-      entries.push({
-        type: 'action',
-        id: 'edit-text',
-        label: 'Edit Text',
-        shortcut: 'Click',
-        onSelect: () => {
-          this.editingItemId = single.id;
-          this.renderItems();
-          this.updateSelectionBar();
-        },
-      });
-    } else if (single?.type === 'image') {
-      entries.push({
-        type: 'action',
-        id: 'view-image',
-        label: 'View Full Size',
-        shortcut: 'DblClick',
-        onSelect: () => this.host.onOpenLightbox(single.image.src),
-      });
-    } else if (single?.type === 'link') {
-      entries.push(
-        {
-          type: 'action',
-          id: 'open-link',
-          label: 'Open Link in New Tab',
-          onSelect: () => {
-            window.open(single.url, '_blank', 'noopener,noreferrer');
-          },
-        },
-        {
-          type: 'action',
-          id: 'copy-link-url',
-          label: 'Copy URL',
-          onSelect: () => {
-            if (navigator.clipboard?.writeText) {
-              void navigator.clipboard.writeText(single.url).catch(() => {});
-            }
-            this.showTransientHint('Copied URL to clipboard.');
-          },
-        },
-        {
-          type: 'action',
-          id: 'rename-link',
-          label: 'Rename Link Label',
-          onSelect: () => {
-            this.editingLinkLabelId = single.id;
-            this.renderItems();
-            this.updateSelectionBar();
-          },
-        }
-      );
-    }
-
-    if (allText) {
-      const firstText = selected[0] as BoardTextItem;
-      const align = firstText.align || 'left';
-      entries.push(
-        {
-          type: 'action',
-          id: 'toggle-bold',
-          label: 'Bold',
-          checked: Boolean(firstText.bold),
-          onSelect: () => this.toggleSelectedBold(),
-        },
-        {
-          type: 'action',
-          id: 'toggle-italic',
-          label: 'Italic',
-          checked: Boolean(firstText.italic),
-          onSelect: () => this.toggleSelectedItalic(),
-        },
-        {
-          type: 'action',
-          id: 'align-left',
-          label: 'Align Text Left',
-          checked: align === 'left',
-          onSelect: () => this.setSelectedTextAlign('left'),
-        },
-        {
-          type: 'action',
-          id: 'align-center',
-          label: 'Align Text Center',
-          checked: align === 'center',
-          onSelect: () => this.setSelectedTextAlign('center'),
-        },
-        {
-          type: 'action',
-          id: 'align-right',
-          label: 'Align Text Right',
-          checked: align === 'right',
-          onSelect: () => this.setSelectedTextAlign('right'),
-        }
-      );
-    }
-
-    if (allStrokes) {
-      entries.push(
-        {
-          type: 'action',
-          id: 'stroke-thicker',
-          label: 'Thicker Ink',
-          onSelect: () => this.adjustSelectedStrokeWidth(1),
-        },
-        {
-          type: 'action',
-          id: 'stroke-thinner',
-          label: 'Thinner Ink',
-          onSelect: () => this.adjustSelectedStrokeWidth(-1),
-        }
-      );
-    }
-
-    if (entries.length > 0) {
-      entries.push({ type: 'divider' });
-    }
-
-    entries.push(
-      {
-        type: 'action',
-        id: 'cut',
-        label: 'Cut',
-        shortcut: 'Ctrl+X',
-        onSelect: () => this.cutSelected(),
+    const entries = buildItemContextMenuEntries(selected, {
+      editText: (id) => {
+        this.editingItemId = id;
+        this.renderItems();
+        this.updateSelectionBar();
       },
-      {
-        type: 'action',
-        id: 'copy',
-        label: 'Copy',
-        shortcut: 'Ctrl+C',
-        onSelect: () => this.copySelected(),
+      openLightbox: (src) => this.host.onOpenLightbox(src),
+      renameLink: (id) => {
+        this.editingLinkLabelId = id;
+        this.renderItems();
+        this.updateSelectionBar();
       },
-      {
-        type: 'action',
-        id: 'duplicate',
-        label: 'Duplicate',
-        shortcut: 'Ctrl+D',
-        onSelect: () => this.duplicateSelected(),
-      }
-    );
-
-    if (!allStrokes) {
-      entries.push(
-        { type: 'divider' },
-        {
-          type: 'color-row',
-          label: 'Tint',
-          activeColor: selected[0]?.color || 'default',
-          onSelectColor: (c) => this.setSelectedColor(c),
+      copyUrl: (url) => {
+        if (navigator.clipboard?.writeText) {
+          void navigator.clipboard.writeText(url).catch(() => {});
         }
-      );
-    }
-
-    entries.push(
-      { type: 'divider' },
-      {
-        type: 'action',
-        id: 'bring-front',
-        label: 'Bring to Front',
-        onSelect: () => this.bringSelectedToFront(),
+        this.showTransientHint('Copied URL to clipboard.');
       },
-      {
-        type: 'action',
-        id: 'send-back',
-        label: 'Send to Back',
-        onSelect: () => this.sendSelectedToBack(),
-      },
-      {
-        type: 'action',
-        id: 'rotate-90',
-        label: 'Rotate +90°',
-        onSelect: () => this.rotateSelectedBy(90),
-      },
-      {
-        type: 'action',
-        id: 'rotate-reset',
-        label: 'Reset Rotation (0°)',
-        disabled: selected.every((it) => !it.rotation),
-        onSelect: () => this.resetSelectedRotation(),
-      }
-    );
-
-    if (selected.length >= 2) {
-      entries.push(
-        { type: 'divider' },
-        { type: 'label', text: 'Align Selection' },
-        {
-          type: 'action',
-          id: 'multi-left',
-          label: 'Align Left Edges',
-          onSelect: () => this.alignSelectedItems('left'),
-        },
-        {
-          type: 'action',
-          id: 'multi-cx',
-          label: 'Align Horizontal Centers',
-          onSelect: () => this.alignSelectedItems('centerX'),
-        },
-        {
-          type: 'action',
-          id: 'multi-top',
-          label: 'Align Top Edges',
-          onSelect: () => this.alignSelectedItems('top'),
-        },
-        {
-          type: 'action',
-          id: 'multi-cy',
-          label: 'Align Vertical Centers',
-          onSelect: () => this.alignSelectedItems('centerY'),
-        }
-      );
-    }
-
-    entries.push(
-      { type: 'divider' },
-      {
-        type: 'action',
-        id: 'delete-items',
-        label: selected.length > 1 ? `Delete ${selected.length} Items` : 'Delete',
-        shortcut: 'Del',
-        danger: true,
-        onSelect: () => this.deleteSelected(),
-      }
-    );
-
+      toggleBold: () => this.toggleSelectedBold(),
+      toggleItalic: () => this.toggleSelectedItalic(),
+      setTextAlign: (align) => this.setSelectedTextAlign(align),
+      adjustStrokeWidth: (delta) => this.adjustSelectedStrokeWidth(delta),
+      cut: () => this.cutSelected(),
+      copy: () => this.copySelected(),
+      duplicate: () => this.duplicateSelected(),
+      setColor: (c) => this.setSelectedColor(c),
+      bringToFront: () => this.bringSelectedToFront(),
+      sendToBack: () => this.sendSelectedToBack(),
+      rotateBy: (deg) => this.rotateSelectedBy(deg),
+      resetRotation: () => this.resetSelectedRotation(),
+      align: (axis) => this.alignSelectedItems(axis),
+      deleteSelected: () => this.deleteSelected(),
+    });
     this.host.contextMenu.open(clientX, clientY, entries);
   }
 
   private bindEvents(): void {
+    this.bindTopToolbarEvents();
+    this.bindCanvasEvents();
+  }
+
+  private bindTopToolbarEvents(): void {
     // Top Toolbar Events
     this.els.closeBtn.addEventListener('click', () => {
       this.close();
@@ -2328,95 +1711,6 @@ export class BoardEditorController {
       }
     });
 
-    this.els.drawRack.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const target = e.target as HTMLElement | null;
-      const toolBtn = target?.closest<HTMLElement>('[data-board-tool]');
-      if (toolBtn) {
-        const nextTool = toolBtn.getAttribute('data-board-tool') as BoardActiveTool | null;
-        if (nextTool === 'select' || nextTool === 'lasso' || nextTool === 'eraser') {
-          this.commitActiveTextEdit();
-          this.renderItems();
-          this.closePopovers();
-          this.setActiveTool(nextTool);
-        }
-        return;
-      }
-
-      const slotBtn = target?.closest<HTMLElement>('[data-ink-slot]');
-      if (slotBtn) {
-        const slot = Number(slotBtn.getAttribute('data-ink-slot'));
-        const preset = this.inkPresets[slot];
-        if (!preset) return;
-        const alreadyActive =
-          (this.activeTool === 'pen' || this.activeTool === 'highlighter') &&
-          this.activeInkSlot === slot;
-        if (alreadyActive) {
-          if (this.els.inkPopover.classList.contains('hidden')) {
-            this.openInkPopoverForSlot(slot);
-          } else {
-            this.closePopovers();
-          }
-        } else {
-          this.commitActiveTextEdit();
-          this.renderItems();
-          this.closePopovers();
-          this.setActiveTool(preset.tool, slot);
-        }
-      }
-    });
-
-    this.els.touchDrawBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.touchDrawEnabled = !this.touchDrawEnabled;
-      this.updateDrawToolbarUi();
-      this.showTransientHint(
-        this.touchDrawEnabled
-          ? 'Touch Draw ON: Single finger draws ink.'
-          : 'Touch Draw OFF: Single finger pans; use stylus or Pen tool to draw.'
-      );
-    });
-
-    this.els.inkWidthRange.addEventListener('input', () => {
-      const preset = this.inkPresets[this.editingInkSlot];
-      if (!preset) return;
-      const val = parseFloat(this.els.inkWidthRange.value);
-      if (Number.isFinite(val)) {
-        preset.width = val;
-        this.els.inkWidthLabel.textContent = `${val}px`;
-        this.els.inkWidthQuick.querySelectorAll<HTMLElement>('[data-ink-quick-w]').forEach((b) => {
-          b.classList.toggle('active', parseFloat(b.getAttribute('data-ink-quick-w') || '') === val);
-        });
-      }
-    });
-
-    this.els.inkWidthQuick.addEventListener('click', (e) => {
-      const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-ink-quick-w]');
-      const preset = this.inkPresets[this.editingInkSlot];
-      if (!btn || !preset) return;
-      const val = parseFloat(btn.getAttribute('data-ink-quick-w') || '');
-      if (Number.isFinite(val)) {
-        preset.width = val;
-        this.els.inkWidthRange.value = String(val);
-        this.els.inkWidthLabel.textContent = `${val}px`;
-        this.els.inkWidthQuick.querySelectorAll<HTMLElement>('[data-ink-quick-w]').forEach((b) => {
-          b.classList.toggle('active', b === btn);
-        });
-      }
-    });
-
-    this.els.inkColorSwatches.addEventListener('click', (e) => {
-      const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-ink-color]');
-      const preset = this.inkPresets[this.editingInkSlot];
-      const color = btn?.getAttribute('data-ink-color');
-      if (!btn || !preset || !color) return;
-      preset.color = color;
-      this.els.inkColorSwatches.querySelectorAll<HTMLElement>('[data-ink-color]').forEach((el) => {
-        el.classList.toggle('active', el === btn);
-      });
-      this.updateDrawToolbarUi();
-    });
-
     this.els.undoBtn.addEventListener('click', () => this.undo());
     this.els.redoBtn.addEventListener('click', () => this.redo());
     this.els.snapBtn.addEventListener('click', () => {
@@ -2451,70 +1745,9 @@ export class BoardEditorController {
       this.els.backdrop.classList.add('hidden');
       this.host.onDeleteBoard(id);
     });
+  }
 
-    // Contextual Selection Bar Events
-    this.els.selFontDecBtn.addEventListener('click', () =>
-      this.mutateSelectedTextItems((it) => {
-        it.fontSize = Math.max(11, (it.fontSize || 15) - 2);
-      })
-    );
-    this.els.selFontIncBtn.addEventListener('click', () =>
-      this.mutateSelectedTextItems((it) => {
-        it.fontSize = Math.min(48, (it.fontSize || 15) + 2);
-      })
-    );
-    this.els.selBoldBtn.addEventListener('click', () => this.toggleSelectedBold());
-    this.els.selItalicBtn.addEventListener('click', () => this.toggleSelectedItalic());
-
-    this.els.selAlignLeftBtn.addEventListener('click', () => this.setSelectedTextAlign('left'));
-    this.els.selAlignCenterBtn.addEventListener('click', () => this.setSelectedTextAlign('center'));
-    this.els.selAlignRightBtn.addEventListener('click', () => this.setSelectedTextAlign('right'));
-
-    this.els.selStrokeDecBtn.addEventListener('click', () => this.adjustSelectedStrokeWidth(-1));
-    this.els.selStrokeIncBtn.addEventListener('click', () => this.adjustSelectedStrokeWidth(1));
-    this.els.selStrokeColorPicker.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement | null;
-      const btn = target?.closest<HTMLElement>('[data-ink-color]');
-      const color = btn?.getAttribute('data-ink-color');
-      if (color) this.setSelectedStrokeColor(color);
-    });
-
-    this.els.selColorPicker.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement | null;
-      const dot = target?.closest('.color-dot');
-      if (!dot) return;
-      this.setSelectedColor((dot.getAttribute('data-color') ?? 'default') as NoteColor);
-    });
-
-    this.els.selRotateLeftBtn.addEventListener('click', () => this.rotateSelectedBy(-15));
-    this.els.selRotateRightBtn.addEventListener('click', () => this.rotateSelectedBy(15));
-    this.els.selRotationLabel.addEventListener('click', () => this.resetSelectedRotation());
-
-    this.els.selMultiAlignGroup.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement | null;
-      const btn = target?.closest<HTMLElement>('[data-board-align]');
-      const axis = btn?.getAttribute('data-board-align') as
-        | 'left'
-        | 'centerX'
-        | 'right'
-        | 'top'
-        | 'centerY'
-        | null;
-      if (axis) this.alignSelectedItems(axis);
-    });
-
-    this.els.selBringFrontBtn.addEventListener('click', () => this.bringSelectedToFront());
-    this.els.selSendBackBtn.addEventListener('click', () => this.sendSelectedToBack());
-    this.els.selDuplicateBtn.addEventListener('click', () => this.duplicateSelected());
-    this.els.selDeleteBtn.addEventListener('click', () => this.deleteSelected());
-
-    // Prevent toolbar buttons from stealing focus/blurring active text editing
-    this.els.selectionBar.addEventListener('mousedown', (e) => {
-      if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
-        e.preventDefault();
-      }
-    });
-
+  private bindCanvasEvents(): void {
     this.els.itemsLayer.addEventListener('click', (e) => {
       const target = e.target as HTMLElement | null;
       const allowBtn = target?.closest<HTMLElement>('[data-allow-external-url]');
@@ -2632,13 +1865,7 @@ export class BoardEditorController {
       ) {
         this.els.linkPopover.classList.add('hidden');
       }
-      if (
-        target &&
-        !this.els.inkPopover.contains(target) &&
-        !this.els.drawRack.contains(target)
-      ) {
-        this.els.inkPopover.classList.add('hidden');
-      }
+      this.inkToolbar.closePopoverIfOutside(target);
     });
 
     // Drag & Drop Image Files onto Board Canvas
@@ -2687,680 +1914,10 @@ export class BoardEditorController {
     );
 
     // Pointer Interactions (Pan, Pinch, Draw, Erase, Lasso, Handle Resize/Rotate, Item Drag, Marquee, Click-Anywhere Text)
-    this.els.viewport.addEventListener('pointerdown', (e) => {
-      const board = this.host.getBoard();
-      if (!board) return;
-
-      const target = e.target as HTMLElement | null;
-      if (e.pointerType === 'touch') {
-        this.activeTouchPoints.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
-        if (this.activeTouchPoints.size >= 2) {
-          this.clearLongPressTimer();
-          if (
-            this.gesture &&
-            (this.gesture.kind === 'draw' ||
-              this.gesture.kind === 'lasso' ||
-              this.gesture.kind === 'marquee' ||
-              this.gesture.kind === 'pan' ||
-              this.gesture.kind === 'move')
-          ) {
-            if (this.els.viewport.hasPointerCapture(this.gesture.pointerId)) {
-              this.els.viewport.releasePointerCapture(this.gesture.pointerId);
-            }
-            this.clearLiveCanvas();
-            this.els.marqueeRect.classList.add('hidden');
-            this.els.viewport.classList.remove('panning');
-            this.gesture = null;
-          }
-
-          if (this.activeTouchPoints.size === 2) {
-            const entries = Array.from(this.activeTouchPoints.entries());
-            const [id1, p1] = entries[0]!;
-            const [id2, p2] = entries[1]!;
-            const rect = this.els.viewport.getBoundingClientRect();
-            const midX = (p1.clientX + p2.clientX) * 0.5;
-            const midY = (p1.clientY + p2.clientY) * 0.5;
-            const dist = Math.max(12, Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY));
-            this.gesture = {
-              kind: 'pinch',
-              pointerIds: [id1, id2],
-              startDist: dist,
-              startCanvasMidX: (midX - rect.left - board.viewport.panX) / board.viewport.zoom,
-              startCanvasMidY: (midY - rect.top - board.viewport.panY) / board.viewport.zoom,
-              startZoom: board.viewport.zoom,
-            };
-          }
-          return;
-        }
-      }
-
-      if (target?.closest('a') && e.pointerType !== 'pen' && this.activeTool === 'select') {
-        return;
-      }
-
-      if (e.pointerType === 'touch' && this.activeTool === 'select' && !this.host.isLocked()) {
-        this.clearLongPressTimer();
-        const touchClientX = e.clientX;
-        const touchClientY = e.clientY;
-        const touchTarget = target;
-        const touchPointerId = e.pointerId;
-        const timerId = window.setTimeout(() => {
-          const activeBoard = this.host.getBoard();
-          if (!activeBoard || !this.longPressState || this.longPressState.pointerId !== touchPointerId) {
-            return;
-          }
-          this.longPressState = null;
-          if (
-            this.gesture &&
-            this.gesture.kind !== 'pinch' &&
-            this.gesture.pointerId === touchPointerId
-          ) {
-            if (this.els.viewport.hasPointerCapture(touchPointerId)) {
-              this.els.viewport.releasePointerCapture(touchPointerId);
-            }
-            this.els.viewport.classList.remove('panning');
-            this.gesture = null;
-          }
-          this.openContextMenuForTarget(activeBoard, touchClientX, touchClientY, touchTarget);
-        }, 520);
-        this.longPressState = {
-          timerId,
-          pointerId: e.pointerId,
-          startClientX: e.clientX,
-          startClientY: e.clientY,
-        };
-      }
-
-      // Middle click or Space+Left click -> Pan
-      if (e.button === 1 || (e.button === 0 && this.spacePressed)) {
-        e.preventDefault();
-        this.els.viewport.setPointerCapture(e.pointerId);
-        this.els.viewport.classList.add('panning');
-        this.gesture = {
-          kind: 'pan',
-          pointerId: e.pointerId,
-          startClientX: e.clientX,
-          startClientY: e.clientY,
-          startPanX: board.viewport.panX,
-          startPanY: board.viewport.panY,
-        };
-        return;
-      }
-
-      // Hardware stylus barrel eraser OR Eraser tool -> Erase strokes under pointer
-      const isBarrelEraser =
-        e.pointerType === 'pen' && (e.button === 5 || (e.buttons & 32) !== 0);
-      if (isBarrelEraser || (e.button === 0 && this.activeTool === 'eraser')) {
-        e.preventDefault();
-        this.commitActiveTextEdit();
-        this.els.viewport.setPointerCapture(e.pointerId);
-        const pt = this.clientToCanvas(e.clientX, e.clientY, board);
-        const eraseGesture: Extract<ActiveGesture, { kind: 'erase' }> = {
-          kind: 'erase',
-          pointerId: e.pointerId,
-          prevCanvasPt: pt,
-          erasedAny: false,
-          undoPushed: false,
-        };
-        this.gesture = eraseGesture;
-        this.eraseStrokesAlongSegment(board, pt, pt, eraseGesture);
-        this.renderLiveDrawOverlay(board, pt);
-        return;
-      }
-
-      if (e.button !== 0) return;
-
-      // 1. Handle on single selected item
-      const handleEl = target?.closest<HTMLElement>('[data-handle]');
-      if (handleEl && this.selectedIds.size === 1) {
-        const handle = handleEl.getAttribute('data-handle') as HandleDir | null;
-        const singleId = Array.from(this.selectedIds)[0];
-        const item = board.items.find((it) => it.id === singleId);
-        if (handle && item) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (this.editingItemId || this.editingLinkLabelId) {
-            this.commitActiveTextEdit(item.id);
-            this.renderItems();
-          }
-          this.els.viewport.setPointerCapture(e.pointerId);
-          const pt = this.clientToCanvas(e.clientX, e.clientY, board);
-          const m = this.getItemMetrics(item);
-
-          if (handle === 'rotate') {
-            const cx = m.x + m.w / 2;
-            const cy = m.y + m.h / 2;
-            this.gesture = {
-              kind: 'rotate',
-              pointerId: e.pointerId,
-              itemId: item.id,
-              centerX: cx,
-              centerY: cy,
-              startAngleRad: Math.atan2(pt.y - cy, pt.x - cx),
-              startRotationDeg: m.rotation,
-              moved: false,
-            };
-          } else {
-            this.gesture = {
-              kind: 'resize',
-              pointerId: e.pointerId,
-              itemId: item.id,
-              handle,
-              startCanvasX: pt.x,
-              startCanvasY: pt.y,
-              startMetrics: m,
-              aspectRatio: m.w / Math.max(1, m.h),
-              isImage: item.type === 'image' || item.type === 'stroke',
-              moved: false,
-            };
-          }
-          return;
-        }
-      }
-
-      // 1b. Armed Lasso / Pen / Highlighter OR auto-detected stylus Pen input
-      const isPenInput = e.pointerType === 'pen';
-      const isTouchDraw = e.pointerType === 'touch' && this.touchDrawEnabled;
-      const isArmedDrawTool = this.activeTool === 'pen' || this.activeTool === 'highlighter';
-      if (this.activeTool === 'lasso') {
-        e.preventDefault();
-        this.commitActiveTextEdit();
-        this.els.viewport.focus();
-        this.els.viewport.setPointerCapture(e.pointerId);
-        const pt = this.clientToCanvas(e.clientX, e.clientY, board);
-        this.gesture = {
-          kind: 'lasso',
-          pointerId: e.pointerId,
-          points: [[pt.x, pt.y]],
-          additive: e.shiftKey,
-        };
-        this.renderLiveDrawOverlay(board);
-        return;
-      }
-
-      if (isArmedDrawTool || isPenInput || isTouchDraw) {
-        e.preventDefault();
-        this.commitActiveTextEdit();
-        this.els.viewport.focus();
-        this.els.viewport.setPointerCapture(e.pointerId);
-        const pt = this.clientToCanvas(e.clientX, e.clientY, board);
-        const preset = this.getActiveInkPreset();
-        const initialPressure = computePointPressure(e.pressure, e.pointerType, 0, 0, 16, 0.55);
-        this.gesture = {
-          kind: 'draw',
-          pointerId: e.pointerId,
-          pointerType: e.pointerType,
-          tool: preset.tool,
-          strokeColor: preset.color,
-          strokeWidth: preset.width,
-          opacity: preset.opacity,
-          rawPoints: [[pt.x, pt.y, initialPressure]],
-          lastTime: performance.now(),
-          lastPressure: initialPressure,
-          startPt: { x: pt.x, y: pt.y },
-          straightLinePt: null,
-        };
-        this.renderLiveDrawOverlay(board);
-        return;
-      }
-
-      // 2. Clicking inside an actively edited textarea or link input
-      if (
-        (target instanceof HTMLTextAreaElement && target.hasAttribute('data-board-textarea')) ||
-        (target instanceof HTMLInputElement && target.hasAttribute('data-board-link-input'))
-      ) {
-        return;
-      }
-
-      // 3. Clicking an existing board item (border selects/moves without entering edit; text interior enters edit on click)
-      const itemEl = target?.closest<HTMLElement>('[data-board-item-id]');
-      if (itemEl) {
-        const itemId = itemEl.getAttribute('data-board-item-id');
-        const item = board.items.find((it) => it.id === itemId);
-        if (item) {
-          e.preventDefault();
-          const clickedTextInterior = Boolean(
-            target?.closest('.board-text-view, .board-text-input')
-          );
-          const wasEditingThisItem = this.editingItemId === item.id;
-
-          this.commitActiveTextEdit(item.id);
-
-          if (e.shiftKey) {
-            if (this.selectedIds.has(item.id)) {
-              this.selectedIds.delete(item.id);
-            } else {
-              this.selectedIds.add(item.id);
-            }
-          } else if (!this.selectedIds.has(item.id)) {
-            this.selectedIds = new Set([item.id]);
-          }
-
-          this.renderItems();
-          this.updateSelectionBar();
-
-          if (this.selectedIds.has(item.id)) {
-            this.els.viewport.setPointerCapture(e.pointerId);
-            const pt = this.clientToCanvas(e.clientX, e.clientY, board);
-            const snapshots = new Map<string, { x: number; y: number }>();
-            for (const selId of this.selectedIds) {
-              const selItem = board.items.find((it) => it.id === selId);
-              if (selItem) snapshots.set(selId, { x: selItem.x, y: selItem.y });
-            }
-            this.gesture = {
-              kind: 'move',
-              pointerId: e.pointerId,
-              startCanvasX: pt.x,
-              startCanvasY: pt.y,
-              moved: false,
-              enterEditOnClick:
-                item.type === 'text' &&
-                clickedTextInterior &&
-                !wasEditingThisItem &&
-                !e.shiftKey &&
-                this.selectedIds.size === 1,
-              snapshots,
-            };
-          }
-          return;
-        }
-      }
-
-      // 4. Empty canvas click/drag -> touch pan (when Touch Draw is off) or marquee / click-to-type
-      e.preventDefault();
-      this.els.viewport.focus();
-      this.els.viewport.setPointerCapture(e.pointerId);
-      if (e.pointerType === 'touch' && !this.touchDrawEnabled) {
-        this.els.viewport.classList.add('panning');
-        this.gesture = {
-          kind: 'pan',
-          pointerId: e.pointerId,
-          startClientX: e.clientX,
-          startClientY: e.clientY,
-          startPanX: board.viewport.panX,
-          startPanY: board.viewport.panY,
-        };
-        return;
-      }
-
-      const pt = this.clientToCanvas(e.clientX, e.clientY, board);
-      this.lastCanvasCursor = { x: pt.x, y: pt.y };
-      this.gesture = {
-        kind: 'marquee',
-        pointerId: e.pointerId,
-        startClientX: e.clientX,
-        startClientY: e.clientY,
-        startCanvasX: pt.x,
-        startCanvasY: pt.y,
-        additive: e.shiftKey,
-        moved: false,
-      };
-    });
-
-    this.els.viewport.addEventListener('pointermove', (e) => {
-      const board = this.host.getBoard();
-      if (!board) return;
-
-      if (e.pointerType === 'touch' && this.activeTouchPoints.has(e.pointerId)) {
-        this.activeTouchPoints.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
-      }
-
-      if (this.longPressState && this.longPressState.pointerId === e.pointerId) {
-        if (
-          Math.hypot(
-            e.clientX - this.longPressState.startClientX,
-            e.clientY - this.longPressState.startClientY
-          ) > 6
-        ) {
-          this.clearLongPressTimer();
-        }
-      }
-
-      if (this.gesture?.kind === 'pinch') {
-        if (!this.gesture.pointerIds.includes(e.pointerId)) return;
-        const p1 = this.activeTouchPoints.get(this.gesture.pointerIds[0]);
-        const p2 = this.activeTouchPoints.get(this.gesture.pointerIds[1]);
-        if (!p1 || !p2) return;
-
-        const rect = this.els.viewport.getBoundingClientRect();
-        const midX = (p1.clientX + p2.clientX) * 0.5;
-        const midY = (p1.clientY + p2.clientY) * 0.5;
-        const dist = Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY);
-        const nextZoom = clamp(
-          this.gesture.startZoom * (dist / this.gesture.startDist),
-          MIN_ZOOM,
-          MAX_ZOOM
-        );
-        board.viewport.zoom = nextZoom;
-        board.viewport.panX = midX - rect.left - this.gesture.startCanvasMidX * nextZoom;
-        board.viewport.panY = midY - rect.top - this.gesture.startCanvasMidY * nextZoom;
-        this.applyViewport(board);
-        return;
-      }
-
-      if (!this.gesture || this.gesture.pointerId !== e.pointerId) return;
-
-      if (this.gesture.kind === 'pan') {
-        board.viewport.panX = this.gesture.startPanX + (e.clientX - this.gesture.startClientX);
-        board.viewport.panY = this.gesture.startPanY + (e.clientY - this.gesture.startClientY);
-        this.applyViewport(board);
-        return;
-      }
-
-      const pt = this.clientToCanvas(e.clientX, e.clientY, board);
-
-      if (this.gesture.kind === 'draw') {
-        if (e.shiftKey) {
-          this.gesture.straightLinePt = { x: pt.x, y: pt.y };
-          this.renderLiveDrawOverlay(board);
-          return;
-        }
-        this.gesture.straightLinePt = null;
-        const coalesced =
-          typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
-        const samples = coalesced.length > 0 ? coalesced : [e];
-        const minDist = 0.65 / Math.max(0.25, board.viewport.zoom);
-        for (const ev of samples) {
-          const evPt = this.clientToCanvas(ev.clientX, ev.clientY, board);
-          const last = this.gesture.rawPoints[this.gesture.rawPoints.length - 1]!;
-          const dx = evPt.x - last[0];
-          const dy = evPt.y - last[1];
-          if (Math.hypot(dx, dy) < minDist) continue;
-          const now = performance.now();
-          const dt = Math.max(1, now - this.gesture.lastTime);
-          const pressure = computePointPressure(
-            ev.pressure,
-            this.gesture.pointerType,
-            dx,
-            dy,
-            dt,
-            this.gesture.lastPressure
-          );
-          this.gesture.lastTime = now;
-          this.gesture.lastPressure = pressure;
-          this.gesture.rawPoints.push([evPt.x, evPt.y, pressure]);
-        }
-        this.renderLiveDrawOverlay(board);
-        return;
-      }
-
-      if (this.gesture.kind === 'erase') {
-        this.eraseStrokesAlongSegment(board, this.gesture.prevCanvasPt, pt, this.gesture);
-        this.gesture.prevCanvasPt = pt;
-        this.renderLiveDrawOverlay(board, pt);
-        return;
-      }
-
-      if (this.gesture.kind === 'lasso') {
-        const last = this.gesture.points[this.gesture.points.length - 1];
-        if (!last || Math.hypot(pt.x - last[0], pt.y - last[1]) >= 3 / Math.max(0.25, board.viewport.zoom)) {
-          this.gesture.points.push([pt.x, pt.y]);
-        }
-        this.renderLiveDrawOverlay(board);
-        return;
-      }
-
-      if (this.gesture.kind === 'move') {
-        const dx = pt.x - this.gesture.startCanvasX;
-        const dy = pt.y - this.gesture.startCanvasY;
-        if (!this.gesture.moved && Math.hypot(dx, dy) > 3) {
-          this.gesture.moved = true;
-          this.pushUndoSnapshot(board);
-        }
-        if (!this.gesture.moved) return;
-
-        let adjDx = dx;
-        let adjDy = dy;
-        if (e.shiftKey) {
-          if (Math.abs(dx) > Math.abs(dy)) adjDy = 0;
-          else adjDx = 0;
-        }
-
-        for (const [id, orig] of this.gesture.snapshots.entries()) {
-          const item = board.items.find((it) => it.id === id);
-          if (!item) continue;
-          item.x = this.snapValue(orig.x + adjDx);
-          item.y = this.snapValue(orig.y + adjDy);
-          const el = this.getItemElement(id);
-          if (el) {
-            el.style.left = `${item.x}px`;
-            el.style.top = `${item.y}px`;
-          }
-        }
-        this.updateSelectionOverlay();
-        return;
-      }
-
-      if (this.gesture.kind === 'resize') {
-        const dx = pt.x - this.gesture.startCanvasX;
-        const dy = pt.y - this.gesture.startCanvasY;
-        if (!this.gesture.moved && Math.hypot(dx, dy) > 2) {
-          this.gesture.moved = true;
-          this.pushUndoSnapshot(board);
-        }
-        if (!this.gesture.moved) return;
-
-        const targetId = this.gesture.itemId;
-        const item = board.items.find((it) => it.id === targetId);
-        if (!item) return;
-
-        const { x: sx0, y: sy0, w: sw, h: sh, rotation } = this.gesture.startMetrics;
-        const hDir = this.gesture.handle;
-        const sx = hDir.includes('e') ? 1 : hDir.includes('w') ? -1 : 0;
-        const sy = hDir.includes('s') ? 1 : hDir.includes('n') ? -1 : 0;
-
-        const rad = (rotation * Math.PI) / 180;
-        const cos = Math.cos(rad);
-        const sin = Math.sin(rad);
-
-        const localDx = dx * cos + dy * sin;
-        const localDy = -dx * sin + dy * cos;
-
-        const minW = item.type === 'stroke' ? 12 : item.type === 'image' ? 60 : 120;
-        const minH = item.type === 'stroke' ? 12 : item.type === 'image' ? 45 : 40;
-
-        let nextW = sx !== 0 ? Math.max(minW, sw + sx * localDx) : sw;
-        let nextH = sy !== 0 ? Math.max(minH, sh + sy * localDy) : sh;
-
-        if (this.gesture.isImage && sx !== 0 && sy !== 0 && !e.shiftKey) {
-          const ratio = this.gesture.aspectRatio;
-          if (Math.abs(nextW - sw) / sw >= Math.abs(nextH - sh) / sh) {
-            nextH = Math.max(minH, nextW / ratio);
-          } else {
-            nextW = Math.max(minW, nextH * ratio);
-          }
-        }
-
-        const dw = nextW - sw;
-        const dh = nextH - sh;
-        const offsetLocalX = (sx * dw) / 2;
-        const offsetLocalY = (sy * dh) / 2;
-
-        const startCenterX = sx0 + sw / 2;
-        const startCenterY = sy0 + sh / 2;
-        const nextCenterX = startCenterX + offsetLocalX * cos - offsetLocalY * sin;
-        const nextCenterY = startCenterY + offsetLocalX * sin + offsetLocalY * cos;
-
-        item.x = Math.round(nextCenterX - nextW / 2);
-        item.y = Math.round(nextCenterY - nextH / 2);
-        item.width = Math.round(nextW);
-        if (item.type === 'image' || item.type === 'stroke' || sy !== 0) {
-          item.height = Math.round(nextH);
-        }
-
-        const el = this.getItemElement(item.id);
-        if (el) {
-          el.style.left = `${item.x}px`;
-          el.style.top = `${item.y}px`;
-          el.style.width = `${item.width}px`;
-          if (item.height) el.style.height = `${item.height}px`;
-        }
-        this.updateSelectionOverlay();
-        return;
-      }
-
-      if (this.gesture.kind === 'rotate') {
-        const angleNow = Math.atan2(pt.y - this.gesture.centerY, pt.x - this.gesture.centerX);
-        const deltaDeg = ((angleNow - this.gesture.startAngleRad) * 180) / Math.PI;
-        if (!this.gesture.moved && Math.abs(deltaDeg) > 1) {
-          this.gesture.moved = true;
-          this.pushUndoSnapshot(board);
-        }
-        if (!this.gesture.moved) return;
-
-        const targetId = this.gesture.itemId;
-        const item = board.items.find((it) => it.id === targetId);
-        if (!item) return;
-
-        let nextDeg = this.gesture.startRotationDeg + deltaDeg;
-        if (e.shiftKey) {
-          nextDeg = Math.round(nextDeg / 15) * 15;
-        }
-        item.rotation = normalizeAngleDeg(nextDeg);
-        const el = this.getItemElement(item.id);
-        if (el) {
-          el.style.transform = `rotate(${item.rotation}deg)`;
-        }
-        this.updateSelectionOverlay();
-        this.updateSelectionBar();
-        return;
-      }
-
-      if (this.gesture.kind === 'marquee') {
-        const dist = Math.hypot(
-          e.clientX - this.gesture.startClientX,
-          e.clientY - this.gesture.startClientY
-        );
-        if (!this.gesture.moved && dist > 5) {
-          this.gesture.moved = true;
-          this.commitActiveTextEdit();
-          this.els.marqueeRect.classList.remove('hidden');
-        }
-        if (!this.gesture.moved) return;
-
-        const rect = this.els.viewport.getBoundingClientRect();
-        const x1 = Math.min(this.gesture.startClientX, e.clientX) - rect.left;
-        const y1 = Math.min(this.gesture.startClientY, e.clientY) - rect.top;
-        const w = Math.abs(e.clientX - this.gesture.startClientX);
-        const h = Math.abs(e.clientY - this.gesture.startClientY);
-        this.els.marqueeRect.style.left = `${x1}px`;
-        this.els.marqueeRect.style.top = `${y1}px`;
-        this.els.marqueeRect.style.width = `${w}px`;
-        this.els.marqueeRect.style.height = `${h}px`;
-
-        const minCX = Math.min(this.gesture.startCanvasX, pt.x);
-        const maxCX = Math.max(this.gesture.startCanvasX, pt.x);
-        const minCY = Math.min(this.gesture.startCanvasY, pt.y);
-        const maxCY = Math.max(this.gesture.startCanvasY, pt.y);
-
-        const nextSel = this.gesture.additive ? new Set(this.selectedIds) : new Set<string>();
-        for (const item of board.items) {
-          const aabb = this.getItemAabb(item);
-          const overlaps =
-            aabb.maxX >= minCX && aabb.minX <= maxCX && aabb.maxY >= minCY && aabb.minY <= maxCY;
-          if (overlaps) nextSel.add(item.id);
-        }
-        this.selectedIds = nextSel;
-        this.renderItems();
-        this.updateSelectionBar();
-      }
-    });
-
-    const finishPointer = (e: PointerEvent): void => {
-      if (e.pointerType === 'touch') {
-        this.activeTouchPoints.delete(e.pointerId);
-      }
-      if (this.longPressState && this.longPressState.pointerId === e.pointerId) {
-        this.clearLongPressTimer();
-      }
-
-      const board = this.host.getBoard();
-      if (!this.gesture) return;
-      if (this.gesture.kind === 'pinch') {
-        if (!this.gesture.pointerIds.includes(e.pointerId)) return;
-        this.gesture = null;
-        if (board) this.host.onBoardMutated(board, false);
-        return;
-      }
-      if (this.gesture.pointerId !== e.pointerId) return;
-      const finished = this.gesture;
-      this.gesture = null;
-
-      if (this.els.viewport.hasPointerCapture(e.pointerId)) {
-        this.els.viewport.releasePointerCapture(e.pointerId);
-      }
-      this.els.viewport.classList.remove('panning');
-      this.els.marqueeRect.classList.add('hidden');
-      this.clearLiveCanvas();
-
-      if (!board) return;
-
-      if (finished.kind === 'pan') {
-        this.host.onBoardMutated(board, false);
-        return;
-      }
-
-      if (finished.kind === 'draw') {
-        if (e.type !== 'pointercancel' || e.pointerType !== 'touch') {
-          this.commitStrokeFromGesture(board, finished);
-        }
-        return;
-      }
-
-      if (finished.kind === 'erase') {
-        if (finished.erasedAny) {
-          this.host.onBoardMutated(board, true);
-        }
-        return;
-      }
-
-      if (finished.kind === 'lasso') {
-        if (e.type !== 'pointercancel') {
-          this.commitLassoSelection(board, finished);
-        }
-        return;
-      }
-
-      if (finished.kind === 'marquee') {
-        if (!finished.moved) {
-          // Deselect-before-create: clear active selection/edit first; if already clear, click anywhere to type!
-          const hadSelectionOrEdit =
-            this.selectedIds.size > 0 ||
-            this.editingItemId !== null ||
-            this.editingLinkLabelId !== null;
-          this.commitActiveTextEdit();
-          this.selectedIds.clear();
-          this.renderItems();
-          this.updateSelectionBar();
-
-          if (!hadSelectionOrEdit) {
-            this.createTextItem(finished.startCanvasX, finished.startCanvasY, '', true);
-          }
-        }
-        return;
-      }
-
-      if (finished.moved) {
-        this.host.onBoardMutated(board, true);
-        this.updateSelectionOverlay();
-        this.updateSelectionBar();
-      } else if (
-        finished.kind === 'move' &&
-        finished.enterEditOnClick &&
-        this.selectedIds.size === 1
-      ) {
-        const singleId = Array.from(this.selectedIds)[0];
-        const clickedItem = board.items.find((it) => it.id === singleId);
-        if (clickedItem && clickedItem.type === 'text') {
-          this.editingItemId = clickedItem.id;
-          this.renderItems();
-          this.updateSelectionBar();
-        }
-      }
-    };
-
-    this.els.viewport.addEventListener('pointerup', finishPointer);
-    this.els.viewport.addEventListener('pointercancel', finishPointer);
+    this.els.viewport.addEventListener('pointerdown', (e) => this.handleViewportPointerDown(e));
+    this.els.viewport.addEventListener('pointermove', (e) => this.handleViewportPointerMove(e));
+    this.els.viewport.addEventListener('pointerup', (e) => this.handleViewportPointerFinish(e));
+    this.els.viewport.addEventListener('pointercancel', (e) => this.handleViewportPointerFinish(e));
 
     // Custom Right-Click Context Menu on Canvas & Board Items
     this.els.viewport.addEventListener('contextmenu', (e) => {
@@ -3374,6 +1931,711 @@ export class BoardEditorController {
       this.openContextMenuForTarget(board, e.clientX, e.clientY, e.target as HTMLElement | null);
     });
   }
-}
 
-export { maybeById };
+  private startPinchGesture(board: Board): void {
+    this.clearLongPressTimer();
+    if (
+      this.gesture &&
+      (this.gesture.kind === 'draw' ||
+        this.gesture.kind === 'lasso' ||
+        this.gesture.kind === 'marquee' ||
+        this.gesture.kind === 'pan' ||
+        this.gesture.kind === 'move')
+    ) {
+      if (this.els.viewport.hasPointerCapture(this.gesture.pointerId)) {
+        this.els.viewport.releasePointerCapture(this.gesture.pointerId);
+      }
+      this.clearLiveCanvas();
+      this.els.marqueeRect.classList.add('hidden');
+      this.els.viewport.classList.remove('panning');
+      this.gesture = null;
+    }
+
+    if (this.activeTouchPoints.size === 2) {
+      const entries = Array.from(this.activeTouchPoints.entries());
+      const [id1, p1] = entries[0]!;
+      const [id2, p2] = entries[1]!;
+      const rect = this.els.viewport.getBoundingClientRect();
+      const midX = (p1.clientX + p2.clientX) * 0.5;
+      const midY = (p1.clientY + p2.clientY) * 0.5;
+      const dist = Math.max(12, Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY));
+      this.gesture = {
+        kind: 'pinch',
+        pointerIds: [id1, id2],
+        startDist: dist,
+        startCanvasMidX: (midX - rect.left - board.viewport.panX) / board.viewport.zoom,
+        startCanvasMidY: (midY - rect.top - board.viewport.panY) / board.viewport.zoom,
+        startZoom: board.viewport.zoom,
+      };
+    }
+  }
+
+  private armTouchLongPress(e: PointerEvent, target: HTMLElement | null): void {
+    this.clearLongPressTimer();
+    const touchClientX = e.clientX;
+    const touchClientY = e.clientY;
+    const touchTarget = target;
+    const touchPointerId = e.pointerId;
+    const timerId = window.setTimeout(() => {
+      const activeBoard = this.host.getBoard();
+      if (!activeBoard || !this.longPressState || this.longPressState.pointerId !== touchPointerId) {
+        return;
+      }
+      this.longPressState = null;
+      if (
+        this.gesture &&
+        this.gesture.kind !== 'pinch' &&
+        this.gesture.pointerId === touchPointerId
+      ) {
+        if (this.els.viewport.hasPointerCapture(touchPointerId)) {
+          this.els.viewport.releasePointerCapture(touchPointerId);
+        }
+        this.els.viewport.classList.remove('panning');
+        this.gesture = null;
+      }
+      this.openContextMenuForTarget(activeBoard, touchClientX, touchClientY, touchTarget);
+    }, 520);
+    this.longPressState = {
+      timerId,
+      pointerId: e.pointerId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+    };
+  }
+
+  private startHandleGesture(e: PointerEvent, board: Board, handleEl: HTMLElement): boolean {
+    const handle = handleEl.getAttribute('data-handle') as HandleDir | null;
+    const singleId = Array.from(this.selectedIds)[0];
+    const item = board.items.find((it) => it.id === singleId);
+    if (!handle || !item) return false;
+
+    e.preventDefault();
+    e.stopPropagation();
+    if (this.editingItemId || this.editingLinkLabelId) {
+      this.commitActiveTextEdit(item.id);
+      this.renderItems();
+    }
+    this.els.viewport.setPointerCapture(e.pointerId);
+    const pt = this.clientToCanvas(e.clientX, e.clientY, board);
+    const m = this.getItemMetrics(item);
+
+    if (handle === 'rotate') {
+      const cx = m.x + m.w / 2;
+      const cy = m.y + m.h / 2;
+      this.gesture = {
+        kind: 'rotate',
+        pointerId: e.pointerId,
+        itemId: item.id,
+        centerX: cx,
+        centerY: cy,
+        startAngleRad: Math.atan2(pt.y - cy, pt.x - cx),
+        startRotationDeg: m.rotation,
+        moved: false,
+      };
+    } else {
+      this.gesture = {
+        kind: 'resize',
+        pointerId: e.pointerId,
+        itemId: item.id,
+        handle,
+        startCanvasX: pt.x,
+        startCanvasY: pt.y,
+        startMetrics: m,
+        aspectRatio: m.w / Math.max(1, m.h),
+        isImage: item.type === 'image' || item.type === 'stroke',
+        moved: false,
+      };
+    }
+    return true;
+  }
+
+  private startItemMoveGesture(
+    e: PointerEvent,
+    board: Board,
+    itemEl: HTMLElement,
+    target: HTMLElement | null
+  ): boolean {
+    const itemId = itemEl.getAttribute('data-board-item-id');
+    const item = board.items.find((it) => it.id === itemId);
+    if (!item) return false;
+
+    e.preventDefault();
+    const clickedTextInterior = Boolean(target?.closest('.board-text-view, .board-text-input'));
+    const wasEditingThisItem = this.editingItemId === item.id;
+
+    this.commitActiveTextEdit(item.id);
+
+    if (e.shiftKey) {
+      if (this.selectedIds.has(item.id)) {
+        this.selectedIds.delete(item.id);
+      } else {
+        this.selectedIds.add(item.id);
+      }
+    } else if (!this.selectedIds.has(item.id)) {
+      this.selectedIds = new Set([item.id]);
+    }
+
+    this.renderItems();
+    this.updateSelectionBar();
+
+    if (this.selectedIds.has(item.id)) {
+      this.els.viewport.setPointerCapture(e.pointerId);
+      const pt = this.clientToCanvas(e.clientX, e.clientY, board);
+      const snapshots = new Map<string, { x: number; y: number }>();
+      for (const selId of this.selectedIds) {
+        const selItem = board.items.find((it) => it.id === selId);
+        if (selItem) snapshots.set(selId, { x: selItem.x, y: selItem.y });
+      }
+      this.gesture = {
+        kind: 'move',
+        pointerId: e.pointerId,
+        startCanvasX: pt.x,
+        startCanvasY: pt.y,
+        moved: false,
+        enterEditOnClick:
+          item.type === 'text' &&
+          clickedTextInterior &&
+          !wasEditingThisItem &&
+          !e.shiftKey &&
+          this.selectedIds.size === 1,
+        snapshots,
+      };
+    }
+    return true;
+  }
+
+  private handleViewportPointerDown(e: PointerEvent): void {
+    const board = this.host.getBoard();
+    if (!board) return;
+
+    const target = e.target as HTMLElement | null;
+    if (e.pointerType === 'touch') {
+      this.activeTouchPoints.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+      if (this.activeTouchPoints.size >= 2) {
+        this.startPinchGesture(board);
+        return;
+      }
+    }
+
+    const activeTool = this.inkToolbar.getActiveTool();
+    const touchDrawEnabled = this.inkToolbar.isTouchDrawEnabled();
+
+    if (target?.closest('a') && e.pointerType !== 'pen' && activeTool === 'select') {
+      return;
+    }
+
+    if (e.pointerType === 'touch' && activeTool === 'select' && !this.host.isLocked()) {
+      this.armTouchLongPress(e, target);
+    }
+
+    // Middle click or Space+Left click -> Pan
+    if (e.button === 1 || (e.button === 0 && this.spacePressed)) {
+      e.preventDefault();
+      this.els.viewport.setPointerCapture(e.pointerId);
+      this.els.viewport.classList.add('panning');
+      this.gesture = {
+        kind: 'pan',
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        startPanX: board.viewport.panX,
+        startPanY: board.viewport.panY,
+      };
+      return;
+    }
+
+    // Hardware stylus barrel eraser OR Eraser tool -> Erase strokes under pointer
+    const isBarrelEraser =
+      e.pointerType === 'pen' && (e.button === 5 || (e.buttons & 32) !== 0);
+    if (isBarrelEraser || (e.button === 0 && activeTool === 'eraser')) {
+      e.preventDefault();
+      this.commitActiveTextEdit();
+      this.els.viewport.setPointerCapture(e.pointerId);
+      const pt = this.clientToCanvas(e.clientX, e.clientY, board);
+      const eraseGesture: Extract<ActiveGesture, { kind: 'erase' }> = {
+        kind: 'erase',
+        pointerId: e.pointerId,
+        prevCanvasPt: pt,
+        erasedAny: false,
+        undoPushed: false,
+      };
+      this.gesture = eraseGesture;
+      this.eraseStrokesAlongSegment(board, pt, pt, eraseGesture);
+      this.renderLiveDrawOverlay(board, pt);
+      return;
+    }
+
+    if (e.button !== 0) return;
+
+    // 1. Handle on single selected item
+    const handleEl = target?.closest<HTMLElement>('[data-handle]');
+    if (handleEl && this.selectedIds.size === 1 && this.startHandleGesture(e, board, handleEl)) {
+      return;
+    }
+
+    // 1b. Armed Lasso / Pen / Highlighter OR auto-detected stylus Pen input
+    const isPenInput = e.pointerType === 'pen';
+    const isTouchDraw = e.pointerType === 'touch' && touchDrawEnabled;
+    const isArmedDrawTool = activeTool === 'pen' || activeTool === 'highlighter';
+    if (activeTool === 'lasso') {
+      e.preventDefault();
+      this.commitActiveTextEdit();
+      this.els.viewport.focus();
+      this.els.viewport.setPointerCapture(e.pointerId);
+      const pt = this.clientToCanvas(e.clientX, e.clientY, board);
+      this.gesture = {
+        kind: 'lasso',
+        pointerId: e.pointerId,
+        points: [[pt.x, pt.y]],
+        additive: e.shiftKey,
+      };
+      this.renderLiveDrawOverlay(board);
+      return;
+    }
+
+    if (isArmedDrawTool || isPenInput || isTouchDraw) {
+      e.preventDefault();
+      this.commitActiveTextEdit();
+      this.els.viewport.focus();
+      this.els.viewport.setPointerCapture(e.pointerId);
+      const pt = this.clientToCanvas(e.clientX, e.clientY, board);
+      const preset = this.inkToolbar.getActivePreset();
+      const initialPressure = computePointPressure(e.pressure, e.pointerType, 0, 0, 16, 0.55);
+      this.gesture = {
+        kind: 'draw',
+        pointerId: e.pointerId,
+        pointerType: e.pointerType,
+        tool: preset.tool,
+        strokeColor: preset.color,
+        strokeWidth: preset.width,
+        opacity: preset.opacity,
+        rawPoints: [[pt.x, pt.y, initialPressure]],
+        lastTime: performance.now(),
+        lastPressure: initialPressure,
+        startPt: { x: pt.x, y: pt.y },
+        straightLinePt: null,
+      };
+      this.renderLiveDrawOverlay(board);
+      return;
+    }
+
+    // 2. Clicking inside an actively edited textarea or link input
+    if (
+      (target instanceof HTMLTextAreaElement && target.hasAttribute('data-board-textarea')) ||
+      (target instanceof HTMLInputElement && target.hasAttribute('data-board-link-input'))
+    ) {
+      return;
+    }
+
+    // 3. Clicking an existing board item (border selects/moves without entering edit; text interior enters edit on click)
+    const itemEl = target?.closest<HTMLElement>('[data-board-item-id]');
+    if (itemEl && this.startItemMoveGesture(e, board, itemEl, target)) {
+      return;
+    }
+
+    // 4. Empty canvas click/drag -> touch pan (when Touch Draw is off) or marquee / click-to-type
+    e.preventDefault();
+    this.els.viewport.focus();
+    this.els.viewport.setPointerCapture(e.pointerId);
+    if (e.pointerType === 'touch' && !touchDrawEnabled) {
+      this.els.viewport.classList.add('panning');
+      this.gesture = {
+        kind: 'pan',
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        startPanX: board.viewport.panX,
+        startPanY: board.viewport.panY,
+      };
+      return;
+    }
+
+    const pt = this.clientToCanvas(e.clientX, e.clientY, board);
+    this.lastCanvasCursor = { x: pt.x, y: pt.y };
+    this.gesture = {
+      kind: 'marquee',
+      pointerId: e.pointerId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startCanvasX: pt.x,
+      startCanvasY: pt.y,
+      additive: e.shiftKey,
+      moved: false,
+    };
+  }
+
+  private updatePinchGesture(
+    board: Board,
+    gesture: Extract<ActiveGesture, { kind: 'pinch' }>
+  ): void {
+    const p1 = this.activeTouchPoints.get(gesture.pointerIds[0]);
+    const p2 = this.activeTouchPoints.get(gesture.pointerIds[1]);
+    if (!p1 || !p2) return;
+
+    const rect = this.els.viewport.getBoundingClientRect();
+    const midX = (p1.clientX + p2.clientX) * 0.5;
+    const midY = (p1.clientY + p2.clientY) * 0.5;
+    const dist = Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY);
+    const nextZoom = clamp(gesture.startZoom * (dist / gesture.startDist), MIN_ZOOM, MAX_ZOOM);
+    board.viewport.zoom = nextZoom;
+    board.viewport.panX = midX - rect.left - gesture.startCanvasMidX * nextZoom;
+    board.viewport.panY = midY - rect.top - gesture.startCanvasMidY * nextZoom;
+    this.applyViewport(board);
+  }
+
+  private updateDrawGesture(
+    e: PointerEvent,
+    board: Board,
+    pt: { x: number; y: number },
+    gesture: Extract<ActiveGesture, { kind: 'draw' }>
+  ): void {
+    if (e.shiftKey) {
+      gesture.straightLinePt = { x: pt.x, y: pt.y };
+      this.renderLiveDrawOverlay(board);
+      return;
+    }
+    gesture.straightLinePt = null;
+    const coalesced = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
+    const samples = coalesced.length > 0 ? coalesced : [e];
+    const minDist = 0.65 / Math.max(0.25, board.viewport.zoom);
+    for (const ev of samples) {
+      const evPt = this.clientToCanvas(ev.clientX, ev.clientY, board);
+      const last = gesture.rawPoints[gesture.rawPoints.length - 1]!;
+      const dx = evPt.x - last[0];
+      const dy = evPt.y - last[1];
+      if (Math.hypot(dx, dy) < minDist) continue;
+      const now = performance.now();
+      const dt = Math.max(1, now - gesture.lastTime);
+      const pressure = computePointPressure(
+        ev.pressure,
+        gesture.pointerType,
+        dx,
+        dy,
+        dt,
+        gesture.lastPressure
+      );
+      gesture.lastTime = now;
+      gesture.lastPressure = pressure;
+      gesture.rawPoints.push([evPt.x, evPt.y, pressure]);
+    }
+    this.renderLiveDrawOverlay(board);
+  }
+
+  private updateMoveGesture(
+    e: PointerEvent,
+    board: Board,
+    pt: { x: number; y: number },
+    gesture: Extract<ActiveGesture, { kind: 'move' }>
+  ): void {
+    const dx = pt.x - gesture.startCanvasX;
+    const dy = pt.y - gesture.startCanvasY;
+    if (!gesture.moved && Math.hypot(dx, dy) > 3) {
+      gesture.moved = true;
+      this.pushUndoSnapshot(board);
+    }
+    if (!gesture.moved) return;
+
+    let adjDx = dx;
+    let adjDy = dy;
+    if (e.shiftKey) {
+      if (Math.abs(dx) > Math.abs(dy)) adjDy = 0;
+      else adjDx = 0;
+    }
+
+    for (const [id, orig] of gesture.snapshots.entries()) {
+      const item = board.items.find((it) => it.id === id);
+      if (!item) continue;
+      item.x = this.snapValue(orig.x + adjDx);
+      item.y = this.snapValue(orig.y + adjDy);
+      const el = this.getItemElement(id);
+      if (el) {
+        el.style.left = `${item.x}px`;
+        el.style.top = `${item.y}px`;
+      }
+    }
+    this.updateSelectionOverlay();
+  }
+
+  private updateResizeGesture(
+    e: PointerEvent,
+    board: Board,
+    pt: { x: number; y: number },
+    gesture: Extract<ActiveGesture, { kind: 'resize' }>
+  ): void {
+    const dx = pt.x - gesture.startCanvasX;
+    const dy = pt.y - gesture.startCanvasY;
+    if (!gesture.moved && Math.hypot(dx, dy) > 2) {
+      gesture.moved = true;
+      this.pushUndoSnapshot(board);
+    }
+    if (!gesture.moved) return;
+
+    const item = board.items.find((it) => it.id === gesture.itemId);
+    if (!item) return;
+
+    const minW = item.type === 'stroke' ? 12 : item.type === 'image' ? 60 : 120;
+    const minH = item.type === 'stroke' ? 12 : item.type === 'image' ? 45 : 40;
+    const next = computeResizedItemRect({
+      startMetrics: gesture.startMetrics,
+      handle: gesture.handle,
+      dx,
+      dy,
+      minW,
+      minH,
+      preserveAspect: gesture.isImage && !e.shiftKey,
+      aspectRatio: gesture.aspectRatio,
+    });
+
+    item.x = next.x;
+    item.y = next.y;
+    item.width = next.width;
+    if (item.type === 'image' || item.type === 'stroke' || next.changedHeight) {
+      item.height = next.height;
+    }
+
+    const el = this.getItemElement(item.id);
+    if (el) {
+      el.style.left = `${item.x}px`;
+      el.style.top = `${item.y}px`;
+      el.style.width = `${item.width}px`;
+      if (item.height) el.style.height = `${item.height}px`;
+    }
+    this.updateSelectionOverlay();
+  }
+
+  private updateRotateGesture(
+    e: PointerEvent,
+    board: Board,
+    pt: { x: number; y: number },
+    gesture: Extract<ActiveGesture, { kind: 'rotate' }>
+  ): void {
+    const angleNow = Math.atan2(pt.y - gesture.centerY, pt.x - gesture.centerX);
+    const deltaDeg = ((angleNow - gesture.startAngleRad) * 180) / Math.PI;
+    if (!gesture.moved && Math.abs(deltaDeg) > 1) {
+      gesture.moved = true;
+      this.pushUndoSnapshot(board);
+    }
+    if (!gesture.moved) return;
+
+    const item = board.items.find((it) => it.id === gesture.itemId);
+    if (!item) return;
+
+    let nextDeg = gesture.startRotationDeg + deltaDeg;
+    if (e.shiftKey) {
+      nextDeg = Math.round(nextDeg / 15) * 15;
+    }
+    item.rotation = normalizeAngleDeg(nextDeg);
+    const el = this.getItemElement(item.id);
+    if (el) {
+      el.style.transform = `rotate(${item.rotation}deg)`;
+    }
+    this.updateSelectionOverlay();
+    this.updateSelectionBar();
+  }
+
+  private updateMarqueeGesture(
+    e: PointerEvent,
+    board: Board,
+    pt: { x: number; y: number },
+    gesture: Extract<ActiveGesture, { kind: 'marquee' }>
+  ): void {
+    const dist = Math.hypot(e.clientX - gesture.startClientX, e.clientY - gesture.startClientY);
+    if (!gesture.moved && dist > 5) {
+      gesture.moved = true;
+      this.commitActiveTextEdit();
+      this.els.marqueeRect.classList.remove('hidden');
+    }
+    if (!gesture.moved) return;
+
+    const rect = this.els.viewport.getBoundingClientRect();
+    const x1 = Math.min(gesture.startClientX, e.clientX) - rect.left;
+    const y1 = Math.min(gesture.startClientY, e.clientY) - rect.top;
+    const w = Math.abs(e.clientX - gesture.startClientX);
+    const h = Math.abs(e.clientY - gesture.startClientY);
+    this.els.marqueeRect.style.left = `${x1}px`;
+    this.els.marqueeRect.style.top = `${y1}px`;
+    this.els.marqueeRect.style.width = `${w}px`;
+    this.els.marqueeRect.style.height = `${h}px`;
+
+    const minCX = Math.min(gesture.startCanvasX, pt.x);
+    const maxCX = Math.max(gesture.startCanvasX, pt.x);
+    const minCY = Math.min(gesture.startCanvasY, pt.y);
+    const maxCY = Math.max(gesture.startCanvasY, pt.y);
+
+    const nextSel = gesture.additive ? new Set(this.selectedIds) : new Set<string>();
+    for (const item of board.items) {
+      const aabb = this.getItemAabb(item);
+      const overlaps =
+        aabb.maxX >= minCX && aabb.minX <= maxCX && aabb.maxY >= minCY && aabb.minY <= maxCY;
+      if (overlaps) nextSel.add(item.id);
+    }
+    this.selectedIds = nextSel;
+    this.syncSelectionClasses();
+    this.updateSelectionBar();
+  }
+
+  private handleViewportPointerMove(e: PointerEvent): void {
+    const board = this.host.getBoard();
+    if (!board) return;
+
+    if (e.pointerType === 'touch' && this.activeTouchPoints.has(e.pointerId)) {
+      this.activeTouchPoints.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+    }
+
+    if (this.longPressState && this.longPressState.pointerId === e.pointerId) {
+      if (
+        Math.hypot(
+          e.clientX - this.longPressState.startClientX,
+          e.clientY - this.longPressState.startClientY
+        ) > 6
+      ) {
+        this.clearLongPressTimer();
+      }
+    }
+
+    if (this.gesture?.kind === 'pinch') {
+      if (this.gesture.pointerIds.includes(e.pointerId)) {
+        this.updatePinchGesture(board, this.gesture);
+      }
+      return;
+    }
+
+    if (!this.gesture || this.gesture.pointerId !== e.pointerId) return;
+
+    if (this.gesture.kind === 'pan') {
+      board.viewport.panX = this.gesture.startPanX + (e.clientX - this.gesture.startClientX);
+      board.viewport.panY = this.gesture.startPanY + (e.clientY - this.gesture.startClientY);
+      this.applyViewport(board);
+      return;
+    }
+
+    const pt = this.clientToCanvas(e.clientX, e.clientY, board);
+
+    switch (this.gesture.kind) {
+      case 'draw':
+        this.updateDrawGesture(e, board, pt, this.gesture);
+        break;
+      case 'erase':
+        this.eraseStrokesAlongSegment(board, this.gesture.prevCanvasPt, pt, this.gesture);
+        this.gesture.prevCanvasPt = pt;
+        this.renderLiveDrawOverlay(board, pt);
+        break;
+      case 'lasso': {
+        const last = this.gesture.points[this.gesture.points.length - 1];
+        if (
+          !last ||
+          Math.hypot(pt.x - last[0], pt.y - last[1]) >= 3 / Math.max(0.25, board.viewport.zoom)
+        ) {
+          this.gesture.points.push([pt.x, pt.y]);
+        }
+        this.renderLiveDrawOverlay(board);
+        break;
+      }
+      case 'move':
+        this.updateMoveGesture(e, board, pt, this.gesture);
+        break;
+      case 'resize':
+        this.updateResizeGesture(e, board, pt, this.gesture);
+        break;
+      case 'rotate':
+        this.updateRotateGesture(e, board, pt, this.gesture);
+        break;
+      case 'marquee':
+        this.updateMarqueeGesture(e, board, pt, this.gesture);
+        break;
+    }
+  }
+
+  private handleViewportPointerFinish(e: PointerEvent): void {
+    if (e.pointerType === 'touch') {
+      this.activeTouchPoints.delete(e.pointerId);
+    }
+    if (this.longPressState && this.longPressState.pointerId === e.pointerId) {
+      this.clearLongPressTimer();
+    }
+
+    const board = this.host.getBoard();
+    if (!this.gesture) return;
+    if (this.gesture.kind === 'pinch') {
+      if (!this.gesture.pointerIds.includes(e.pointerId)) return;
+      this.gesture = null;
+      if (board) this.host.onBoardMutated(board, false);
+      return;
+    }
+    if (this.gesture.pointerId !== e.pointerId) return;
+    const finished = this.gesture;
+    this.gesture = null;
+
+    if (this.els.viewport.hasPointerCapture(e.pointerId)) {
+      this.els.viewport.releasePointerCapture(e.pointerId);
+    }
+    this.els.viewport.classList.remove('panning');
+    this.els.marqueeRect.classList.add('hidden');
+    this.clearLiveCanvas();
+
+    if (!board) return;
+
+    if (finished.kind === 'pan') {
+      this.host.onBoardMutated(board, false);
+      return;
+    }
+
+    if (finished.kind === 'draw') {
+      if (e.type !== 'pointercancel' || e.pointerType !== 'touch') {
+        this.commitStrokeFromGesture(board, finished);
+      }
+      return;
+    }
+
+    if (finished.kind === 'erase') {
+      if (finished.erasedAny) {
+        this.host.onBoardMutated(board, true);
+      }
+      return;
+    }
+
+    if (finished.kind === 'lasso') {
+      if (e.type !== 'pointercancel') {
+        this.commitLassoSelection(board, finished);
+      }
+      return;
+    }
+
+    if (finished.kind === 'marquee') {
+      if (!finished.moved) {
+        // Deselect-before-create: clear active selection/edit first; if already clear, click anywhere to type!
+        const hadSelectionOrEdit =
+          this.selectedIds.size > 0 ||
+          this.editingItemId !== null ||
+          this.editingLinkLabelId !== null;
+        this.commitActiveTextEdit();
+        this.selectedIds.clear();
+        this.renderItems();
+        this.updateSelectionBar();
+
+        if (!hadSelectionOrEdit) {
+          this.createTextItem(finished.startCanvasX, finished.startCanvasY, '', true);
+        }
+      }
+      return;
+    }
+
+    if (finished.moved) {
+      this.host.onBoardMutated(board, true);
+      this.updateSelectionOverlay();
+      this.updateSelectionBar();
+    } else if (
+      finished.kind === 'move' &&
+      finished.enterEditOnClick &&
+      this.selectedIds.size === 1
+    ) {
+      const singleId = Array.from(this.selectedIds)[0];
+      const clickedItem = board.items.find((it) => it.id === singleId);
+      if (clickedItem && clickedItem.type === 'text') {
+        this.editingItemId = clickedItem.id;
+        this.renderItems();
+        this.updateSelectionBar();
+      }
+    }
+  }
+}

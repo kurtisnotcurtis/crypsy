@@ -3,12 +3,13 @@
  */
 
 import type { NoteImage } from './types';
+import { createId } from './utils';
 
 const MAX_IMAGE_DIMENSION = 1440;
 const WEBP_QUALITY = 0.82;
 
 export function createImageId(): string {
-  return `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  return createId('img');
 }
 
 /**

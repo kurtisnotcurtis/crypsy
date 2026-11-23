@@ -10,22 +10,35 @@
  * - Cloud Folder Provisioning Wizard & Live Auto-Sync (`vault.crypsy.json`)
  */
 
-import { BoardEditorController } from './board-editor';
-import { CrypsyCloudSync } from './cloud-sync';
-import { ContextMenuController, shouldBypassCustomContextMenu } from './context-menu';
-import { CrypsyCrypto, MIN_PASSPHRASE_LENGTH } from './crypto';
 import {
-  extractClipboardImages,
-  extractImageUrlFromClipboardHtml,
-  extractStandaloneImageUrl,
-  noteImageFromFile,
-  noteImageFromUrl,
-} from './media';
+  buildBoardContextMenuEntries,
+  buildNoteContextMenuEntries,
+} from './app-context-menus';
+import { BoardEditorController } from './board-editor';
+import {
+  createBoardCardHtml,
+  createNoteCardHtml,
+  fitBoardMinimaps,
+  renderImageOrPrivacyPlaceholderHtml as renderCardImageOrPlaceholder,
+} from './card-render';
+import { CrypsyCloudSync } from './cloud-sync';
+import { CloudWizardController } from './cloud-wizard';
+import { ContextMenuController, shouldBypassCustomContextMenu } from './context-menu';
+import { CrypsyCrypto } from './crypto';
+import { LockScreenController } from './lock-screen';
+import { toggleCheckboxLine } from './markdown';
+import { bindNoteDraftSurface } from './note-draft-surface';
+import {
+  createSeedNotes,
+  loadPreferencesIntoState,
+  savePreferencesFromState,
+  validateNewPassphrase,
+} from './preferences';
+import { filterBoards, filterNotes } from './search-filter';
 import type {
   ActiveFilter,
   AppState,
   Board,
-  CloudProviderId,
   EncryptedEnvelope,
   Note,
   NoteColor,
@@ -33,30 +46,31 @@ import type {
   RestoreConnectionResult,
   VaultPayload,
 } from './types';
+import { UpdatesController } from './updates';
 import {
   APP_VERSION,
   autoResizeTextarea,
   byId,
+  createId,
   escapeHtml,
   formatRelativeTime,
   formatTimestamp,
-  getRotatedRectAabb,
-  highlightText,
   isEditableElement,
   isExternalHttpUrl,
   maybeById,
-  renderBoardItemHtml,
 } from './utils';
+import { loadVaultEnvelopeFromCache, saveVaultEnvelopeToCache } from './vault-cache';
+import { VaultModalController } from './vault-modal';
+import {
+  createNewBoard,
+  deleteTagInVault,
+  duplicateBoardInList,
+  duplicateNoteInList,
+  renameTagInVault,
+} from './vault-mutations';
 
-const STORAGE_KEY_VAULT = 'crypsy_encrypted_vault_v1';
-const STORAGE_KEY_PREFS = 'crypsy_ui_prefs_v1';
-const VAULT_IDB_NAME = 'crypsy_vault_cache_db_v1';
-const VAULT_IDB_STORE = 'vault';
-const VAULT_IDB_KEY = 'encrypted_envelope';
 const LEGACY_DEFAULT_DEVICE_SECRET = 'crypsy-local-device-default-key-v1';
 
-type LockScreenMode = 'unlock' | 'setup' | 'upgrade';
-let lockScreenMode: LockScreenMode = 'unlock';
 let pendingLegacyUpgradePayload: VaultPayload | null = null;
 let pendingCloudNeedsPermission = false;
 const sessionAllowedExternalUrls = new Set<string>();
@@ -94,54 +108,6 @@ const state: AppState = {
   editingDraft: null,
   activeBoardId: null,
 };
-
-// Seed notes for first-time launch
-const SEED_NOTES: Note[] = [
-  {
-    id: 'note-1',
-    title: 'Welcome to Crypsy',
-    description:
-      'Your notes are decrypted on-device and encrypted with AES-256-GCM before touching storage.\n\nClick "Setup Cloud Folder" in the top bar to walk through placing your encrypted vault and portable app directly inside OneDrive, Google Drive, Dropbox, or iCloud!',
-    tags: ['security', 'ideas'],
-    pinned: true,
-    color: 'teal',
-    createdAt: Date.now() - 3600000 * 24,
-    updatedAt: Date.now() - 3600000 * 2,
-  },
-  {
-    id: 'note-2',
-    title: 'Product Roadmap & Architecture',
-    description:
-      '1. BYOC Cloud Sync via local cloud folder (vault.crypsy.json + Crypsy-Portable.html)\n2. WebAuthn PRF hardware passkey unlock\n3. Desktop on-demand virtual filesystem hydration\n4. Android SAF DocumentsProvider biometric prompt',
-    tags: ['work', 'security'],
-    pinned: true,
-    color: 'cobalt',
-    createdAt: Date.now() - 3600000 * 18,
-    updatedAt: Date.now() - 3600000 * 1,
-  },
-  {
-    id: 'note-3',
-    title: 'Quick Keyboard Shortcuts',
-    description:
-      '• Press "/" or Ctrl+K to jump to search\n• Click any note card to open the full editor\n• Toggle between Card Grid and List view in the top-right toolbar\n• Click any #tag chip to filter immediately',
-    tags: ['ideas'],
-    pinned: false,
-    color: 'amber',
-    createdAt: Date.now() - 3600000 * 12,
-    updatedAt: Date.now() - 3600000 * 5,
-  },
-  {
-    id: 'note-4',
-    title: 'Weekend Grocery & Errands',
-    description:
-      '- Espresso beans (whole bean, medium roast)\n- Sparkling water\n- Olive oil & garlic\n- Pick up hardware security key backup (YubiKey 5C NFC)',
-    tags: ['personal'],
-    pinned: false,
-    color: 'sage',
-    createdAt: Date.now() - 3600000 * 6,
-    updatedAt: Date.now() - 3600000 * 3,
-  },
-];
 
 // DOM Elements
 const els = {
@@ -246,347 +212,27 @@ const els = {
   editModalDeleteBtn: byId<HTMLButtonElement>('editModalDeleteBtn'),
   editModalSaveBtn: byId<HTMLButtonElement>('editModalSaveBtn'),
 
-  // Cloud Onboarding Wizard
-  cloudOnboardingBackdrop: byId('cloudOnboardingBackdrop'),
-  closeOnboardingBtn: byId<HTMLButtonElement>('closeOnboardingBtn'),
-  providerSelectionGrid: byId('providerSelectionGrid'),
-  downloadPortableBtn: byId<HTMLButtonElement>('downloadPortableBtn'),
-  wizardToStep2Btn: byId<HTMLButtonElement>('wizardToStep2Btn'),
-  wizardBackToStep1Btn: byId<HTMLButtonElement>('wizardBackToStep1Btn'),
-  selectedProviderTitle: byId('selectedProviderTitle'),
-  osPathHintCode: byId('osPathHintCode'),
-  copyPathHintBtn: byId<HTMLButtonElement>('copyPathHintBtn'),
-  folderPickerHintText: byId('folderPickerHintText'),
-  createCrypsySubfolderCb: byId<HTMLInputElement>('createCrypsySubfolderCb'),
-  provisionPortableHtmlCb: byId<HTMLInputElement>('provisionPortableHtmlCb'),
-  wizardStep2Error: byId('wizardStep2Error'),
-  pickAndProvisionBtn: byId<HTMLButtonElement>('pickAndProvisionBtn'),
-  connectedProviderHeading: byId('connectedProviderHeading'),
-  connectedFolderDetails: byId('connectedFolderDetails'),
-  unlinkCloudFolderBtn: byId<HTMLButtonElement>('unlinkCloudFolderBtn'),
-  reprovisionAssetsBtn: byId<HTMLButtonElement>('reprovisionAssetsBtn'),
-  finishOnboardingBtn: byId<HTMLButtonElement>('finishOnboardingBtn'),
-  wizardStep1: byId('wizardStep1'),
-  wizardStep2: byId('wizardStep2'),
-  wizardStep3: byId('wizardStep3'),
-  wizardDesktopSyncBox: maybeById('wizardDesktopSyncBox'),
-  wizardMobileSyncBox: maybeById('wizardMobileSyncBox'),
-  mobileShareVaultBtn: maybeById<HTMLButtonElement>('mobileShareVaultBtn'),
-  mobileImportVaultInput: maybeById<HTMLInputElement>('mobileImportVaultInput'),
-  wizardMobileBackBtn: maybeById<HTMLButtonElement>('wizardMobileBackBtn'),
-  wizardMobileDoneBtn: maybeById<HTMLButtonElement>('wizardMobileDoneBtn'),
-
-  // Vault Inspector Modal
-  vaultModalBackdrop: byId('vaultModalBackdrop'),
-  closeVaultModalBtn: byId<HTMLButtonElement>('closeVaultModalBtn'),
-  vaultPassphraseInput: byId<HTMLInputElement>('vaultPassphraseInput'),
-  vaultConfirmPassphraseInput: byId<HTMLInputElement>('vaultConfirmPassphraseInput'),
-  vaultPassphraseFeedback: byId('vaultPassphraseFeedback'),
-  updatePassphraseBtn: byId<HTMLButtonElement>('updatePassphraseBtn'),
-  lockVaultNowBtn: byId<HTMLButtonElement>('lockVaultNowBtn'),
-  ciphertextPreview: byId('ciphertextPreview'),
-  exportEncryptedBtn: byId<HTMLButtonElement>('exportEncryptedBtn'),
-  importEncryptedInput: byId<HTMLInputElement>('importEncryptedInput'),
-
-  // Updates Modal
-  appVersionBadge: maybeById('appVersionBadge'),
+  // Topbar Lock Button
   topbarLockBtn: maybeById<HTMLButtonElement>('topbarLockBtn'),
-  topbarUpdatesBtn: maybeById<HTMLButtonElement>('topbarUpdatesBtn'),
-  autoLockSelect: maybeById<HTMLSelectElement>('autoLockSelect'),
-  lockOnHideCb: maybeById<HTMLInputElement>('lockOnHideCb'),
-  blockExternalMediaCb: maybeById<HTMLInputElement>('blockExternalMediaCb'),
-  updatesModalBackdrop: maybeById('updatesModalBackdrop'),
-  closeUpdatesModalBtn: maybeById<HTMLButtonElement>('closeUpdatesModalBtn'),
-  installedVersionLabel: maybeById('installedVersionLabel'),
-  autoCheckUpdatesCb: maybeById<HTMLInputElement>('autoCheckUpdatesCb'),
-  updateCheckStatus: maybeById('updateCheckStatus'),
-  checkUpdatesNowBtn: maybeById<HTMLButtonElement>('checkUpdatesNowBtn'),
-
-  lockScreenOverlay: byId('lockScreenOverlay'),
-  lockScreenTitle: byId('lockScreenTitle'),
-  lockScreenSubtitle: byId('lockScreenSubtitle'),
-  unlockVaultForm: byId<HTMLFormElement>('unlockVaultForm'),
-  unlockPassphraseInput: byId<HTMLInputElement>('unlockPassphraseInput'),
-  unlockConfirmWrapper: byId('unlockConfirmWrapper'),
-  unlockConfirmPassphraseInput: byId<HTMLInputElement>('unlockConfirmPassphraseInput'),
-  unlockErrorMsg: byId('unlockErrorMsg'),
-  unlockSubmitBtn: byId<HTMLButtonElement>('unlockSubmitBtn'),
-  lockResumeCloudBtn: byId<HTMLButtonElement>('lockResumeCloudBtn'),
-  lockLinkCloudBtn: byId<HTMLButtonElement>('lockLinkCloudBtn'),
-  lockImportVaultInput: byId<HTMLInputElement>('lockImportVaultInput'),
 
   imageLightboxBackdrop: maybeById('imageLightboxBackdrop'),
   closeLightboxBtn: maybeById<HTMLButtonElement>('closeLightboxBtn'),
   lightboxImage: maybeById<HTMLImageElement>('lightboxImage'),
 };
 
-// List continuation helper
-function handleListEnterKeydown(e: KeyboardEvent): void {
-  if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.isComposing) {
-    return;
-  }
-
-  const textarea = e.currentTarget as HTMLTextAreaElement;
-  const value = textarea.value;
-  const start = textarea.selectionStart;
-  const end = textarea.selectionEnd;
-  const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-  const lineEndIdx = value.indexOf('\n', end);
-  const lineEnd = lineEndIdx === -1 ? value.length : lineEndIdx;
-  const lineBeforeCursor = value.slice(lineStart, start);
-  const lineAfterCursor = value.slice(end, lineEnd);
-
-  let nextPrefix: string | null = null;
-  let isEmptyItem = false;
-
-  const taskMatch = lineBeforeCursor.match(/^(\s*)([-*+])\s+\[([ xX])\]\s*(.*)$/);
-  if (taskMatch) {
-    isEmptyItem = (taskMatch[4] ?? '').trim() === '' && lineAfterCursor.trim() === '';
-    nextPrefix = `${taskMatch[1] ?? ''}${taskMatch[2] ?? '-'} [ ] `;
-  } else {
-    const ulMatch = lineBeforeCursor.match(/^(\s*)([-*+•])\s+(.*)$/);
-    if (ulMatch) {
-      isEmptyItem = (ulMatch[3] ?? '').trim() === '' && lineAfterCursor.trim() === '';
-      nextPrefix = `${ulMatch[1] ?? ''}${ulMatch[2] ?? '-'} `;
-    } else {
-      const olMatch = lineBeforeCursor.match(/^(\s*)(\d+)([.)])\s+(.*)$/);
-      if (olMatch) {
-        isEmptyItem = (olMatch[4] ?? '').trim() === '' && lineAfterCursor.trim() === '';
-        const nextNum = parseInt(olMatch[2] ?? '0', 10) + 1;
-        nextPrefix = `${olMatch[1] ?? ''}${nextNum}${olMatch[3] ?? '.'} `;
-      }
-    }
-  }
-
-  if (nextPrefix === null) return;
-
-  e.preventDefault();
-  if (isEmptyItem) {
-    textarea.value = value.slice(0, lineStart) + value.slice(lineEnd);
-    textarea.selectionStart = textarea.selectionEnd = lineStart;
-  } else {
-    const insertion = `\n${nextPrefix}`;
-    textarea.value = value.slice(0, start) + insertion + value.slice(end);
-    const nextPos = start + insertion.length;
-    textarea.selectionStart = textarea.selectionEnd = nextPos;
-  }
-  autoResizeTextarea(textarea);
-}
-
 // Preferences
-interface StoredPrefs {
-  viewMode?: unknown;
-  theme?: unknown;
-  boardsSectionExpanded?: unknown;
-  tagsSectionExpanded?: unknown;
-  guideSectionExpanded?: unknown;
-  autoCheckUpdates?: unknown;
-  autoLockMinutes?: unknown;
-  lockOnHide?: unknown;
-  blockExternalMedia?: unknown;
-}
-
 function loadPreferences(): void {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_PREFS);
-    if (!raw) return;
-    const prefs = JSON.parse(raw) as StoredPrefs;
-    if (prefs.viewMode === 'list' || prefs.viewMode === 'grid') {
-      state.viewMode = prefs.viewMode;
-    }
-    if (prefs.theme === 'light' || prefs.theme === 'dark') {
-      state.theme = prefs.theme;
-    }
-    if (typeof prefs.boardsSectionExpanded === 'boolean') {
-      state.boardsSectionExpanded = prefs.boardsSectionExpanded;
-    }
-    if (typeof prefs.tagsSectionExpanded === 'boolean') {
-      state.tagsSectionExpanded = prefs.tagsSectionExpanded;
-    }
-    if (typeof prefs.guideSectionExpanded === 'boolean') {
-      state.guideSectionExpanded = prefs.guideSectionExpanded;
-    }
-    if (typeof prefs.autoCheckUpdates === 'boolean') {
-      state.autoCheckUpdates = prefs.autoCheckUpdates;
-    }
-    if (
-      typeof prefs.autoLockMinutes === 'number' &&
-      [0, 5, 15, 30, 60].includes(prefs.autoLockMinutes)
-    ) {
-      state.autoLockMinutes = prefs.autoLockMinutes;
-    }
-    if (typeof prefs.lockOnHide === 'boolean') {
-      state.lockOnHide = prefs.lockOnHide;
-    }
-    if (typeof prefs.blockExternalMedia === 'boolean') {
-      state.blockExternalMedia = prefs.blockExternalMedia;
-    }
-  } catch (e) {
-    console.warn('Failed to load UI prefs:', e);
-  }
+  loadPreferencesIntoState(state);
 }
 
 function savePreferences(): void {
-  localStorage.setItem(
-    STORAGE_KEY_PREFS,
-    JSON.stringify({
-      viewMode: state.viewMode,
-      theme: state.theme,
-      boardsSectionExpanded: state.boardsSectionExpanded,
-      tagsSectionExpanded: state.tagsSectionExpanded,
-      guideSectionExpanded: state.guideSectionExpanded,
-      autoCheckUpdates: state.autoCheckUpdates,
-      autoLockMinutes: state.autoLockMinutes,
-      lockOnHide: state.lockOnHide,
-      blockExternalMedia: state.blockExternalMedia,
-    })
-  );
-}
-
-function compareSemver(a: string, b: string): number {
-  const pa = String(a || '').replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
-  const pb = String(b || '').replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length, 3); i++) {
-    const na = pa[i] ?? 0;
-    const nb = pb[i] ?? 0;
-    if (na > nb) return 1;
-    if (na < nb) return -1;
-  }
-  return 0;
-}
-
-interface GitHubReleaseAsset {
-  name?: string;
-  browser_download_url?: string;
-}
-
-interface GitHubReleaseResponse {
-  tag_name?: string;
-  name?: string;
-  html_url?: string;
-  assets?: GitHubReleaseAsset[];
-}
-
-async function checkForUpdates(silent = false): Promise<void> {
-  if (!els.updateCheckStatus) return;
-  if (!silent) {
-    els.updateCheckStatus.className = 'update-status-box';
-    els.updateCheckStatus.textContent = 'Checking GitHub Releases...';
-  }
-
-  try {
-    const res = await fetch('https://api.github.com/repos/kurtisnotcurtis/crypsy/releases/latest', {
-      headers: { Accept: 'application/vnd.github+json' },
-    });
-    if (!res.ok) {
-      if (res.status === 404) {
-        throw new Error('No published GitHub Releases found yet.');
-      }
-      throw new Error(`GitHub API returned ${res.status}`);
-    }
-
-    const release = (await res.json()) as GitHubReleaseResponse;
-    const latestTag = release.tag_name || release.name || '';
-    const isNewer = compareSemver(latestTag, APP_VERSION) > 0;
-    const portableAsset = Array.isArray(release.assets)
-      ? release.assets.find((a) => a.name && a.name.toLowerCase().includes('portable'))
-      : undefined;
-    const downloadUrl =
-      portableAsset?.browser_download_url ||
-      release.html_url ||
-      'https://github.com/kurtisnotcurtis/crypsy/releases/latest';
-
-    if (isNewer) {
-      if (els.appVersionBadge) {
-        els.appVersionBadge.classList.add('update-available');
-        els.appVersionBadge.textContent = `v${APP_VERSION} • Update`;
-        els.appVersionBadge.title = `Update available: ${latestTag}`;
-      }
-      els.updateCheckStatus.className = 'update-status-box has-update';
-      els.updateCheckStatus.innerHTML = `
-        <div><strong>Update available: ${escapeHtml(latestTag)}</strong> (installed: v${escapeHtml(APP_VERSION)})</div>
-        <div class="update-actions-row">
-          <a href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener noreferrer" class="btn-primary" style="text-decoration:none;">Download ${escapeHtml(latestTag)}</a>
-          <a href="${escapeHtml(release.html_url || downloadUrl)}" target="_blank" rel="noopener noreferrer" class="btn-link">Release Notes</a>
-        </div>
-      `;
-    } else {
-      if (els.appVersionBadge) {
-        els.appVersionBadge.classList.remove('update-available');
-        els.appVersionBadge.textContent = `v${APP_VERSION}`;
-      }
-      els.updateCheckStatus.className = 'update-status-box up-to-date';
-      els.updateCheckStatus.innerHTML = `You're up to date on <strong>v${escapeHtml(APP_VERSION)}</strong> (latest: ${escapeHtml(latestTag || `v${APP_VERSION}`)}).`;
-    }
-  } catch (err) {
-    if (!silent) {
-      els.updateCheckStatus.className = 'update-status-box error';
-      const msg = err instanceof Error ? err.message : 'Network error';
-      els.updateCheckStatus.textContent = `Could not check for updates: ${msg || 'Network error'}`;
-    }
-  }
+  savePreferencesFromState(state);
 }
 
 // Persistence & Cloud Sync
 let boardPersistTimer: number | null = null;
-
-function openVaultCacheDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (!('indexedDB' in window)) {
-      reject(new Error('IndexedDB not supported'));
-      return;
-    }
-    const req = indexedDB.open(VAULT_IDB_NAME, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(VAULT_IDB_STORE)) {
-        db.createObjectStore(VAULT_IDB_STORE);
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function saveVaultEnvelopeToCache(envelope: EncryptedEnvelope): Promise<void> {
-  try {
-    localStorage.setItem(STORAGE_KEY_VAULT, JSON.stringify(envelope));
-  } catch {
-    // QuotaExceededError when vault has large images; IndexedDB stores full envelope below
-  }
-  try {
-    const db = await openVaultCacheDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(VAULT_IDB_STORE, 'readwrite');
-      tx.objectStore(VAULT_IDB_STORE).put(envelope, VAULT_IDB_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch {
-    // Ignore IDB failure if localStorage succeeded
-  }
-}
-
-async function loadVaultEnvelopeFromCache(): Promise<EncryptedEnvelope | null> {
-  try {
-    const db = await openVaultCacheDB();
-    const fromIdb = await new Promise<EncryptedEnvelope | null>((resolve, reject) => {
-      const tx = db.transaction(VAULT_IDB_STORE, 'readonly');
-      const req = tx.objectStore(VAULT_IDB_STORE).get(VAULT_IDB_KEY);
-      req.onsuccess = () => resolve((req.result as EncryptedEnvelope | undefined) ?? null);
-      req.onerror = () => reject(req.error);
-    });
-    if (fromIdb) return fromIdb;
-  } catch {
-    // Fallback to localStorage
-  }
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_VAULT);
-    return raw ? (JSON.parse(raw) as EncryptedEnvelope) : null;
-  } catch {
-    return null;
-  }
-}
+let activePersistPromise: Promise<void> | null = null;
+let persistAgainRequested = false;
 
 function scheduleBoardPersist(immediate = false): void {
   if (boardPersistTimer !== null) {
@@ -612,74 +258,19 @@ function applyDecryptedPayload(decrypted: VaultPayload): void {
   }
 }
 
-function validateNewPassphrase(pass: string, confirm: string): string | null {
-  if (!pass || pass.trim().length === 0) {
-    return 'Enter a passphrase to encrypt your vault.';
-  }
-  if (pass.length < MIN_PASSPHRASE_LENGTH) {
-    return `Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters long.`;
-  }
-  if (pass !== confirm) {
-    return 'Passphrases do not match.';
-  }
-  return null;
-}
-
-function setLockScreenMode(mode: LockScreenMode, errorMsg?: string): void {
-  lockScreenMode = mode;
-  const isCreate = mode === 'setup' || mode === 'upgrade';
-
-  if (mode === 'setup') {
-    els.lockScreenTitle.textContent = 'Create Your Vault Passphrase';
-    els.lockScreenSubtitle.textContent =
-      'Your passphrase derives the AES-256-GCM encryption key locally and is never stored. If forgotten, your vault cannot be recovered.';
-    els.unlockPassphraseInput.placeholder = `Create passphrase (min ${MIN_PASSPHRASE_LENGTH} chars)...`;
-    els.unlockSubmitBtn.textContent = 'Create Encrypted Vault';
-  } else if (mode === 'upgrade') {
-    els.lockScreenTitle.textContent = 'Passphrase Required — Upgrade Vault';
-    els.lockScreenSubtitle.textContent =
-      'This vault was encrypted with Crypsy’s legacy default key. Set a strong passphrase now to re-encrypt your existing notes and boards.';
-    els.unlockPassphraseInput.placeholder = `New passphrase (min ${MIN_PASSPHRASE_LENGTH} chars)...`;
-    els.unlockSubmitBtn.textContent = 'Re-key & Unlock Vault';
-  } else {
-    els.lockScreenTitle.textContent = 'Crypsy Vault Locked';
-    els.lockScreenSubtitle.textContent =
-      'Your notes are encrypted with AES-256-GCM. Enter your vault passphrase to decrypt locally.';
-    els.unlockPassphraseInput.placeholder = 'Vault passphrase...';
-    els.unlockSubmitBtn.textContent = 'Decrypt & Unlock';
-  }
-
-  els.unlockPassphraseInput.setAttribute('autocomplete', isCreate ? 'new-password' : 'current-password');
-  els.unlockConfirmWrapper.classList.toggle('hidden', !isCreate);
-  els.unlockConfirmPassphraseInput.required = isCreate;
-  els.unlockPassphraseInput.value = '';
-  els.unlockConfirmPassphraseInput.value = '';
-
-  if (errorMsg) {
-    els.unlockErrorMsg.textContent = errorMsg;
-    els.unlockErrorMsg.classList.remove('hidden');
-  } else {
-    els.unlockErrorMsg.classList.add('hidden');
-  }
-
-  els.lockResumeCloudBtn.classList.toggle('hidden', !pendingCloudNeedsPermission);
-  els.lockLinkCloudBtn.classList.toggle(
-    'hidden',
-    !(mode === 'setup' && CrypsyCloudSync.isFileSystemAccessSupported() && !CrypsyCloudSync.isConnected())
-  );
-
-  els.lockScreenOverlay.classList.remove('hidden');
-  els.unlockPassphraseInput.focus();
-}
-
 async function lockVault(flushPending = false, errorMsg?: string): Promise<void> {
-  if (flushPending && state.passphrase && boardPersistTimer !== null) {
-    await persistEncryptedVault();
+  if (flushPending && state.passphrase) {
+    if (boardPersistTimer !== null) {
+      await persistEncryptedVault();
+    } else if (activePersistPromise) {
+      await activePersistPromise;
+    }
   }
   if (boardPersistTimer !== null) {
     window.clearTimeout(boardPersistTimer);
     boardPersistTimer = null;
   }
+  persistAgainRequested = false;
 
   state.passphrase = null;
   pendingLegacyUpgradePayload = null;
@@ -709,15 +300,13 @@ async function lockVault(flushPending = false, errorMsg?: string): Promise<void>
   if (els.editModalImageUrlInput) els.editModalImageUrlInput.value = '';
   if (els.newBoardInput) els.newBoardInput.value = '';
   els.newTagInput.value = '';
-  els.vaultPassphraseInput.value = '';
-  els.vaultConfirmPassphraseInput.value = '';
   els.activeFilterText.innerHTML = '';
   els.activeFilterBanner.classList.add('hidden');
 
   els.editModalBackdrop.classList.add('hidden');
-  els.vaultModalBackdrop.classList.add('hidden');
-  els.cloudOnboardingBackdrop.classList.add('hidden');
-  els.updatesModalBackdrop?.classList.add('hidden');
+  vaultModal.clearSensitiveUI();
+  cloudWizard.close();
+  updatesController.close();
 
   els.pinnedSection.classList.add('hidden');
   els.othersSection.classList.add('hidden');
@@ -726,28 +315,27 @@ async function lockVault(flushPending = false, errorMsg?: string): Promise<void>
   els.othersGrid.innerHTML = '';
   if (els.sidebarBoardsList) els.sidebarBoardsList.innerHTML = '';
   els.sidebarTagsList.innerHTML = '';
-  els.ciphertextPreview.textContent = '';
   els.countAll.textContent = '0';
   els.countPinned.textContent = '0';
   if (els.countBoards) els.countBoards.textContent = '0';
 
-  setLockScreenMode(state.lastEncryptedEnvelope ? 'unlock' : 'setup', errorMsg);
+  lockScreen.setMode(state.lastEncryptedEnvelope ? 'unlock' : 'setup', errorMsg);
 }
 
-async function persistEncryptedVault(): Promise<void> {
-  if (!state.passphrase) {
+async function writeEncryptedVaultOnce(): Promise<void> {
+  const passphrase = state.passphrase;
+  if (!passphrase) {
     throw new Error('Cannot persist vault while locked without a passphrase.');
   }
-  if (boardPersistTimer !== null) {
-    window.clearTimeout(boardPersistTimer);
-    boardPersistTimer = null;
-  }
   const payload: VaultPayload = {
-    notes: state.notes,
-    tags: state.tags,
-    boards: state.boards,
+    notes: structuredClone(state.notes),
+    tags: [...state.tags],
+    boards: structuredClone(state.boards),
   };
-  const envelope = await CrypsyCrypto.encryptPayload(payload, state.passphrase);
+  const envelope = await CrypsyCrypto.encryptPayload(payload, passphrase);
+  if (state.passphrase !== passphrase) {
+    return;
+  }
   state.lastEncryptedEnvelope = envelope;
   await saveVaultEnvelopeToCache(envelope);
 
@@ -760,7 +348,34 @@ async function persistEncryptedVault(): Promise<void> {
     }
   }
 
-  updateVaultInspectorUI();
+  vaultModal.updateCiphertextPreview();
+}
+
+async function persistEncryptedVault(): Promise<void> {
+  if (!state.passphrase) {
+    throw new Error('Cannot persist vault while locked without a passphrase.');
+  }
+  if (boardPersistTimer !== null) {
+    window.clearTimeout(boardPersistTimer);
+    boardPersistTimer = null;
+  }
+  if (activePersistPromise) {
+    persistAgainRequested = true;
+    await activePersistPromise;
+    return;
+  }
+  const run = (async () => {
+    try {
+      do {
+        persistAgainRequested = false;
+        await writeEncryptedVaultOnce();
+      } while (persistAgainRequested && state.passphrase);
+    } finally {
+      activePersistPromise = null;
+    }
+  })();
+  activePersistPromise = run;
+  await run;
 }
 
 async function tryLoadEnvelope(envelope: EncryptedEnvelope): Promise<boolean> {
@@ -772,7 +387,7 @@ async function tryLoadEnvelope(envelope: EncryptedEnvelope): Promise<boolean> {
       const decrypted = await CrypsyCrypto.decryptPayload(envelope, state.passphrase);
       pendingLegacyUpgradePayload = null;
       applyDecryptedPayload(decrypted);
-      els.lockScreenOverlay.classList.add('hidden');
+      lockScreen.hide();
       renderAll();
       return true;
     } catch {
@@ -792,11 +407,11 @@ async function tryLoadEnvelope(envelope: EncryptedEnvelope): Promise<boolean> {
       LEGACY_DEFAULT_DEVICE_SECRET
     );
     pendingLegacyUpgradePayload = legacyDecrypted;
-    setLockScreenMode('upgrade');
+    lockScreen.setMode('upgrade');
     return false;
   } catch {
     pendingLegacyUpgradePayload = null;
-    setLockScreenMode('unlock');
+    lockScreen.setMode('unlock');
     return false;
   }
 }
@@ -812,7 +427,14 @@ async function initVault(): Promise<void> {
 
   // Listen for external cloud folder updates (e.g. synced from another device)
   CrypsyCloudSync.onExternalUpdate(async (externalEnvelope) => {
-    if (boardEditor.isGestureActive()) return;
+    if (
+      boardEditor.isGestureActive() ||
+      boardEditor.isEditingText() ||
+      state.editingNoteId !== null ||
+      state.composer.expanded
+    ) {
+      return;
+    }
     const loaded = await tryLoadEnvelope(externalEnvelope);
     if (loaded) {
       boardEditor.refreshFromExternal();
@@ -832,16 +454,7 @@ async function initVault(): Promise<void> {
   updateCloudStatusUI(cloudState);
 
   setInterval(updateLastUpdatedUI, 30000);
-
-  if (els.autoCheckUpdatesCb) {
-    els.autoCheckUpdatesCb.checked = state.autoCheckUpdates;
-  }
-  if (els.installedVersionLabel) {
-    els.installedVersionLabel.textContent = `v${APP_VERSION}`;
-  }
-  if (state.autoCheckUpdates) {
-    void checkForUpdates(true);
-  }
+  updatesController.init();
 
   if (cloudState.status === 'connected') {
     const cloudEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
@@ -854,7 +467,7 @@ async function initVault(): Promise<void> {
 
   const cachedEnvelope = await loadVaultEnvelopeFromCache();
   if (!cachedEnvelope) {
-    setLockScreenMode('setup');
+    lockScreen.setMode('setup');
     return;
   }
 
@@ -1007,10 +620,13 @@ async function shareOrDownloadVaultJson(): Promise<void> {
 async function importEncryptedVaultFile(file: File, backdropToClose?: HTMLElement): Promise<void> {
   try {
     const text = await file.text();
-    const envelope = JSON.parse(text) as EncryptedEnvelope;
-    const ok = await tryLoadEnvelope(envelope);
+    const parsed: unknown = JSON.parse(text);
+    if (!CrypsyCrypto.isValidEncryptedEnvelope(parsed)) {
+      throw new Error('Missing required encrypted vault fields');
+    }
+    const ok = await tryLoadEnvelope(parsed);
     if (ok && CrypsyCloudSync.isConnected()) {
-      await CrypsyCloudSync.writeVaultToCloudFolder(envelope);
+      await CrypsyCloudSync.writeVaultToCloudFolder(parsed);
     }
     backdropToClose?.classList.add('hidden');
   } catch {
@@ -1056,15 +672,112 @@ function applySidebarSectionsUI(): void {
   }
 }
 
-// Shared Custom Context Menu & Spatial Boards Controller
+// Shared Custom Context Menu, Cloud Wizard, Updates & Spatial Boards Controllers
 const contextMenu = new ContextMenuController();
+
+const cloudWizard = new CloudWizardController({
+  getSelectedProviderId: () => state.selectedProviderId,
+  setSelectedProviderId: (id) => {
+    state.selectedProviderId = id;
+  },
+  tryLoadEnvelope,
+  persistEncryptedVault,
+  updateCloudStatusUI,
+  shareOrDownloadVaultJson,
+  importEncryptedVaultFile,
+});
+
+const updatesController = new UpdatesController({
+  getAutoCheckUpdates: () => state.autoCheckUpdates,
+  setAutoCheckUpdates: (enabled) => {
+    state.autoCheckUpdates = enabled;
+    savePreferences();
+  },
+});
+
+const vaultModal = new VaultModalController({
+  getLastEnvelope: () => state.lastEncryptedEnvelope,
+  getAutoLockMinutes: () => state.autoLockMinutes,
+  setAutoLockMinutes: (minutes) => {
+    state.autoLockMinutes = minutes;
+    lastActivityAt = Date.now();
+    savePreferences();
+  },
+  getLockOnHide: () => state.lockOnHide,
+  setLockOnHide: (enabled) => {
+    state.lockOnHide = enabled;
+    savePreferences();
+  },
+  getBlockExternalMedia: () => state.blockExternalMedia,
+  setBlockExternalMedia: (enabled) => {
+    state.blockExternalMedia = enabled;
+    if (enabled) {
+      sessionAllowedExternalUrls.clear();
+    }
+    savePreferences();
+    renderNotes();
+    renderComposerImages();
+    renderEditModalImages();
+    if (boardEditor.isOpen()) {
+      boardEditor.refreshFromExternal();
+    }
+  },
+  validateNewPassphrase,
+  onRekeyPassphrase: async (nextPassphrase) => {
+    state.passphrase = nextPassphrase;
+    await persistEncryptedVault();
+  },
+  onLockNow: async () => {
+    await lockVault(true);
+  },
+  onExportVault: shareOrDownloadVaultJson,
+  onImportVaultFile: importEncryptedVaultFile,
+});
+
+const lockScreen = new LockScreenController({
+  isPendingCloudPermission: () => pendingCloudNeedsPermission,
+  clearPendingCloudPermission: () => {
+    pendingCloudNeedsPermission = false;
+  },
+  getSelectedProviderId: () => state.selectedProviderId,
+  validateNewPassphrase,
+  onCreateOrUpgradeVault: async (mode, passphrase) => {
+    state.passphrase = passphrase;
+    try {
+      if (mode === 'upgrade' && pendingLegacyUpgradePayload) {
+        applyDecryptedPayload(pendingLegacyUpgradePayload);
+        pendingLegacyUpgradePayload = null;
+      } else {
+        state.notes = createSeedNotes();
+        state.boards = [];
+      }
+      await persistEncryptedVault();
+      renderAll();
+    } catch (err) {
+      state.passphrase = null;
+      throw err;
+    }
+  },
+  onUnlockVault: async (passphrase) => {
+    const envelope = state.lastEncryptedEnvelope ?? (await loadVaultEnvelopeFromCache());
+    if (!envelope) throw new Error('No vault found');
+    const decrypted = await CrypsyCrypto.decryptPayload(envelope, passphrase);
+    state.passphrase = passphrase;
+    applyDecryptedPayload(decrypted);
+    renderAll();
+    boardEditor.refreshFromExternal();
+  },
+  onCloudStatusConnected: () => updateCloudStatusUI({ status: 'connected' }),
+  onTryLoadEnvelope: tryLoadEnvelope,
+  onImportVaultFile: (file) => importEncryptedVaultFile(file),
+});
 
 const boardEditor = new BoardEditorController({
   getBoard: () => state.boards.find((b) => b.id === state.activeBoardId) ?? null,
   getSearchQuery: () => state.searchQuery,
   getAllTags: () => state.tags,
   contextMenu,
-  isLocked: () => !els.lockScreenOverlay.classList.contains('hidden'),
+  isLocked: () => lockScreen.isOpen(),
   onAddTagToVault: (tag) => {
     const clean = tag.trim().toLowerCase().replace(/^#/, '');
     if (clean && !state.tags.includes(clean)) {
@@ -1110,41 +823,12 @@ function renderImageOrPrivacyPlaceholderHtml(
   alt: string,
   options: { className?: string; lazy?: boolean } = {}
 ): string {
-  if (isExternalImageAllowed(src)) {
-    const cls = options.className ? ` class="${options.className}"` : '';
-    const lazyAttr = options.lazy ? ' loading="lazy"' : '';
-    return `<img${cls} src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" data-lightbox-src="${escapeHtml(src)}" referrerpolicy="no-referrer"${lazyAttr} />`;
-  }
-  let host = 'external host';
-  try {
-    host = new URL(src).hostname || host;
-  } catch {
-    // ignore invalid URL
-  }
-  return (
-    `<div class="blocked-external-image">` +
-    `<span>External image blocked (${escapeHtml(host)})</span>` +
-    `<button type="button" class="btn-link blocked-external-load-btn" data-allow-external-url="${escapeHtml(src)}">Load external image</button>` +
-    `</div>`
-  );
+  return renderCardImageOrPlaceholder(src, alt, isExternalImageAllowed, options);
 }
 
 async function createBoard(rawTitle?: string): Promise<void> {
-  const now = Date.now();
-  const trimmed = (rawTitle ?? '').trim();
-  const initialTags =
-    state.activeFilter.type === 'tag' && state.activeFilter.tag ? [state.activeFilter.tag] : [];
-  const board: Board = {
-    id: `board-${now}-${Math.random().toString(36).slice(2, 7)}`,
-    title: trimmed || `Untitled Board ${state.boards.length + 1}`,
-    tags: initialTags,
-    pinned: false,
-    color: 'default',
-    viewport: { panX: 0, panY: 0, zoom: 1 },
-    items: [],
-    createdAt: now,
-    updatedAt: now,
-  };
+  const initialTag = state.activeFilter.type === 'tag' ? state.activeFilter.tag : null;
+  const board = createNewBoard(state.boards.length, rawTitle, initialTag);
   state.boards.unshift(board);
   state.boardsSectionExpanded = true;
   state.activeFilter = { type: 'boards', tag: null };
@@ -1190,22 +874,7 @@ async function deleteNote(noteId: string): Promise<void> {
 }
 
 async function duplicateNote(noteId: string): Promise<void> {
-  const note = state.notes.find((n) => n.id === noteId);
-  if (!note) return;
-  const now = Date.now();
-  const clone: Note = {
-    id: `note-${now}-${Math.random().toString(36).slice(2, 7)}`,
-    title: note.title ? `${note.title} (Copy)` : 'Untitled (Copy)',
-    description: note.description,
-    images: note.images ? note.images.map((img) => ({ ...img })) : [],
-    tags: [...(note.tags || [])],
-    pinned: false,
-    color: note.color,
-    createdAt: now,
-    updatedAt: now,
-  };
-  const idx = state.notes.findIndex((n) => n.id === noteId);
-  state.notes.splice(idx >= 0 ? idx + 1 : 0, 0, clone);
+  if (!duplicateNoteInList(state.notes, noteId)) return;
   await persistEncryptedVault();
   renderAll();
 }
@@ -1229,25 +898,7 @@ async function toggleBoardPin(boardId: string): Promise<void> {
 }
 
 async function duplicateBoard(boardId: string): Promise<void> {
-  const board = state.boards.find((b) => b.id === boardId);
-  if (!board) return;
-  const now = Date.now();
-  const clone: Board = {
-    id: `board-${now}-${Math.random().toString(36).slice(2, 7)}`,
-    title: board.title ? `${board.title} (Copy)` : 'Untitled Board (Copy)',
-    tags: [...(board.tags || [])],
-    pinned: false,
-    color: board.color,
-    viewport: { ...board.viewport },
-    items: board.items.map((item) => ({
-      ...(JSON.parse(JSON.stringify(item)) as typeof item),
-      id: `bi-${now}-${Math.random().toString(36).slice(2, 7)}`,
-    })),
-    createdAt: now,
-    updatedAt: now,
-  };
-  const idx = state.boards.findIndex((b) => b.id === boardId);
-  state.boards.splice(idx >= 0 ? idx + 1 : 0, 0, clone);
+  if (!duplicateBoardInList(state.boards, boardId)) return;
   await persistEncryptedVault();
   renderAll();
 }
@@ -1262,53 +913,16 @@ async function setBoardColor(boardId: string, color: NoteColor): Promise<void> {
 }
 
 async function deleteTag(tagToDelete: string): Promise<void> {
-  state.tags = state.tags.filter((t) => t !== tagToDelete);
-  state.notes.forEach((n) => {
-    n.tags = (n.tags || []).filter((t) => t !== tagToDelete);
-  });
-  state.boards.forEach((b) => {
-    b.tags = (b.tags || []).filter((t) => t !== tagToDelete);
-  });
-  if (state.activeFilter.tag === tagToDelete) {
-    state.activeFilter = { type: 'all', tag: null };
-  }
+  deleteTagInVault(state, tagToDelete);
   await persistEncryptedVault();
   renderAll();
 }
 
 async function renameTag(oldTag: string, rawNextTag: string): Promise<void> {
-  const nextTag = rawNextTag.trim().toLowerCase().replace(/^#/, '');
-  if (!nextTag || nextTag === oldTag) {
+  if (!renameTagInVault(state, oldTag, rawNextTag)) {
     renderSidebar();
     return;
   }
-
-  if (state.tags.includes(nextTag)) {
-    state.tags = state.tags.filter((t) => t !== oldTag);
-  } else {
-    state.tags = state.tags.map((t) => (t === oldTag ? nextTag : t));
-  }
-
-  const replaceTagList = (tags: string[] | undefined): string[] => {
-    const out: string[] = [];
-    for (const t of tags || []) {
-      const mapped = t === oldTag ? nextTag : t;
-      if (!out.includes(mapped)) out.push(mapped);
-    }
-    return out;
-  };
-
-  state.notes.forEach((n) => {
-    n.tags = replaceTagList(n.tags);
-  });
-  state.boards.forEach((b) => {
-    b.tags = replaceTagList(b.tags);
-  });
-
-  if (state.activeFilter.type === 'tag' && state.activeFilter.tag === oldTag) {
-    state.activeFilter = { type: 'tag', tag: nextTag };
-  }
-
   await persistEncryptedVault();
   renderAll();
 }
@@ -1356,52 +970,23 @@ function startInlineSidebarRename(
 }
 
 function openNoteContextMenu(clientX: number, clientY: number, note: Note): void {
-  contextMenu.open(clientX, clientY, [
-    {
-      type: 'action',
-      id: 'edit-note',
-      label: 'Edit Note',
-      onSelect: () => openEditModal(note.id),
-    },
-    {
-      type: 'action',
-      id: 'pin-note',
-      label: note.pinned ? 'Unpin Note' : 'Pin Note',
-      onSelect: () => toggleNotePin(note.id),
-    },
-    {
-      type: 'action',
-      id: 'dup-note',
-      label: 'Duplicate Note',
-      onSelect: () => duplicateNote(note.id),
-    },
-    {
-      type: 'action',
-      id: 'copy-note',
-      label: 'Copy Note Text',
-      onSelect: () => {
+  contextMenu.open(
+    clientX,
+    clientY,
+    buildNoteContextMenuEntries(note, {
+      onEdit: () => openEditModal(note.id),
+      onTogglePin: () => toggleNotePin(note.id),
+      onDuplicate: () => duplicateNote(note.id),
+      onCopyText: () => {
         const text = [note.title, note.description].filter(Boolean).join('\n\n');
         if (text && navigator.clipboard?.writeText) {
           void navigator.clipboard.writeText(text).catch(() => {});
         }
       },
-    },
-    { type: 'divider' },
-    {
-      type: 'color-row',
-      label: 'Tint',
-      activeColor: note.color || 'default',
-      onSelectColor: (c) => setNoteColor(note.id, c),
-    },
-    { type: 'divider' },
-    {
-      type: 'action',
-      id: 'delete-note',
-      label: 'Delete Note',
-      danger: true,
-      onSelect: () => deleteNote(note.id),
-    },
-  ]);
+      onSetColor: (c) => setNoteColor(note.id, c),
+      onDelete: () => deleteNote(note.id),
+    })
+  );
 }
 
 function openBoardContextMenu(
@@ -1410,134 +995,45 @@ function openBoardContextMenu(
   board: Board,
   sidebarRowEl?: HTMLElement
 ): void {
-  contextMenu.open(clientX, clientY, [
-    {
-      type: 'action',
-      id: 'open-board',
-      label: 'Open Board',
-      onSelect: () => openBoardEditor(board.id),
-    },
-    ...(sidebarRowEl
-      ? [
-          {
-            type: 'action' as const,
-            id: 'rename-board',
-            label: 'Rename Board...',
-            onSelect: () =>
-              startInlineSidebarRename(sidebarRowEl, board.title || 'Untitled Board', async (val) => {
-                const nextTitle = val.trim();
-                if (nextTitle && nextTitle !== board.title) {
-                  board.title = nextTitle;
-                  board.updatedAt = Date.now();
-                  await persistEncryptedVault();
-                  renderAll();
-                  if (state.activeBoardId === board.id) {
-                    boardEditor.refreshFromExternal();
-                  }
-                } else {
-                  renderSidebar();
-                }
-              }),
-          },
-        ]
-      : []),
-    {
-      type: 'action',
-      id: 'pin-board',
-      label: board.pinned ? 'Unpin Board' : 'Pin Board',
-      onSelect: () => toggleBoardPin(board.id),
-    },
-    {
-      type: 'action',
-      id: 'dup-board',
-      label: 'Duplicate Board',
-      onSelect: () => duplicateBoard(board.id),
-    },
-    { type: 'divider' },
-    {
-      type: 'color-row',
-      label: 'Theme',
-      activeColor: board.color || 'default',
-      onSelectColor: (c) => setBoardColor(board.id, c),
-    },
-    { type: 'divider' },
-    {
-      type: 'action',
-      id: 'delete-board',
-      label: 'Delete Board',
-      danger: true,
-      onSelect: () => deleteBoard(board.id),
-    },
-  ]);
+  const onRename = sidebarRowEl
+    ? () =>
+        startInlineSidebarRename(sidebarRowEl, board.title || 'Untitled Board', async (val) => {
+          const nextTitle = val.trim();
+          if (nextTitle && nextTitle !== board.title) {
+            board.title = nextTitle;
+            board.updatedAt = Date.now();
+            await persistEncryptedVault();
+            renderAll();
+            if (state.activeBoardId === board.id) {
+              boardEditor.refreshFromExternal();
+            }
+          } else {
+            renderSidebar();
+          }
+        })
+    : undefined;
+
+  contextMenu.open(
+    clientX,
+    clientY,
+    buildBoardContextMenuEntries(board, {
+      onOpen: () => openBoardEditor(board.id),
+      ...(onRename ? { onRename } : {}),
+      onTogglePin: () => toggleBoardPin(board.id),
+      onDuplicate: () => duplicateBoard(board.id),
+      onSetColor: (c) => setBoardColor(board.id, c),
+      onDelete: () => deleteBoard(board.id),
+    })
+  );
 }
 
 // Filtering & Search
 function getFilteredNotes(): Note[] {
-  if (state.activeFilter.type === 'boards') return [];
-
-  const q = state.searchQuery.trim().toLowerCase();
-  const cleanTagQuery = q.startsWith('#') ? q.slice(1) : q;
-
-  return state.notes
-    .filter((note) => {
-      if (state.activeFilter.type === 'pinned' && !note.pinned) return false;
-      if (
-        state.activeFilter.type === 'tag' &&
-        state.activeFilter.tag &&
-        !note.tags.includes(state.activeFilter.tag)
-      ) {
-        return false;
-      }
-
-      if (!q) return true;
-
-      const titleMatch = (note.title || '').toLowerCase().includes(q);
-      const descMatch = (note.description || '').toLowerCase().includes(q);
-      const tagMatch = (note.tags || []).some((t) => t.toLowerCase().includes(cleanTagQuery));
-      return titleMatch || descMatch || tagMatch;
-    })
-    .sort((a, b) => b.updatedAt - a.updatedAt);
+  return filterNotes(state.notes, state.activeFilter, state.searchQuery);
 }
 
 function getFilteredBoards(): Board[] {
-  const q = state.searchQuery.trim().toLowerCase();
-  const cleanTagQuery = q.startsWith('#') ? q.slice(1) : q;
-
-  // Keep default All Notes view Notes-only unless searching
-  if (state.activeFilter.type === 'all' && !q) {
-    return [];
-  }
-
-  return state.boards
-    .filter((board) => {
-      if (state.activeFilter.type === 'pinned' && !board.pinned) return false;
-      if (
-        state.activeFilter.type === 'tag' &&
-        state.activeFilter.tag &&
-        !(board.tags || []).includes(state.activeFilter.tag)
-      ) {
-        return false;
-      }
-
-      if (!q) return true;
-
-      const titleMatch = (board.title || '').toLowerCase().includes(q);
-      const tagMatch = (board.tags || []).some((t) => t.toLowerCase().includes(cleanTagQuery));
-      const itemMatch = (board.items || []).some((item) => {
-        if (item.type === 'text') return item.content.toLowerCase().includes(q);
-        if (item.type === 'link') {
-          return (
-            item.url.toLowerCase().includes(q) ||
-            (item.label || '').toLowerCase().includes(q) ||
-            (item.description || '').toLowerCase().includes(q)
-          );
-        }
-        if (item.type === 'image') return (item.image.alt || '').toLowerCase().includes(q);
-        return false;
-      });
-      return titleMatch || tagMatch || itemMatch;
-    })
-    .sort((a, b) => b.updatedAt - a.updatedAt);
+  return filterBoards(state.boards, state.activeFilter, state.searchQuery);
 }
 
 // Render Functions
@@ -1634,301 +1130,16 @@ function renderFilterBanner(): void {
   }
 }
 
-function renderMarkdownDescription(noteId: string, text: string, query: string): string {
-  if (!text) return '';
-  const lines = String(text).split(/\r?\n/);
-  const out: string[] = [];
-  let listType: 'ul' | 'ol' | 'task' | null = null;
-  let listStart = 1;
-
-  const closeList = (): void => {
-    if (!listType) return;
-    out.push(listType === 'ol' ? '</ol>' : '</ul>');
-    listType = null;
-    listStart = 1;
-  };
-
-  lines.forEach((rawLine, idx) => {
-    const taskMatch = rawLine.match(/^(\s*)[-*+]\s+\[([ xX])\]\s*(.*)$/);
-    if (taskMatch) {
-      if (listType !== 'task') {
-        closeList();
-        listType = 'task';
-        out.push('<ul class="md-list md-task-list">');
-      }
-      const checked = (taskMatch[2] ?? '').toLowerCase() === 'x';
-      const contentHtml = highlightText(taskMatch[3] ?? '', query);
-      out.push(
-        `<li class="md-task-item">` +
-          `<input type="checkbox" class="md-checkbox" data-toggle-checkbox="${escapeHtml(noteId)}" data-line-index="${idx}" ${checked ? 'checked' : ''} aria-label="Toggle task" />` +
-          `<span class="${checked ? 'md-task-done' : ''}">${contentHtml}</span>` +
-          `</li>`
-      );
-      return;
-    }
-
-    const ulMatch = rawLine.match(/^(\s*)(?:[-*+•])\s+(.*)$/);
-    if (ulMatch) {
-      if (listType !== 'ul') {
-        closeList();
-        listType = 'ul';
-        out.push('<ul class="md-list">');
-      }
-      out.push(`<li>${highlightText(ulMatch[2] ?? '', query)}</li>`);
-      return;
-    }
-
-    const olMatch = rawLine.match(/^(\s*)(\d+)[.)]\s+(.*)$/);
-    if (olMatch) {
-      const num = parseInt(olMatch[2] ?? '1', 10);
-      if (listType !== 'ol') {
-        closeList();
-        listType = 'ol';
-        listStart = Number.isFinite(num) && num > 0 ? num : 1;
-        const startAttr = listStart !== 1 ? ` start="${listStart}"` : '';
-        out.push(`<ol class="md-list"${startAttr}>`);
-      }
-      out.push(`<li>${highlightText(olMatch[3] ?? '', query)}</li>`);
-      return;
-    }
-
-    closeList();
-    const imgMatch = rawLine
-      .trim()
-      .match(/^!\[([^\]]*)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)$/i);
-    if (imgMatch && imgMatch[2]) {
-      const altText = imgMatch[1] ?? '';
-      const imgSrc = imgMatch[2];
-      out.push(
-        renderImageOrPrivacyPlaceholderHtml(imgSrc, altText || 'Inline note image', {
-          className: 'md-inline-image',
-          lazy: true,
-        })
-      );
-      return;
-    }
-    if (rawLine.trim() === '') {
-      out.push('<div class="md-spacer"></div>');
-    } else {
-      out.push(`<div class="md-line">${highlightText(rawLine, query)}</div>`);
-    }
-  });
-
-  closeList();
-  return out.join('');
-}
-
 async function toggleNoteCheckbox(noteId: string, lineIndex: number): Promise<void> {
   const note = state.notes.find((n) => n.id === noteId);
   if (!note || typeof note.description !== 'string') return;
-  const lines = note.description.split(/\r?\n/);
-  if (lineIndex < 0 || lineIndex >= lines.length) return;
+  const nextDesc = toggleCheckboxLine(note.description, lineIndex);
+  if (nextDesc === null) return;
 
-  const line = lines[lineIndex];
-  if (line === undefined) return;
-  const match = line.match(/^(\s*[-*+]\s+\[)([ xX])(\]\s*.*)$/);
-  if (!match) return;
-
-  const nextState = (match[2] ?? ' ').toLowerCase() === 'x' ? ' ' : 'x';
-  lines[lineIndex] = `${match[1] ?? ''}${nextState}${match[3] ?? ''}`;
-  note.description = lines.join('\n');
+  note.description = nextDesc;
   note.updatedAt = Date.now();
   await persistEncryptedVault();
   renderAll();
-}
-
-function createNoteCardHtml(note: Note): string {
-  const q = state.searchQuery;
-  const titleHtml = note.title ? highlightText(note.title, q) : '';
-  const descHtml = note.description ? renderMarkdownDescription(note.id, note.description, q) : '';
-  const images = Array.isArray(note.images) ? note.images : [];
-  const imagesHtml =
-    images.length > 0
-      ? `<div class="note-card-images ${images.length === 1 ? 'single-image' : ''}">` +
-        images
-          .map(
-            (img) => `
-            <div class="note-image-item">
-              ${renderImageOrPrivacyPlaceholderHtml(img.src, img.alt || 'Note image', { lazy: true })}
-              <span class="note-image-badge">${img.sourceType === 'external' ? 'External URL' : 'Encrypted WebP'}</span>
-            </div>
-          `
-          )
-          .join('') +
-        `</div>`
-      : '';
-
-  const tagsHtml = (note.tags || [])
-    .map(
-      (tag) =>
-        `<span class="tag-chip" data-filter-tag="${escapeHtml(tag)}" title="Filter by #${escapeHtml(tag)}">#${highlightText(tag, q)}</span>`
-    )
-    .join('');
-
-  return `
-    <article class="note-card" data-note-id="${escapeHtml(note.id)}" data-color="${escapeHtml(note.color || 'default')}">
-      ${imagesHtml}
-      <div class="note-card-header">
-        <h3 class="note-card-title">${titleHtml || '<span style="color:var(--text-muted);font-weight:400">Untitled</span>'}</h3>
-        <button
-          type="button"
-          class="icon-btn pin-btn note-card-pin ${note.pinned ? 'active' : ''}"
-          data-toggle-pin="${escapeHtml(note.id)}"
-          title="${note.pinned ? 'Unpin note' : 'Pin note'}"
-          aria-label="${note.pinned ? 'Unpin note' : 'Pin note'}"
-        >
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M12 17v5"></path>
-            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>
-          </svg>
-        </button>
-      </div>
-
-      ${descHtml ? `<div class="note-card-desc">${descHtml}</div>` : ''}
-
-      ${tagsHtml ? `<div class="note-tags-row">${tagsHtml}</div>` : ''}
-
-      <div class="note-card-footer">
-        <span class="note-card-date">Edited ${formatTimestamp(note.updatedAt)}</span>
-        <button
-          type="button"
-          class="icon-btn danger-btn"
-          data-delete-note="${escapeHtml(note.id)}"
-          title="Delete note"
-          aria-label="Delete note"
-        >
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          </svg>
-        </button>
-      </div>
-    </article>
-  `;
-}
-
-function renderBoardMinimapHtml(board: Board): string {
-  const colorAttr = escapeHtml(board.color || 'default');
-  const items = Array.isArray(board.items) ? board.items : [];
-  if (items.length === 0) {
-    return `<div class="board-card-minimap" data-color="${colorAttr}"><div class="board-minimap-empty">Empty board canvas</div></div>`;
-  }
-
-  const q = state.searchQuery;
-  const originX = items.reduce((m, it) => Math.min(m, it.x), Infinity);
-  const originY = items.reduce((m, it) => Math.min(m, it.y), Infinity);
-  const sorted = [...items].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
-
-  const itemsHtml = sorted
-    .map((item) =>
-      renderBoardItemHtml(item, q, {
-        minimap: true,
-        offsetX: originX,
-        offsetY: originY,
-        allowExternalUrl: isExternalImageAllowed,
-      })
-    )
-    .join('');
-
-  return `<div class="board-card-minimap" data-color="${colorAttr}"><div class="board-minimap-world">${itemsHtml}</div></div>`;
-}
-
-function fitBoardMinimaps(): void {
-  document.querySelectorAll<HTMLElement>('.board-card-minimap').forEach((container) => {
-    const world = container.querySelector<HTMLElement>('.board-minimap-world');
-    if (!world) return;
-    const cw = container.clientWidth;
-    const ch = container.clientHeight;
-    if (!cw || !ch) return;
-
-    const itemEls = Array.from(world.children).filter((el): el is HTMLElement =>
-      el.classList.contains('board-item')
-    );
-    if (itemEls.length === 0) return;
-
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const el of itemEls) {
-      const w = el.offsetWidth || parseFloat(el.style.width) || 220;
-      const h = el.offsetHeight || parseFloat(el.style.height) || 60;
-      const x = el.offsetLeft;
-      const y = el.offsetTop;
-      const rot = parseFloat(el.getAttribute('data-rotation') || '0');
-      const aabb = getRotatedRectAabb(x, y, w, h, rot);
-      minX = Math.min(minX, aabb.minX);
-      minY = Math.min(minY, aabb.minY);
-      maxX = Math.max(maxX, aabb.maxX);
-      maxY = Math.max(maxY, aabb.maxY);
-    }
-
-    const pad = 28;
-    const boxMinX = minX - pad;
-    const boxMinY = minY - pad;
-    const boxW = Math.max(200, maxX - minX + pad * 2);
-    const boxH = Math.max(100, maxY - minY + pad * 2);
-
-    const scale = Math.min(cw / boxW, ch / boxH, 0.85);
-    const tx = (cw - boxW * scale) / 2 - boxMinX * scale;
-    const ty = (ch - boxH * scale) / 2 - boxMinY * scale;
-    world.style.transform = `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${scale.toFixed(4)})`;
-  });
-}
-
-function createBoardCardHtml(board: Board): string {
-  const q = state.searchQuery;
-  const titleHtml = board.title ? highlightText(board.title, q) : '';
-  const tagsHtml = (board.tags || [])
-    .map(
-      (tag) =>
-        `<span class="tag-chip" data-filter-tag="${escapeHtml(tag)}" title="Filter by #${escapeHtml(tag)}">#${highlightText(tag, q)}</span>`
-    )
-    .join('');
-
-  const itemCount = board.items.length;
-
-  return `
-    <article class="note-card board-card" data-board-id="${escapeHtml(board.id)}" data-color="${escapeHtml(board.color || 'default')}">
-      ${renderBoardMinimapHtml(board)}
-      <div class="note-card-header">
-        <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
-          <h3 class="note-card-title">${titleHtml || '<span style="color:var(--text-muted);font-weight:400">Untitled Board</span>'}</h3>
-          <span class="board-card-badge">Board</span>
-        </div>
-        <button
-          type="button"
-          class="icon-btn pin-btn note-card-pin ${board.pinned ? 'active' : ''}"
-          data-toggle-board-pin="${escapeHtml(board.id)}"
-          title="${board.pinned ? 'Unpin board' : 'Pin board'}"
-          aria-label="${board.pinned ? 'Unpin board' : 'Pin board'}"
-        >
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M12 17v5"></path>
-            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>
-          </svg>
-        </button>
-      </div>
-
-      ${tagsHtml ? `<div class="note-tags-row">${tagsHtml}</div>` : ''}
-
-      <div class="note-card-footer">
-        <span class="note-card-date">${itemCount} item${itemCount === 1 ? '' : 's'} &bull; Edited ${formatTimestamp(board.updatedAt)}</span>
-        <button
-          type="button"
-          class="icon-btn danger-btn"
-          data-delete-board="${escapeHtml(board.id)}"
-          title="Delete board"
-          aria-label="Delete board"
-        >
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          </svg>
-        </button>
-      </div>
-    </article>
-  `;
 }
 
 type WorkspaceCardEntry =
@@ -1936,7 +1147,9 @@ type WorkspaceCardEntry =
   | { kind: 'board'; item: Board; pinned: boolean; updatedAt: number };
 
 function renderWorkspaceCardHtml(entry: WorkspaceCardEntry): string {
-  return entry.kind === 'board' ? createBoardCardHtml(entry.item) : createNoteCardHtml(entry.item);
+  return entry.kind === 'board'
+    ? createBoardCardHtml(entry.item, state.searchQuery, isExternalImageAllowed)
+    : createNoteCardHtml(entry.item, state.searchQuery, isExternalImageAllowed);
 }
 
 function renderNotes(): void {
@@ -2001,7 +1214,7 @@ function renderAll(): void {
   renderSidebar();
   renderFilterBanner();
   renderNotes();
-  updateVaultInspectorUI();
+  vaultModal.updateCiphertextPreview();
   updateLastUpdatedUI();
 }
 
@@ -2046,45 +1259,64 @@ function resetComposer(): void {
   updateColorDots(els.composerColorPicker, 'default');
 }
 
-function renderComposerImages(): void {
-  if (!els.composerImagesRow) return;
-  if (state.composer.images.length === 0) {
-    els.composerImagesRow.classList.add('hidden');
-    els.composerImagesRow.innerHTML = '';
+function renderDraftImages(
+  rowEl: HTMLElement | null,
+  images: NoteImage[],
+  removeAttr: string
+): void {
+  if (!rowEl) return;
+  if (images.length === 0) {
+    rowEl.classList.add('hidden');
+    rowEl.innerHTML = '';
     return;
   }
-  els.composerImagesRow.classList.remove('hidden');
-  els.composerImagesRow.classList.toggle('single-image', state.composer.images.length === 1);
-  els.composerImagesRow.innerHTML = state.composer.images
+  rowEl.classList.remove('hidden');
+  rowEl.classList.toggle('single-image', images.length === 1);
+  rowEl.innerHTML = images
     .map(
       (img) => `
       <div class="note-edit-image-item">
         ${renderImageOrPrivacyPlaceholderHtml(img.src, img.alt || 'Note image')}
         <span class="note-image-badge">${img.sourceType === 'external' ? 'External URL' : 'Encrypted WebP'}</span>
-        <button type="button" class="note-image-remove-btn" data-remove-composer-image="${escapeHtml(img.id)}" title="Remove image" aria-label="Remove image">&times;</button>
+        <button type="button" class="note-image-remove-btn" ${removeAttr}="${escapeHtml(img.id)}" title="Remove image" aria-label="Remove image">&times;</button>
       </div>
     `
     )
     .join('');
 }
 
-function renderComposerTags(): void {
-  if (state.composer.tags.length === 0) {
-    els.composerTagsRow.classList.add('hidden');
-    els.composerTagsRow.innerHTML = '';
+function renderDraftTags(
+  rowEl: HTMLElement,
+  tags: string[],
+  removeAttr: string,
+  hideWhenEmpty = false
+): void {
+  if (hideWhenEmpty && tags.length === 0) {
+    rowEl.classList.add('hidden');
+    rowEl.innerHTML = '';
     return;
   }
-  els.composerTagsRow.classList.remove('hidden');
-  els.composerTagsRow.innerHTML = state.composer.tags
+  if (hideWhenEmpty) {
+    rowEl.classList.remove('hidden');
+  }
+  rowEl.innerHTML = tags
     .map(
       (t) => `
       <span class="tag-chip">
         #${escapeHtml(t)}
-        <button type="button" class="tag-chip-remove" data-remove-composer-tag="${escapeHtml(t)}">&times;</button>
+        <button type="button" class="tag-chip-remove" ${removeAttr}="${escapeHtml(t)}">&times;</button>
       </span>
     `
     )
     .join('');
+}
+
+function renderComposerImages(): void {
+  renderDraftImages(els.composerImagesRow, state.composer.images, 'data-remove-composer-image');
+}
+
+function renderComposerTags(): void {
+  renderDraftTags(els.composerTagsRow, state.composer.tags, 'data-remove-composer-tag', true);
 }
 
 async function saveComposerNote(): Promise<void> {
@@ -2097,7 +1329,7 @@ async function saveComposerNote(): Promise<void> {
 
   const now = Date.now();
   const newNote: Note = {
-    id: `note-${now}-${Math.random().toString(36).slice(2, 7)}`,
+    id: createId('note'),
     title,
     description,
     images: [...state.composer.images],
@@ -2204,39 +1436,13 @@ function openEditModal(noteId: string): void {
 }
 
 function renderEditModalImages(): void {
-  if (!els.editModalImagesRow || !state.editingDraft) return;
-  if (state.editingDraft.images.length === 0) {
-    els.editModalImagesRow.classList.add('hidden');
-    els.editModalImagesRow.innerHTML = '';
-    return;
-  }
-  els.editModalImagesRow.classList.remove('hidden');
-  els.editModalImagesRow.classList.toggle('single-image', state.editingDraft.images.length === 1);
-  els.editModalImagesRow.innerHTML = state.editingDraft.images
-    .map(
-      (img) => `
-      <div class="note-edit-image-item">
-        ${renderImageOrPrivacyPlaceholderHtml(img.src, img.alt || 'Note image')}
-        <span class="note-image-badge">${img.sourceType === 'external' ? 'External URL' : 'Encrypted WebP'}</span>
-        <button type="button" class="note-image-remove-btn" data-remove-modal-image="${escapeHtml(img.id)}" title="Remove image" aria-label="Remove image">&times;</button>
-      </div>
-    `
-    )
-    .join('');
+  if (!state.editingDraft) return;
+  renderDraftImages(els.editModalImagesRow, state.editingDraft.images, 'data-remove-modal-image');
 }
 
 function renderEditModalTags(): void {
   if (!state.editingDraft) return;
-  els.editModalTagsRow.innerHTML = state.editingDraft.tags
-    .map(
-      (t) => `
-      <span class="tag-chip">
-        #${escapeHtml(t)}
-        <button type="button" class="tag-chip-remove" data-remove-modal-tag="${escapeHtml(t)}">&times;</button>
-      </span>
-    `
-    )
-    .join('');
+  renderDraftTags(els.editModalTagsRow, state.editingDraft.tags, 'data-remove-modal-tag');
 }
 
 async function saveAndCloseEditModal(): Promise<void> {
@@ -2278,70 +1484,6 @@ async function saveAndCloseEditModal(): Promise<void> {
   state.editingDraft = null;
   els.editModalBackdrop.classList.add('hidden');
   renderAll();
-}
-
-// Cloud Onboarding Wizard Logic
-function setWizardStep(stepNum: 1 | 2 | 3): void {
-  document.querySelectorAll('[data-step-indicator]').forEach((el) => {
-    const n = Number(el.getAttribute('data-step-indicator'));
-    el.classList.toggle('active', n === stepNum);
-  });
-
-  els.wizardStep1.classList.toggle('hidden', stepNum !== 1);
-  els.wizardStep2.classList.toggle('hidden', stepNum !== 2);
-  els.wizardStep3.classList.toggle('hidden', stepNum !== 3);
-  els.wizardStep2Error.classList.add('hidden');
-
-  if (stepNum === 2) {
-    const fsSupported = !CrypsyCloudSync.isNativeApp() && CrypsyCloudSync.isFileSystemAccessSupported();
-    els.wizardDesktopSyncBox?.classList.toggle('hidden', !fsSupported);
-    els.wizardMobileSyncBox?.classList.toggle('hidden', fsSupported);
-    els.wizardMobileBackBtn?.classList.toggle('hidden', CrypsyCloudSync.isNativeApp());
-    if (fsSupported) {
-      const provider =
-        CrypsyCloudSync.PROVIDERS[state.selectedProviderId] ?? CrypsyCloudSync.PROVIDERS.custom;
-      els.selectedProviderTitle.textContent = `Typical ${provider.name} Location on Your OS:`;
-      els.osPathHintCode.textContent = CrypsyCloudSync.getProviderPathHint(state.selectedProviderId);
-      els.folderPickerHintText.textContent = provider.folderHint;
-    }
-  }
-
-  if (stepNum === 3) {
-    const meta = CrypsyCloudSync.getSavedProviderMeta();
-    if (meta) {
-      els.connectedProviderHeading.textContent = `Connected to ${meta.providerName} (/${meta.folderName})`;
-      els.connectedFolderDetails.textContent = `Your encrypted vault and portable app files are placed inside "${meta.parentFolderName}/${meta.folderName}".`;
-    }
-  }
-}
-
-function openCloudOnboardingModal(): void {
-  if (CrypsyCloudSync.isNativeApp()) {
-    setWizardStep(2);
-    els.cloudOnboardingBackdrop.classList.remove('hidden');
-    return;
-  }
-  const meta = CrypsyCloudSync.getSavedProviderMeta();
-  if (CrypsyCloudSync.isConnected() && meta) {
-    state.selectedProviderId = meta.providerId || 'onedrive';
-    setWizardStep(3);
-  } else {
-    setWizardStep(1);
-  }
-  els.cloudOnboardingBackdrop.classList.remove('hidden');
-}
-
-function updateVaultInspectorUI(): void {
-  if (!state.lastEncryptedEnvelope) return;
-  const env = state.lastEncryptedEnvelope;
-  const displayEnvelope =
-    env.ciphertext && env.ciphertext.length > 1200
-      ? {
-          ...env,
-          ciphertext: `${env.ciphertext.slice(0, 600)}... [${env.ciphertext.length.toLocaleString()} base64 chars encrypted]`,
-        }
-      : env;
-  els.ciphertextPreview.textContent = JSON.stringify(displayEnvelope, null, 2);
 }
 
 function openLightbox(src: string): void {
@@ -2458,7 +1600,7 @@ function bindEvents(): void {
   });
 
   els.sidebarBoardsList?.addEventListener('contextmenu', (e) => {
-    if (shouldBypassCustomContextMenu(e, els.lockScreenOverlay)) return;
+    if (shouldBypassCustomContextMenu(e, lockScreen.getOverlayEl())) return;
     const target = e.target as HTMLElement | null;
     const row = target?.closest<HTMLElement>('[data-open-board]');
     if (!row) return;
@@ -2470,7 +1612,7 @@ function bindEvents(): void {
   });
 
   els.sidebarTagsList.addEventListener('contextmenu', (e) => {
-    if (shouldBypassCustomContextMenu(e, els.lockScreenOverlay)) return;
+    if (shouldBypassCustomContextMenu(e, lockScreen.getOverlayEl())) return;
     const target = e.target as HTMLElement | null;
     const row = target?.closest<HTMLElement>('[data-tag]');
     if (!row) return;
@@ -2589,7 +1731,7 @@ function bindEvents(): void {
 
   // Cloud Setup & Reconnect Banner
   els.cloudSetupBtn.addEventListener('click', () => {
-    openCloudOnboardingModal();
+    cloudWizard.open();
   });
 
   els.resumeCloudSyncBtn.addEventListener('click', async () => {
@@ -2607,425 +1749,71 @@ function bindEvents(): void {
   });
 
   els.changeCloudFolderBtn.addEventListener('click', () => {
-    setWizardStep(1);
-    els.cloudOnboardingBackdrop.classList.remove('hidden');
+    cloudWizard.open(1);
   });
 
-  // Cloud Onboarding Wizard events
-  els.closeOnboardingBtn.addEventListener('click', () => {
-    els.cloudOnboardingBackdrop.classList.add('hidden');
-  });
-
-  els.cloudOnboardingBackdrop.addEventListener('click', (e) => {
-    if (e.target === els.cloudOnboardingBackdrop) {
-      els.cloudOnboardingBackdrop.classList.add('hidden');
-    }
-  });
-
-  els.providerSelectionGrid.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement | null;
-    const card = target?.closest('[data-provider]');
-    if (!card) return;
-    const providerId = card.getAttribute('data-provider') as CloudProviderId | null;
-    if (!providerId) return;
-    state.selectedProviderId = providerId;
-    els.providerSelectionGrid.querySelectorAll('.provider-card').forEach((c) => {
-      c.classList.toggle('active', c === card);
-    });
-  });
-
-  els.wizardToStep2Btn.addEventListener('click', () => {
-    setWizardStep(2);
-  });
-
-  els.wizardBackToStep1Btn.addEventListener('click', () => {
-    setWizardStep(1);
-  });
-
-  els.wizardMobileBackBtn?.addEventListener('click', () => {
-    setWizardStep(1);
-  });
-
-  els.wizardMobileDoneBtn?.addEventListener('click', () => {
-    els.cloudOnboardingBackdrop.classList.add('hidden');
-  });
-
-  els.mobileShareVaultBtn?.addEventListener('click', () => {
-    void shareOrDownloadVaultJson();
-  });
-
-  els.mobileImportVaultInput?.addEventListener('change', async (e) => {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    await importEncryptedVaultFile(file, els.cloudOnboardingBackdrop);
-    input.value = '';
-  });
-
-  els.copyPathHintBtn.addEventListener('click', async () => {
-    const rawPath = (els.osPathHintCode.textContent ?? '').split('   or   ')[0]?.trim() ?? '';
-    try {
-      await navigator.clipboard.writeText(rawPath);
-      els.copyPathHintBtn.textContent = 'Copied!';
-      setTimeout(() => {
-        els.copyPathHintBtn.textContent = 'Copy Path';
-      }, 1500);
-    } catch {
-      // ignore clipboard failure
-    }
-  });
-
-  els.pickAndProvisionBtn.addEventListener('click', async () => {
-    els.wizardStep2Error.classList.add('hidden');
-    const createSub = els.createCrypsySubfolderCb.checked;
-    const includeHtml = els.provisionPortableHtmlCb.checked;
-
-    try {
-      await CrypsyCloudSync.pickCloudFolder(state.selectedProviderId, createSub);
-
-      // Check if an encrypted vault already exists in that cloud folder
-      const existingEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
-      if (existingEnvelope) {
-        const loaded = await tryLoadEnvelope(existingEnvelope);
-        if (!loaded) {
-          els.cloudOnboardingBackdrop.classList.add('hidden');
-        }
-      } else {
-        await persistEncryptedVault();
-      }
-
-      try {
-        await CrypsyCloudSync.provisionCloudFolderAssets(includeHtml);
-      } catch (assetErr) {
-        if (includeHtml) {
-          await CrypsyCloudSync.provisionCloudFolderAssets(false);
-          console.warn('Could not bundle Crypsy-Portable.html in browser:', assetErr);
-        } else {
-          throw assetErr;
-        }
-      }
-      updateCloudStatusUI({ status: 'connected' });
-      setWizardStep(3);
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return;
-      els.wizardStep2Error.textContent =
-        err instanceof Error ? err.message : 'Could not link cloud folder.';
-      els.wizardStep2Error.classList.remove('hidden');
-    }
-  });
-
-  els.reprovisionAssetsBtn.addEventListener('click', async () => {
-    try {
-      await CrypsyCloudSync.provisionCloudFolderAssets(true);
-      await persistEncryptedVault();
-      els.reprovisionAssetsBtn.textContent = 'Files Updated!';
-      setTimeout(() => {
-        els.reprovisionAssetsBtn.textContent = 'Re-write Portable Files';
-      }, 1600);
-    } catch (e) {
-      console.warn('Re-provision failed:', e);
-      alert(e instanceof Error ? e.message : 'Could not update Crypsy-Portable.html.');
-    }
-  });
-
-  els.unlinkCloudFolderBtn.addEventListener('click', async () => {
-    await CrypsyCloudSync.unlinkCloudFolder();
-    updateCloudStatusUI({ status: 'unlinked' });
-    setWizardStep(1);
-  });
-
-  els.finishOnboardingBtn.addEventListener('click', () => {
-    els.cloudOnboardingBackdrop.classList.add('hidden');
-  });
-
-  els.downloadPortableBtn.addEventListener('click', async () => {
-    try {
-      const html = await CrypsyCloudSync.buildSelfContainedHtmlInBrowser();
-      const blob = new Blob([html], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'Crypsy-Portable.html';
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Could not build Crypsy-Portable.html.');
-    }
-  });
-
-  // Composer expand & auto-resize
+  // Composer & Edit-Modal shared draft surface wiring
   els.composerDescription.addEventListener('focus', () => {
     expandComposer();
   });
 
-  els.composerDescription.addEventListener('input', () => {
-    autoResizeTextarea(els.composerDescription);
-  });
-  els.composerDescription.addEventListener('keydown', handleListEnterKeydown);
-
-  els.composerPinBtn.addEventListener('click', () => {
-    state.composer.pinned = !state.composer.pinned;
-    els.composerPinBtn.classList.toggle('active', state.composer.pinned);
-  });
-
-  els.composerColorPicker.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement | null;
-    const dot = target?.closest('.color-dot');
-    if (!dot) return;
-    const color = (dot.getAttribute('data-color') ?? 'default') as NoteColor;
-    state.composer.color = color;
-    els.noteComposer.setAttribute('data-color', color);
-    updateColorDots(els.composerColorPicker, color);
-  });
-
-  // Composer Tag Popover
-  const toggleComposerTag = (tag: string): void => {
-    if (state.composer.tags.includes(tag)) {
-      state.composer.tags = state.composer.tags.filter((t) => t !== tag);
-    } else {
-      state.composer.tags.push(tag);
-    }
-    renderComposerTags();
-    renderSidebar();
-    renderTagPopoverOptions(
-      els.composerTagOptions,
-      els.composerTagSearch.value,
-      state.composer.tags,
-      toggleComposerTag
-    );
-  };
-
-  els.composerTagBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const isHidden = els.composerTagPopover.classList.contains('hidden');
-    if (isHidden) {
-      els.composerTagSearch.value = '';
-      renderTagPopoverOptions(
-        els.composerTagOptions,
-        '',
-        state.composer.tags,
-        toggleComposerTag
-      );
-      els.composerTagPopover.classList.remove('hidden');
-      els.composerTagSearch.focus();
-    } else {
-      els.composerTagPopover.classList.add('hidden');
-    }
+  const composerSurface = bindNoteDraftSurface({
+    surfaceEl: els.noteComposer,
+    descriptionEl: els.composerDescription,
+    pinBtn: els.composerPinBtn,
+    colorPickerEl: els.composerColorPicker,
+    tagBtn: els.composerTagBtn,
+    tagPopover: els.composerTagPopover,
+    tagSearch: els.composerTagSearch,
+    tagOptions: els.composerTagOptions,
+    tagsRow: els.composerTagsRow,
+    removeTagAttr: 'data-remove-composer-tag',
+    imageBtn: els.composerImageBtn,
+    imagePopover: els.composerImagePopover,
+    imageStatus: els.composerImageStatus,
+    uploadImageBtn: els.composerUploadImageBtn,
+    imageFileInput: els.composerImageFileInput,
+    imageUrlInput: els.composerImageUrlInput,
+    addImageUrlBtn: els.composerAddImageUrlBtn,
+    imagesRow: els.composerImagesRow,
+    removeImageAttr: 'data-remove-composer-image',
+    getDraft: () => state.composer,
+    onBeforeAttachImage: expandComposer,
+    onRenderTags: renderComposerTags,
+    onRenderImages: renderComposerImages,
+    onTagsChanged: renderSidebar,
+    onUpdateColorDots: updateColorDots,
+    onRenderTagPopoverOptions: renderTagPopoverOptions,
+    onOpenLightbox: openLightbox,
   });
 
-  els.composerTagSearch.addEventListener('input', () => {
-    renderTagPopoverOptions(
-      els.composerTagOptions,
-      els.composerTagSearch.value,
-      state.composer.tags,
-      toggleComposerTag
-    );
-  });
-
-  els.composerTagsRow.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement | null;
-    const rmBtn = target?.closest('[data-remove-composer-tag]');
-    if (!rmBtn) return;
-    const tag = rmBtn.getAttribute('data-remove-composer-tag');
-    if (!tag) return;
-    state.composer.tags = state.composer.tags.filter((t) => t !== tag);
-    renderComposerTags();
-  });
-
-  // Image Attachment Helpers (Clipboard Paste, Drag & Drop, File Upload, URL Import)
-  const attachImageToTarget = (targetMode: 'composer' | 'modal', img: NoteImage): void => {
-    if (targetMode === 'modal' && state.editingDraft) {
-      state.editingDraft.images.push(img);
-      renderEditModalImages();
-    } else {
-      expandComposer();
-      state.composer.images.push(img);
-      renderComposerImages();
-    }
-  };
-
-  const setPopoverImageStatus = (
-    targetMode: 'composer' | 'modal',
-    msg: string,
-    isError = false
-  ): void => {
-    const statusEl = targetMode === 'modal' ? els.editModalImageStatus : els.composerImageStatus;
-    if (!statusEl) return;
-    statusEl.textContent = msg;
-    statusEl.style.color = isError ? 'var(--danger)' : 'var(--text-secondary)';
-  };
-
-  const handleImageFiles = async (
-    targetMode: 'composer' | 'modal',
-    files: Iterable<File>
-  ): Promise<void> => {
-    for (const file of files) {
-      if (!file.type.startsWith('image/')) continue;
-      try {
-        const noteImg = await noteImageFromFile(file);
-        attachImageToTarget(targetMode, noteImg);
-      } catch (err) {
-        console.warn('Could not process image file:', err);
-      }
-    }
-  };
-
-  const handleClipboardPaste = async (
-    e: ClipboardEvent,
-    targetMode: 'composer' | 'modal'
-  ): Promise<boolean> => {
-    const cd = e.clipboardData;
-    if (!cd) return false;
-
-    const imageFiles = extractClipboardImages(cd);
-    if (imageFiles.length > 0) {
-      e.preventDefault();
-      await handleImageFiles(targetMode, imageFiles);
-      return true;
-    }
-
-    const plainText = cd.getData('text/plain');
-    const extractedUrl = extractStandaloneImageUrl(plainText);
-    if (extractedUrl) {
-      e.preventDefault();
-      try {
-        const noteImg = await noteImageFromUrl(extractedUrl.url, extractedUrl.alt);
-        attachImageToTarget(targetMode, noteImg);
-        return true;
-      } catch {
-        const active = document.activeElement;
-        if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
-          const start = active.selectionStart ?? active.value.length;
-          const end = active.selectionEnd ?? active.value.length;
-          active.value = active.value.slice(0, start) + plainText + active.value.slice(end);
-        }
-        return false;
-      }
-    }
-
-    if (!plainText.trim()) {
-      const htmlData = cd.getData('text/html');
-      const htmlImg = extractImageUrlFromClipboardHtml(htmlData);
-      if (htmlImg) {
-        e.preventDefault();
-        try {
-          const noteImg = await noteImageFromUrl(htmlImg.url, htmlImg.alt);
-          attachImageToTarget(targetMode, noteImg);
-          return true;
-        } catch {
-          return false;
-        }
-      }
-    }
-
-    return false;
-  };
-
-  // Composer Image Popover & Controls
-  els.composerImageBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (!els.composerImagePopover) return;
-    const isHidden = els.composerImagePopover.classList.contains('hidden');
-    els.composerTagPopover.classList.add('hidden');
-    if (isHidden) {
-      setPopoverImageStatus('composer', 'Tip: Paste images or URLs directly with Ctrl+V');
-      els.composerImagePopover.classList.remove('hidden');
-      els.composerImageUrlInput?.focus();
-    } else {
-      els.composerImagePopover.classList.add('hidden');
-    }
-  });
-
-  els.composerUploadImageBtn?.addEventListener('click', () => {
-    els.composerImageFileInput?.click();
-  });
-
-  els.composerImageFileInput?.addEventListener('change', async (e) => {
-    const input = e.target as HTMLInputElement;
-    if (input.files && input.files.length > 0) {
-      await handleImageFiles('composer', Array.from(input.files));
-      els.composerImagePopover?.classList.add('hidden');
-    }
-    input.value = '';
-  });
-
-  const submitComposerImageUrl = async (): Promise<void> => {
-    const raw = els.composerImageUrlInput?.value.trim() ?? '';
-    if (!raw) return;
-    setPopoverImageStatus('composer', 'Downloading & processing image...');
-    try {
-      const noteImg = await noteImageFromUrl(raw);
-      attachImageToTarget('composer', noteImg);
-      if (els.composerImageUrlInput) els.composerImageUrlInput.value = '';
-      setPopoverImageStatus(
-        'composer',
-        noteImg.sourceType === 'embedded'
-          ? 'Downloaded & encrypted as WebP!'
-          : 'Linked external image (CORS restricted download).'
-      );
-      setTimeout(() => {
-        els.composerImagePopover?.classList.add('hidden');
-      }, 700);
-    } catch (err) {
-      setPopoverImageStatus(
-        'composer',
-        err instanceof Error ? err.message : 'Could not load image URL.',
-        true
-      );
-    }
-  };
-
-  els.composerAddImageUrlBtn?.addEventListener('click', () => {
-    void submitComposerImageUrl();
-  });
-
-  els.composerImageUrlInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      void submitComposerImageUrl();
-    }
-  });
-
-  els.composerImagesRow?.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement | null;
-    if (!target) return;
-    const rmBtn = target.closest('[data-remove-composer-image]');
-    if (rmBtn) {
-      e.stopPropagation();
-      const imgId = rmBtn.getAttribute('data-remove-composer-image');
-      state.composer.images = state.composer.images.filter((img) => img.id !== imgId);
-      renderComposerImages();
-      return;
-    }
-    const lightImg = target.closest('[data-lightbox-src]');
-    if (lightImg) {
-      e.stopPropagation();
-      openLightbox(lightImg.getAttribute('data-lightbox-src') ?? '');
-    }
-  });
-
-  els.noteComposer.addEventListener('paste', (e) => {
-    if (e.target === els.composerImageUrlInput) return;
-    void handleClipboardPaste(e, 'composer');
-  });
-
-  els.noteComposer.addEventListener('dragover', (e) => {
-    if (e.dataTransfer?.types.includes('Files')) {
-      e.preventDefault();
-      els.noteComposer.classList.add('drag-over');
-    }
-  });
-
-  els.noteComposer.addEventListener('dragleave', () => {
-    els.noteComposer.classList.remove('drag-over');
-  });
-
-  els.noteComposer.addEventListener('drop', async (e) => {
-    els.noteComposer.classList.remove('drag-over');
-    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-      e.preventDefault();
-      await handleImageFiles('composer', Array.from(e.dataTransfer.files));
-    }
+  const editModalSurface = bindNoteDraftSurface({
+    surfaceEl: els.editModalCard,
+    descriptionEl: els.editModalDescription,
+    pinBtn: els.editModalPinBtn,
+    colorPickerEl: els.editModalColorPicker,
+    tagBtn: els.editModalTagBtn,
+    tagPopover: els.editModalTagPopover,
+    tagSearch: els.editModalTagSearch,
+    tagOptions: els.editModalTagOptions,
+    tagsRow: els.editModalTagsRow,
+    removeTagAttr: 'data-remove-modal-tag',
+    imageBtn: els.editModalImageBtn,
+    imagePopover: els.editModalImagePopover,
+    imageStatus: els.editModalImageStatus,
+    uploadImageBtn: els.editModalUploadImageBtn,
+    imageFileInput: els.editModalImageFileInput,
+    imageUrlInput: els.editModalImageUrlInput,
+    addImageUrlBtn: els.editModalAddImageUrlBtn,
+    imagesRow: els.editModalImagesRow,
+    removeImageAttr: 'data-remove-modal-image',
+    getDraft: () => state.editingDraft,
+    onRenderTags: renderEditModalTags,
+    onRenderImages: renderEditModalImages,
+    onTagsChanged: renderSidebar,
+    onUpdateColorDots: updateColorDots,
+    onRenderTagPopoverOptions: renderTagPopoverOptions,
+    onOpenLightbox: openLightbox,
   });
 
   els.composerSaveBtn.addEventListener('click', () => {
@@ -3036,44 +1824,14 @@ function bindEvents(): void {
     resetComposer();
   });
 
-  // Click outside composer to auto-save
+  // Click outside composer to auto-save & close draft popovers
   document.addEventListener('click', (e) => {
     const target = e.target as Node | null;
     if (state.composer.expanded && target && !els.noteComposer.contains(target)) {
       void saveComposerNote();
     }
-    if (
-      target &&
-      !els.composerTagPopover.contains(target) &&
-      target !== els.composerTagBtn
-    ) {
-      els.composerTagPopover.classList.add('hidden');
-    }
-    if (
-      target &&
-      els.composerImagePopover &&
-      !els.composerImagePopover.contains(target) &&
-      target !== els.composerImageBtn &&
-      !els.composerImageBtn?.contains(target)
-    ) {
-      els.composerImagePopover.classList.add('hidden');
-    }
-    if (
-      target &&
-      !els.editModalTagPopover.contains(target) &&
-      target !== els.editModalTagBtn
-    ) {
-      els.editModalTagPopover.classList.add('hidden');
-    }
-    if (
-      target &&
-      els.editModalImagePopover &&
-      !els.editModalImagePopover.contains(target) &&
-      target !== els.editModalImageBtn &&
-      !els.editModalImageBtn?.contains(target)
-    ) {
-      els.editModalImagePopover.classList.add('hidden');
-    }
+    composerSurface.closePopoversIfOutside(target);
+    editModalSurface.closePopoversIfOutside(target);
   });
 
   // Card interactions
@@ -3157,7 +1915,7 @@ function bindEvents(): void {
   });
 
   els.notesWorkspace.addEventListener('contextmenu', (e) => {
-    if (shouldBypassCustomContextMenu(e, els.lockScreenOverlay)) return;
+    if (shouldBypassCustomContextMenu(e, lockScreen.getOverlayEl())) return;
     const target = e.target as HTMLElement | null;
     const card = target?.closest('.note-card');
     if (!card) return;
@@ -3180,191 +1938,6 @@ function bindEvents(): void {
     }
   });
 
-  // Edit Modal interactions
-  els.editModalDescription.addEventListener('input', () => {
-    autoResizeTextarea(els.editModalDescription);
-  });
-  els.editModalDescription.addEventListener('keydown', handleListEnterKeydown);
-
-  els.editModalPinBtn.addEventListener('click', () => {
-    if (!state.editingDraft) return;
-    state.editingDraft.pinned = !state.editingDraft.pinned;
-    els.editModalPinBtn.classList.toggle('active', state.editingDraft.pinned);
-  });
-
-  els.editModalColorPicker.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement | null;
-    const dot = target?.closest('.color-dot');
-    if (!dot || !state.editingDraft) return;
-    const color = (dot.getAttribute('data-color') ?? 'default') as NoteColor;
-    state.editingDraft.color = color;
-    els.editModalCard.setAttribute('data-color', color);
-    updateColorDots(els.editModalColorPicker, color);
-  });
-
-  const toggleModalTag = (tag: string): void => {
-    if (!state.editingDraft) return;
-    if (state.editingDraft.tags.includes(tag)) {
-      state.editingDraft.tags = state.editingDraft.tags.filter((t) => t !== tag);
-    } else {
-      state.editingDraft.tags.push(tag);
-    }
-    renderEditModalTags();
-    renderSidebar();
-    renderTagPopoverOptions(
-      els.editModalTagOptions,
-      els.editModalTagSearch.value,
-      state.editingDraft.tags,
-      toggleModalTag
-    );
-  };
-
-  els.editModalTagBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (!state.editingDraft) return;
-    const isHidden = els.editModalTagPopover.classList.contains('hidden');
-    if (isHidden) {
-      els.editModalTagSearch.value = '';
-      renderTagPopoverOptions(
-        els.editModalTagOptions,
-        '',
-        state.editingDraft.tags,
-        toggleModalTag
-      );
-      els.editModalTagPopover.classList.remove('hidden');
-      els.editModalTagSearch.focus();
-    } else {
-      els.editModalTagPopover.classList.add('hidden');
-    }
-  });
-
-  els.editModalTagSearch.addEventListener('input', () => {
-    if (!state.editingDraft) return;
-    renderTagPopoverOptions(
-      els.editModalTagOptions,
-      els.editModalTagSearch.value,
-      state.editingDraft.tags,
-      toggleModalTag
-    );
-  });
-
-  els.editModalTagsRow.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement | null;
-    const rmBtn = target?.closest('[data-remove-modal-tag]');
-    if (!rmBtn || !state.editingDraft) return;
-    const tag = rmBtn.getAttribute('data-remove-modal-tag');
-    if (!tag) return;
-    state.editingDraft.tags = state.editingDraft.tags.filter((t) => t !== tag);
-    renderEditModalTags();
-  });
-
-  // Edit Modal Image Popover & Controls
-  els.editModalImageBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (!state.editingDraft || !els.editModalImagePopover) return;
-    const isHidden = els.editModalImagePopover.classList.contains('hidden');
-    els.editModalTagPopover.classList.add('hidden');
-    if (isHidden) {
-      setPopoverImageStatus('modal', 'Tip: Paste images or URLs directly with Ctrl+V');
-      els.editModalImagePopover.classList.remove('hidden');
-      els.editModalImageUrlInput?.focus();
-    } else {
-      els.editModalImagePopover.classList.add('hidden');
-    }
-  });
-
-  els.editModalUploadImageBtn?.addEventListener('click', () => {
-    els.editModalImageFileInput?.click();
-  });
-
-  els.editModalImageFileInput?.addEventListener('change', async (e) => {
-    const input = e.target as HTMLInputElement;
-    if (input.files && input.files.length > 0) {
-      await handleImageFiles('modal', Array.from(input.files));
-      els.editModalImagePopover?.classList.add('hidden');
-    }
-    input.value = '';
-  });
-
-  const submitModalImageUrl = async (): Promise<void> => {
-    const raw = els.editModalImageUrlInput?.value.trim() ?? '';
-    if (!raw || !state.editingDraft) return;
-    setPopoverImageStatus('modal', 'Downloading & processing image...');
-    try {
-      const noteImg = await noteImageFromUrl(raw);
-      attachImageToTarget('modal', noteImg);
-      if (els.editModalImageUrlInput) els.editModalImageUrlInput.value = '';
-      setPopoverImageStatus(
-        'modal',
-        noteImg.sourceType === 'embedded'
-          ? 'Downloaded & encrypted as WebP!'
-          : 'Linked external image (CORS restricted download).'
-      );
-      setTimeout(() => {
-        els.editModalImagePopover?.classList.add('hidden');
-      }, 700);
-    } catch (err) {
-      setPopoverImageStatus(
-        'modal',
-        err instanceof Error ? err.message : 'Could not load image URL.',
-        true
-      );
-    }
-  };
-
-  els.editModalAddImageUrlBtn?.addEventListener('click', () => {
-    void submitModalImageUrl();
-  });
-
-  els.editModalImageUrlInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      void submitModalImageUrl();
-    }
-  });
-
-  els.editModalImagesRow?.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement | null;
-    if (!target || !state.editingDraft) return;
-    const rmBtn = target.closest('[data-remove-modal-image]');
-    if (rmBtn) {
-      e.stopPropagation();
-      const imgId = rmBtn.getAttribute('data-remove-modal-image');
-      state.editingDraft.images = state.editingDraft.images.filter((img) => img.id !== imgId);
-      renderEditModalImages();
-      return;
-    }
-    const lightImg = target.closest('[data-lightbox-src]');
-    if (lightImg) {
-      e.stopPropagation();
-      openLightbox(lightImg.getAttribute('data-lightbox-src') ?? '');
-    }
-  });
-
-  els.editModalCard.addEventListener('paste', (e) => {
-    if (e.target === els.editModalImageUrlInput) return;
-    void handleClipboardPaste(e, 'modal');
-  });
-
-  els.editModalCard.addEventListener('dragover', (e) => {
-    if (e.dataTransfer?.types.includes('Files')) {
-      e.preventDefault();
-      els.editModalCard.classList.add('drag-over');
-    }
-  });
-
-  els.editModalCard.addEventListener('dragleave', () => {
-    els.editModalCard.classList.remove('drag-over');
-  });
-
-  els.editModalCard.addEventListener('drop', async (e) => {
-    els.editModalCard.classList.remove('drag-over');
-    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-      e.preventDefault();
-      await handleImageFiles('modal', Array.from(e.dataTransfer.files));
-    }
-  });
-
   // Global paste (routes to active Board Editor, or to modal/composer when not typing in inputs)
   document.addEventListener('paste', (e) => {
     if (boardEditor.isOpen()) {
@@ -3378,8 +1951,10 @@ function bindEvents(): void {
     if (isEditableElement(document.activeElement)) {
       return;
     }
-    const mode = !els.editModalBackdrop.classList.contains('hidden') ? 'modal' : 'composer';
-    void handleClipboardPaste(e, mode);
+    const surface = !els.editModalBackdrop.classList.contains('hidden')
+      ? editModalSurface
+      : composerSurface;
+    void surface.handleClipboardPaste(e);
   });
 
   // Lightbox close handlers
@@ -3413,57 +1988,11 @@ function bindEvents(): void {
     }
   });
 
-  // Vault Inspector Modal
-  const openVaultModal = (): void => {
-    updateVaultInspectorUI();
-    els.vaultPassphraseInput.value = '';
-    els.vaultConfirmPassphraseInput.value = '';
-    els.vaultPassphraseFeedback.className = 'vault-feedback hidden';
-    els.vaultPassphraseFeedback.textContent = '';
-    if (els.autoLockSelect) {
-      els.autoLockSelect.value = String(state.autoLockMinutes);
-    }
-    if (els.lockOnHideCb) {
-      els.lockOnHideCb.checked = state.lockOnHide;
-    }
-    if (els.blockExternalMediaCb) {
-      els.blockExternalMediaCb.checked = state.blockExternalMedia;
-    }
-    els.vaultModalBackdrop.classList.remove('hidden');
-  };
-  els.encryptionBadge.addEventListener('click', openVaultModal);
+  // Vault Inspector Modal & Topbar Lock
+  els.encryptionBadge.addEventListener('click', () => vaultModal.open());
   els.topbarLockBtn?.addEventListener('click', () => {
     if (state.passphrase) {
       void lockVault(true);
-    }
-  });
-
-  els.autoLockSelect?.addEventListener('change', () => {
-    if (!els.autoLockSelect) return;
-    const val = parseInt(els.autoLockSelect.value, 10);
-    state.autoLockMinutes = Number.isFinite(val) ? val : 15;
-    lastActivityAt = Date.now();
-    savePreferences();
-  });
-
-  els.lockOnHideCb?.addEventListener('change', () => {
-    if (!els.lockOnHideCb) return;
-    state.lockOnHide = els.lockOnHideCb.checked;
-    savePreferences();
-  });
-
-  els.blockExternalMediaCb?.addEventListener('change', () => {
-    if (!els.blockExternalMediaCb) return;
-    state.blockExternalMedia = els.blockExternalMediaCb.checked;
-    if (state.blockExternalMedia) {
-      sessionAllowedExternalUrls.clear();
-    }
-    savePreferences();
-    renderNotes();
-    renderComposerImages();
-    renderEditModalImages();
-    if (boardEditor.isOpen()) {
-      boardEditor.refreshFromExternal();
     }
   });
 
@@ -3501,223 +2030,9 @@ function bindEvents(): void {
     }
   });
 
-  els.closeVaultModalBtn.addEventListener('click', () => {
-    els.vaultModalBackdrop.classList.add('hidden');
-  });
-
-  els.vaultModalBackdrop.addEventListener('click', (e) => {
-    if (e.target === els.vaultModalBackdrop) {
-      els.vaultModalBackdrop.classList.add('hidden');
-    }
-  });
-
-  els.updatePassphraseBtn.addEventListener('click', async () => {
-    const nextPass = els.vaultPassphraseInput.value;
-    const confirmPass = els.vaultConfirmPassphraseInput.value;
-    const validationError = validateNewPassphrase(nextPass, confirmPass);
-    if (validationError) {
-      els.vaultPassphraseFeedback.className = 'vault-feedback error';
-      els.vaultPassphraseFeedback.textContent = validationError;
-      return;
-    }
-    const prevBtnText = els.updatePassphraseBtn.textContent;
-    els.updatePassphraseBtn.disabled = true;
-    els.updatePassphraseBtn.textContent = 'Encrypting...';
-    try {
-      state.passphrase = nextPass;
-      await persistEncryptedVault();
-      els.vaultPassphraseInput.value = '';
-      els.vaultConfirmPassphraseInput.value = '';
-      els.vaultPassphraseFeedback.className = 'vault-feedback success';
-      els.vaultPassphraseFeedback.textContent =
-        'Vault re-keyed and encrypted with your new passphrase.';
-    } catch (err) {
-      els.vaultPassphraseFeedback.className = 'vault-feedback error';
-      els.vaultPassphraseFeedback.textContent =
-        err instanceof Error ? err.message : 'Failed to re-key vault.';
-    } finally {
-      els.updatePassphraseBtn.disabled = false;
-      els.updatePassphraseBtn.textContent = prevBtnText;
-    }
-  });
-
-  els.lockVaultNowBtn.addEventListener('click', () => {
-    void lockVault(true);
-  });
-
-  els.unlockVaultForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const attempt = els.unlockPassphraseInput.value;
-    els.unlockErrorMsg.classList.add('hidden');
-
-    if (lockScreenMode === 'setup' || lockScreenMode === 'upgrade') {
-      const confirm = els.unlockConfirmPassphraseInput.value;
-      const validationError = validateNewPassphrase(attempt, confirm);
-      if (validationError) {
-        els.unlockErrorMsg.textContent = validationError;
-        els.unlockErrorMsg.classList.remove('hidden');
-        return;
-      }
-
-      const prevBtnText = els.unlockSubmitBtn.textContent;
-      els.unlockSubmitBtn.disabled = true;
-      els.unlockSubmitBtn.textContent = 'Encrypting...';
-      try {
-        state.passphrase = attempt;
-        if (lockScreenMode === 'upgrade' && pendingLegacyUpgradePayload) {
-          applyDecryptedPayload(pendingLegacyUpgradePayload);
-          pendingLegacyUpgradePayload = null;
-        } else {
-          state.notes = SEED_NOTES.map((n) => ({ ...n, tags: [...n.tags] }));
-          state.boards = [];
-        }
-        await persistEncryptedVault();
-        els.unlockPassphraseInput.value = '';
-        els.unlockConfirmPassphraseInput.value = '';
-        els.lockScreenOverlay.classList.add('hidden');
-        renderAll();
-      } catch (err) {
-        state.passphrase = null;
-        els.unlockErrorMsg.textContent =
-          err instanceof Error ? err.message : 'Failed to create encrypted vault.';
-        els.unlockErrorMsg.classList.remove('hidden');
-      } finally {
-        els.unlockSubmitBtn.disabled = false;
-        els.unlockSubmitBtn.textContent = prevBtnText;
-      }
-      return;
-    }
-
-    const prevBtnText = els.unlockSubmitBtn.textContent;
-    els.unlockSubmitBtn.disabled = true;
-    els.unlockSubmitBtn.textContent = 'Decrypting...';
-    try {
-      const envelope = state.lastEncryptedEnvelope ?? (await loadVaultEnvelopeFromCache());
-      if (!envelope) throw new Error('No vault found');
-      const decrypted = await CrypsyCrypto.decryptPayload(envelope, attempt);
-      state.passphrase = attempt;
-      applyDecryptedPayload(decrypted);
-      els.unlockPassphraseInput.value = '';
-      els.lockScreenOverlay.classList.add('hidden');
-      els.unlockErrorMsg.classList.add('hidden');
-      renderAll();
-      boardEditor.refreshFromExternal();
-    } catch {
-      els.unlockErrorMsg.textContent =
-        'Incorrect passphrase — AES-GCM authentication tag verification failed.';
-      els.unlockErrorMsg.classList.remove('hidden');
-    } finally {
-      els.unlockSubmitBtn.disabled = false;
-      els.unlockSubmitBtn.textContent = prevBtnText;
-    }
-  });
-
-  els.lockResumeCloudBtn.addEventListener('click', async () => {
-    try {
-      const ok = await CrypsyCloudSync.reconnectSavedHandle();
-      if (!ok) return;
-      pendingCloudNeedsPermission = false;
-      els.lockResumeCloudBtn.classList.add('hidden');
-      updateCloudStatusUI({ status: 'connected' });
-      const cloudEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
-      if (cloudEnvelope) {
-        await tryLoadEnvelope(cloudEnvelope);
-      }
-    } catch (err) {
-      els.unlockErrorMsg.textContent =
-        err instanceof Error ? err.message : 'Could not resume cloud folder sync.';
-      els.unlockErrorMsg.classList.remove('hidden');
-    }
-  });
-
-  els.lockLinkCloudBtn.addEventListener('click', async () => {
-    try {
-      await CrypsyCloudSync.pickCloudFolder(state.selectedProviderId, true);
-      updateCloudStatusUI({ status: 'connected' });
-      const existingCloudVault = await CrypsyCloudSync.readVaultFromCloudFolder();
-      if (existingCloudVault) {
-        await tryLoadEnvelope(existingCloudVault);
-      } else {
-        setLockScreenMode('setup');
-        els.unlockErrorMsg.textContent =
-          'Cloud folder linked (no existing vault found). Create a passphrase above to initialize your vault.';
-        els.unlockErrorMsg.classList.remove('hidden');
-      }
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return;
-      els.unlockErrorMsg.textContent =
-        err instanceof Error ? err.message : 'Could not link cloud folder.';
-      els.unlockErrorMsg.classList.remove('hidden');
-    }
-  });
-
-  els.lockImportVaultInput.addEventListener('change', async (e) => {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    await importEncryptedVaultFile(file);
-    input.value = '';
-  });
-
-  els.exportEncryptedBtn.addEventListener('click', () => {
-    void shareOrDownloadVaultJson();
-  });
-
-  els.importEncryptedInput.addEventListener('change', async (e) => {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    await importEncryptedVaultFile(file, els.vaultModalBackdrop);
-    input.value = '';
-  });
-
-  // Updates Modal
-  const openUpdatesModal = (): void => {
-    if (els.autoCheckUpdatesCb) {
-      els.autoCheckUpdatesCb.checked = state.autoCheckUpdates;
-    }
-    if (els.installedVersionLabel) {
-      els.installedVersionLabel.textContent = `v${APP_VERSION}`;
-    }
-    els.updatesModalBackdrop?.classList.remove('hidden');
-  };
-  if (els.appVersionBadge) {
-    els.appVersionBadge.addEventListener('click', openUpdatesModal);
-  }
-  if (els.topbarUpdatesBtn) {
-    els.topbarUpdatesBtn.addEventListener('click', openUpdatesModal);
-  }
-  if (els.closeUpdatesModalBtn) {
-    els.closeUpdatesModalBtn.addEventListener('click', () => {
-      els.updatesModalBackdrop?.classList.add('hidden');
-    });
-  }
-  if (els.updatesModalBackdrop) {
-    els.updatesModalBackdrop.addEventListener('click', (e) => {
-      if (e.target === els.updatesModalBackdrop) {
-        els.updatesModalBackdrop?.classList.add('hidden');
-      }
-    });
-  }
-  if (els.autoCheckUpdatesCb) {
-    els.autoCheckUpdatesCb.addEventListener('change', () => {
-      if (!els.autoCheckUpdatesCb) return;
-      state.autoCheckUpdates = els.autoCheckUpdatesCb.checked;
-      savePreferences();
-      if (state.autoCheckUpdates) {
-        void checkForUpdates(false);
-      }
-    });
-  }
-  if (els.checkUpdatesNowBtn) {
-    els.checkUpdatesNowBtn.addEventListener('click', () => {
-      void checkForUpdates(false);
-    });
-  }
-
   // Global keyboard shortcuts
   document.addEventListener('keydown', (e) => {
-    if (!els.lockScreenOverlay.classList.contains('hidden')) {
+    if (lockScreen.isOpen()) {
       return;
     }
 
@@ -3738,15 +2053,12 @@ function bindEvents(): void {
       }
       if (!els.editModalBackdrop.classList.contains('hidden')) {
         void saveAndCloseEditModal();
-      } else if (!els.cloudOnboardingBackdrop.classList.contains('hidden')) {
-        els.cloudOnboardingBackdrop.classList.add('hidden');
-      } else if (!els.vaultModalBackdrop.classList.contains('hidden')) {
-        els.vaultModalBackdrop.classList.add('hidden');
-      } else if (
-        els.updatesModalBackdrop &&
-        !els.updatesModalBackdrop.classList.contains('hidden')
-      ) {
-        els.updatesModalBackdrop.classList.add('hidden');
+      } else if (cloudWizard.isOpen()) {
+        cloudWizard.close();
+      } else if (vaultModal.isOpen()) {
+        vaultModal.close();
+      } else if (updatesController.isOpen()) {
+        updatesController.close();
       } else if (state.composer.expanded) {
         void saveComposerNote();
       }
