@@ -4,7 +4,7 @@
 
 import { CrypsyCloudSync } from './cloud-sync';
 import { MIN_PASSPHRASE_LENGTH } from './crypto';
-import type { CloudProviderId, EncryptedEnvelope, VaultPayload } from '../types';
+import type { CloudProviderId, EncryptedEnvelope } from '../types';
 import { byId } from '../utils';
 
 export type LockScreenMode = 'unlock' | 'setup' | 'upgrade';
@@ -226,6 +226,3 @@ export class LockScreenController {
     });
   }
 }
-
-// Re-export type for convenience
-export type { VaultPayload };

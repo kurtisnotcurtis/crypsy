@@ -61,6 +61,10 @@ export class UpdatesController {
     if (this.els.autoCheckUpdatesCb) {
       this.els.autoCheckUpdatesCb.checked = this.host.getAutoCheckUpdates();
     }
+    if (this.els.appVersionBadge) {
+      this.els.appVersionBadge.textContent = `v${APP_VERSION}`;
+      this.els.appVersionBadge.title = `Crypsy Note v${APP_VERSION} — Click to check for updates`;
+    }
     if (this.els.installedVersionLabel) {
       this.els.installedVersionLabel.textContent = `v${APP_VERSION}`;
     }

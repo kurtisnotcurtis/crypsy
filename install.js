@@ -10,7 +10,7 @@
  * Usage:
  *   node install.js                  # Interactive onboarding wizard
  *   node install.js --list           # List detected cloud folders on this machine
- *   node install.js --build-only     # Build dist/Crypsy-Portable.html without installing
+ *   node install.js --build-only     # Build Crypsy-Portable.html without installing
  *   node install.js --target <path>  # Non-interactive install to <path>/Crypsy
  */
 
