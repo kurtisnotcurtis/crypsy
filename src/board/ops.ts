@@ -1,5 +1,5 @@
 /**
- * Crypsy — Pure Board Item Alignment & Clipboard Copy/Paste Helpers
+ * Crypsy — Pure Board Item Alignment, Z-Order & Clipboard Copy/Paste Helpers
  */
 
 import type { BoardAlignAxis } from './selection-bar';
@@ -34,16 +34,61 @@ export function alignBoardItemsInPlace(
   }
 }
 
+/**
+ * Re-indexes all board items 1..N placing selected items strictly behind unselected items
+ * while preserving relative z-order within each group.
+ */
+export function sendItemsToBackInPlace(
+  boardItems: BoardItem[],
+  selectedIds: ReadonlySet<string>
+): void {
+  if (boardItems.length === 0 || selectedIds.size === 0) return;
+  const sorted = [...boardItems].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+  const selected = sorted.filter((it) => selectedIds.has(it.id));
+  const others = sorted.filter((it) => !selectedIds.has(it.id));
+  const ordered = [...selected, ...others];
+  ordered.forEach((it, idx) => {
+    it.zIndex = idx + 1;
+  });
+}
+
+/**
+ * Re-indexes all board items 1..N placing selected items strictly in front of unselected items
+ * while preserving relative z-order within each group.
+ */
+export function bringItemsToFrontInPlace(
+  boardItems: BoardItem[],
+  selectedIds: ReadonlySet<string>
+): void {
+  if (boardItems.length === 0 || selectedIds.size === 0) return;
+  const sorted = [...boardItems].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+  const others = sorted.filter((it) => !selectedIds.has(it.id));
+  const selected = sorted.filter((it) => selectedIds.has(it.id));
+  const ordered = [...others, ...selected];
+  ordered.forEach((it, idx) => {
+    it.zIndex = idx + 1;
+  });
+}
+
 export function summarizeBoardItemsForClipboard(items: readonly BoardItem[]): string {
-  return items
+  const parts = items
     .map((it) => {
       if (it.type === 'text') return it.content;
       if (it.type === 'link') return it.url;
       if (it.type === 'stroke') return '';
       return it.image.sourceType === 'external' ? it.image.src : it.image.alt || '[Board Image]';
     })
-    .filter(Boolean)
-    .join('\n\n');
+    .filter(Boolean);
+
+  if (parts.length > 0) {
+    return parts.join('\n\n');
+  }
+
+  const strokeCount = items.filter((it) => it.type === 'stroke').length;
+  if (strokeCount > 0) {
+    return `[Crypsy Ink: ${strokeCount} stroke${strokeCount === 1 ? '' : 's'}]`;
+  }
+  return '';
 }
 
 export function cloneItemsForPaste(

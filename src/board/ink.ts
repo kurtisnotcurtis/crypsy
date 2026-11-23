@@ -524,23 +524,28 @@ export function renderStrokeToCanvas2d(
 export function renderBoardStrokeSvg(item: BoardStrokeItem, minimap = false): string {
   const safeColor = sanitizeInkColor(item.strokeColor);
   const paint = safeColor === AUTO_INK_TOKEN ? 'currentColor' : safeColor;
-  const sw = Math.max(12, item.sourceWidth || item.width || 12);
-  const sh = Math.max(12, item.sourceHeight || item.height || 12);
+  const rawSw = Number(item.sourceWidth || item.width || 12);
+  const rawSh = Number(item.sourceHeight || item.height || 12);
+  const sw = Math.max(12, Number.isFinite(rawSw) ? rawSw : 12);
+  const sh = Math.max(12, Number.isFinite(rawSh) ? rawSh : 12);
   const isHighlighter = item.tool === 'highlighter';
-  const alpha = clamp(item.opacity ?? (isHighlighter ? 0.42 : 1), 0.1, 1);
+  const rawWidth = Number(item.strokeWidth);
+  const strokeWidth = clamp(Number.isFinite(rawWidth) ? rawWidth : isHighlighter ? 18 : 3, 1, 64);
+  const rawOpacity = Number(item.opacity ?? (isHighlighter ? 0.42 : 1));
+  const alpha = clamp(Number.isFinite(rawOpacity) ? rawOpacity : isHighlighter ? 0.42 : 1, 0.1, 1);
 
   if (isHighlighter) {
     const d = buildCenterlinePath(item.points);
     const hitPath = minimap
       ? ''
-      : `<path class="board-ink-hit" d="${d}" fill="none" stroke="transparent" stroke-width="${Math.max(16, item.strokeWidth + 6)}" stroke-linecap="round" stroke-linejoin="round" />`;
-    return `<svg class="board-ink-svg is-highlighter" data-ink="${safeColor}" viewBox="0 0 ${sw} ${sh}" preserveAspectRatio="none"><path d="${d}" fill="none" stroke="${paint}" stroke-width="${item.strokeWidth}" stroke-linecap="round" stroke-linejoin="round" opacity="${alpha}" />${hitPath}</svg>`;
+      : `<path class="board-ink-hit" d="${d}" fill="none" stroke="transparent" stroke-width="${Math.max(16, strokeWidth + 6)}" stroke-linecap="round" stroke-linejoin="round" />`;
+    return `<svg class="board-ink-svg is-highlighter" data-ink="${safeColor}" viewBox="0 0 ${sw} ${sh}" preserveAspectRatio="none"><path d="${d}" fill="none" stroke="${paint}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" opacity="${alpha}" />${hitPath}</svg>`;
   }
 
-  const fillPath = buildVariableWidthStrokePath(item.points, item.strokeWidth);
+  const fillPath = buildVariableWidthStrokePath(item.points, strokeWidth);
   const hitCenter = minimap
     ? ''
-    : `<path class="board-ink-hit" d="${buildCenterlinePath(item.points)}" fill="none" stroke="transparent" stroke-width="${Math.max(14, item.strokeWidth + 8)}" stroke-linecap="round" stroke-linejoin="round" />`;
+    : `<path class="board-ink-hit" d="${buildCenterlinePath(item.points)}" fill="none" stroke="transparent" stroke-width="${Math.max(14, strokeWidth + 8)}" stroke-linecap="round" stroke-linejoin="round" />`;
 
   return `<svg class="board-ink-svg is-pen" data-ink="${safeColor}" viewBox="0 0 ${sw} ${sh}" preserveAspectRatio="none"><path d="${fillPath}" fill="${paint}" opacity="${alpha}" />${hitCenter}</svg>`;
 }

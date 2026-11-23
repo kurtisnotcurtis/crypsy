@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; connect-src 'self' https: http:; object-src 'none'; base-uri 'none';"
+    content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; connect-src 'self' https://api.github.com data:; object-src 'none'; base-uri 'none';"
   />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#202124" />
@@ -33,7 +33,7 @@
           </svg>
         </div>
         <span class="brand-name">Crypsy</span>
-        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note v1.6.4 — Click to check for updates">v1.6.4</button>
+        <button type="button" id="appVersionBadge" class="version-badge" title="Crypsy Note — Click to check for updates">v</button>
         <span id="encryptionBadge" class="crypto-badge" title="Click to inspect encrypted cloud payload or manage vault key">
           <span class="status-dot"></span>
           AES-256-GCM
@@ -115,6 +115,18 @@
     <div class="reconnect-banner-actions">
       <button id="resumeCloudSyncBtn" class="btn-primary">Resume Cloud Sync</button>
       <button id="changeCloudFolderBtn" class="btn-ghost">Change Folder</button>
+    </div>
+  </div>
+
+  <!-- Sync Conflict Resolution Banner -->
+  <div id="syncConflictBanner" class="reconnect-banner conflict-banner hidden">
+    <div class="reconnect-banner-text">
+      <span id="syncConflictMsg">Sync conflict: vault.crypsy.json changed on another device.</span>
+    </div>
+    <div class="reconnect-banner-actions">
+      <button type="button" id="conflictMergeBtn" class="btn-primary">Merge Both</button>
+      <button type="button" id="conflictKeepLocalBtn" class="btn-ghost">Keep Local</button>
+      <button type="button" id="conflictKeepRemoteBtn" class="btn-ghost">Load Cloud Copy</button>
     </div>
   </div>
 
@@ -760,7 +772,7 @@
         <div>
           <h3>Crypsy Settings &amp; Updates</h3>
           <p class="vault-subtitle">
-            Installed version: <strong id="installedVersionLabel">v1.6.4</strong>
+            Installed version: <strong id="installedVersionLabel">v</strong>
           </p>
         </div>
         <button id="closeUpdatesModalBtn" class="icon-btn" aria-label="Close settings modal">
@@ -825,8 +837,8 @@
     </div>
   </div>
 
-  <!-- Locked Vault Overlay -->
-  <div id="lockScreenOverlay" class="lock-overlay hidden">
+  <!-- Locked Vault Overlay (visible on startup until decrypted) -->
+  <div id="lockScreenOverlay" class="lock-overlay">
     <div class="lock-card">
       <div class="lock-icon">
         <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter">
@@ -860,8 +872,10 @@
         <button type="submit" id="unlockSubmitBtn" class="btn-primary unlock-btn">Decrypt &amp; Unlock</button>
       </form>
       <div id="lockSecondaryActions" class="lock-secondary-actions">
+        <button type="button" id="lockCancelImportBtn" class="btn-link hidden">Cancel Import</button>
         <button type="button" id="lockResumeCloudBtn" class="btn-link hidden">Resume Cloud Sync</button>
         <button type="button" id="lockLinkCloudBtn" class="btn-link hidden">Link Existing Cloud Folder</button>
+        <button type="button" id="lockLegacyUpgradeBtn" class="btn-link hidden">Migrate Legacy v1.x Vault</button>
         <label class="btn-link" style="cursor:pointer;">
           Import .crypsy File
           <input type="file" id="lockImportVaultInput" accept=".json,.crypsy" class="hidden" />

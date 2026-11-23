@@ -3,7 +3,12 @@ import { describe, it } from 'node:test';
 
 import { computeResizedItemRect, normalizeAngleDeg } from '../src/board/geometry';
 import { BoardHistory } from '../src/board/history';
-import { alignBoardItemsInPlace, summarizeBoardItemsForClipboard } from '../src/board/ops';
+import {
+  alignBoardItemsInPlace,
+  bringItemsToFrontInPlace,
+  sendItemsToBackInPlace,
+  summarizeBoardItemsForClipboard,
+} from '../src/board/ops';
 import {
   AUTO_INK_TOKEN,
   buildCenterlinePath,
@@ -206,5 +211,37 @@ describe('board transforms, history & ops', () => {
     assert.equal(a.x, 100);
     assert.equal(b.x, 100);
     assert.equal(summarizeBoardItemsForClipboard([a, b]), 'Hello\n\nWorld');
+
+    // Ink-only selection must produce a non-empty clipboard summary
+    const stroke: BoardStrokeItem = {
+      id: 's-clip',
+      type: 'stroke',
+      tool: 'pen',
+      strokeColor: '#000',
+      strokeWidth: 3,
+      opacity: 1,
+      x: 0,
+      y: 0,
+      width: 20,
+      height: 20,
+      sourceWidth: 20,
+      sourceHeight: 20,
+      rotation: 0,
+      zIndex: 3,
+      points: [[0, 0, 0.5]],
+    };
+    assert.equal(summarizeBoardItemsForClipboard([stroke]), '[Crypsy Ink: 1 stroke]');
+
+    // Send to Back must strictly place selected item behind existing zIndex: 1 item
+    const items = [a, b, stroke];
+    sendItemsToBackInPlace(items, new Set(['s-clip']));
+    assert.equal(stroke.zIndex, 1);
+    assert.equal(a.zIndex, 2);
+    assert.equal(b.zIndex, 3);
+
+    bringItemsToFrontInPlace(items, new Set(['s-clip']));
+    assert.equal(a.zIndex, 1);
+    assert.equal(b.zIndex, 2);
+    assert.equal(stroke.zIndex, 3);
   });
 });

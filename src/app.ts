@@ -21,14 +21,30 @@ import {
   fitBoardMinimaps,
   renderImageOrPrivacyPlaceholderHtml as renderCardImageOrPlaceholder,
 } from './ui/card-render';
-import { CrypsyCloudSync } from './vault/cloud-sync';
+import {
+  captureCleanPortableTemplate,
+  detectRunningCloudLocation,
+  getConnectionStatus,
+  getLastKnownFileModified,
+  getSavedProviderMeta,
+  isConnected,
+  isNativeApp,
+  markRemoteStampAccepted,
+  onExternalUpdate,
+  readVaultFromCloudFolder,
+  reconnectSavedHandle,
+  restoreSavedConnection,
+  shareVaultWithNativeSheet,
+  writeVaultToCloudFolder,
+} from './vault/cloud-sync';
 import { CloudWizardController } from './ui/cloud-wizard';
 import { ContextMenuController, shouldBypassCustomContextMenu } from './ui/context-menu';
-import { CrypsyCrypto } from './vault/crypto';
+import { isValidEncryptedEnvelope } from './vault/crypto';
 import { LockScreenController } from './vault/lock-screen';
 import { toggleCheckboxLine } from './markdown';
 import { bindNoteDraftSurface } from './ui/note-draft-surface';
 import {
+  DEFAULT_PREFERENCES,
   createSeedNotes,
   loadPreferencesIntoState,
   savePreferencesFromState,
@@ -39,16 +55,15 @@ import type {
   ActiveFilter,
   AppState,
   Board,
-  EncryptedEnvelope,
+  CloudConnectionStatus,
   Note,
   NoteColor,
   NoteImage,
-  RestoreConnectionResult,
   VaultPayload,
+  VaultSaveStatus,
 } from './types';
 import { UpdatesController } from './ui/updates';
 import {
-  APP_VERSION,
   autoResizeTextarea,
   byId,
   createId,
@@ -57,9 +72,9 @@ import {
   formatTimestamp,
   isEditableElement,
   isExternalHttpUrl,
-  maybeById,
+  normalizeTag,
 } from './utils';
-import { loadVaultEnvelopeFromCache, saveVaultEnvelopeToCache } from './vault/cache';
+import { createBrowserVaultCache } from './vault/cache';
 import { VaultModalController } from './vault/modal';
 import {
   createNewBoard,
@@ -68,32 +83,22 @@ import {
   duplicateNoteInList,
   renameTagInVault,
 } from './vault/mutations';
+import { VaultSession, type PendingSyncConflict } from './vault/session';
 
-const LEGACY_DEFAULT_DEVICE_SECRET = 'crypsy-local-device-default-key-v1';
+// Snapshot pristine portable HTML before any vault data is decrypted or rendered
+captureCleanPortableTemplate();
 
-let pendingLegacyUpgradePayload: VaultPayload | null = null;
-let pendingCloudNeedsPermission = false;
 const sessionAllowedExternalUrls = new Set<string>();
 let lastActivityAt = Date.now();
 
-window.CRYPSY_VERSION = APP_VERSION;
-
 // Application State
 const state: AppState = {
+  ...DEFAULT_PREFERENCES,
   notes: [],
   boards: [],
   tags: ['security', 'ideas', 'work', 'personal'],
   searchQuery: '',
   activeFilter: { type: 'all', tag: null },
-  viewMode: 'grid',
-  theme: 'dark',
-  boardsSectionExpanded: true,
-  tagsSectionExpanded: true,
-  guideSectionExpanded: true,
-  autoCheckUpdates: false,
-  autoLockMinutes: 15,
-  lockOnHide: false,
-  blockExternalMedia: true,
   passphrase: null,
   lastEncryptedEnvelope: null,
   selectedProviderId: 'onedrive',
@@ -109,42 +114,42 @@ const state: AppState = {
   activeBoardId: null,
 };
 
-// DOM Elements
+// DOM Elements (all verified present in index.html)
 const els = {
   sidebar: byId('sidebar'),
   sidebarToggleBtn: byId<HTMLButtonElement>('sidebarToggleBtn'),
-  toggleBoardsSectionBtn: maybeById<HTMLButtonElement>('toggleBoardsSectionBtn'),
-  sidebarBoardsContent: maybeById('sidebarBoardsContent'),
-  sidebarBoardsList: maybeById('sidebarBoardsList'),
-  newBoardForm: maybeById<HTMLFormElement>('newBoardForm'),
-  newBoardInput: maybeById<HTMLInputElement>('newBoardInput'),
-  toggleTagsSectionBtn: maybeById<HTMLButtonElement>('toggleTagsSectionBtn'),
-  sidebarTagsContent: maybeById('sidebarTagsContent'),
+  toggleBoardsSectionBtn: byId<HTMLButtonElement>('toggleBoardsSectionBtn'),
+  sidebarBoardsContent: byId('sidebarBoardsContent'),
+  sidebarBoardsList: byId('sidebarBoardsList'),
+  newBoardForm: byId<HTMLFormElement>('newBoardForm'),
+  newBoardInput: byId<HTMLInputElement>('newBoardInput'),
+  toggleTagsSectionBtn: byId<HTMLButtonElement>('toggleTagsSectionBtn'),
+  sidebarTagsContent: byId('sidebarTagsContent'),
   sidebarTagsList: byId('sidebarTagsList'),
   newTagForm: byId<HTMLFormElement>('newTagForm'),
   newTagInput: byId<HTMLInputElement>('newTagInput'),
-  toggleGuideSectionBtn: maybeById<HTMLButtonElement>('toggleGuideSectionBtn'),
-  sidebarGuideContent: maybeById('sidebarGuideContent'),
+  toggleGuideSectionBtn: byId<HTMLButtonElement>('toggleGuideSectionBtn'),
+  sidebarGuideContent: byId('sidebarGuideContent'),
   countAll: byId('countAll'),
   countPinned: byId('countPinned'),
-  countBoards: maybeById('countBoards'),
-  boardsActionBar: maybeById('boardsActionBar'),
-  createBoardHeroBtn: maybeById<HTMLButtonElement>('createBoardHeroBtn'),
-  composerWrapper: maybeById('composerWrapper'),
+  countBoards: byId('countBoards'),
+  boardsActionBar: byId('boardsActionBar'),
+  createBoardHeroBtn: byId<HTMLButtonElement>('createBoardHeroBtn'),
+  composerWrapper: byId('composerWrapper'),
 
   searchInput: byId<HTMLInputElement>('searchInput'),
   clearSearchBtn: byId<HTMLButtonElement>('clearSearchBtn'),
   cloudSetupBtn: byId<HTMLButtonElement>('cloudSetupBtn'),
   cloudSetupBtnLabel: byId('cloudSetupBtnLabel'),
-  lastUpdatedBadge: maybeById('lastUpdatedBadge'),
-  lastUpdatedText: maybeById('lastUpdatedText'),
+  lastUpdatedBadge: byId('lastUpdatedBadge'),
+  lastUpdatedText: byId('lastUpdatedText'),
   viewToggleBtn: byId<HTMLButtonElement>('viewToggleBtn'),
   viewIconList: byId('viewIconList'),
   viewIconGrid: byId('viewIconGrid'),
-  themeToggleBtn: maybeById<HTMLButtonElement>('themeToggleBtn'),
-  themeIconSun: maybeById('themeIconSun'),
-  themeIconMoon: maybeById('themeIconMoon'),
-  themeToggleLabel: maybeById('themeToggleLabel'),
+  themeToggleBtn: byId<HTMLButtonElement>('themeToggleBtn'),
+  themeIconSun: byId('themeIconSun'),
+  themeIconMoon: byId('themeIconMoon'),
+  themeToggleLabel: byId('themeToggleLabel'),
   encryptionBadge: byId('encryptionBadge'),
 
   reconnectCloudBanner: byId('reconnectCloudBanner'),
@@ -152,8 +157,14 @@ const els = {
   resumeCloudSyncBtn: byId<HTMLButtonElement>('resumeCloudSyncBtn'),
   changeCloudFolderBtn: byId<HTMLButtonElement>('changeCloudFolderBtn'),
 
+  syncConflictBanner: byId('syncConflictBanner'),
+  syncConflictMsg: byId('syncConflictMsg'),
+  conflictMergeBtn: byId<HTMLButtonElement>('conflictMergeBtn'),
+  conflictKeepLocalBtn: byId<HTMLButtonElement>('conflictKeepLocalBtn'),
+  conflictKeepRemoteBtn: byId<HTMLButtonElement>('conflictKeepRemoteBtn'),
+
   noteComposer: byId('noteComposer'),
-  composerImagesRow: maybeById('composerImagesRow'),
+  composerImagesRow: byId('composerImagesRow'),
   composerHeader: byId('composerHeader'),
   composerTitle: byId<HTMLInputElement>('composerTitle'),
   composerDescription: byId<HTMLTextAreaElement>('composerDescription'),
@@ -164,13 +175,13 @@ const els = {
   composerTagPopover: byId('composerTagPopover'),
   composerTagSearch: byId<HTMLInputElement>('composerTagSearch'),
   composerTagOptions: byId('composerTagOptions'),
-  composerImageBtn: maybeById<HTMLButtonElement>('composerImageBtn'),
-  composerImagePopover: maybeById('composerImagePopover'),
-  composerUploadImageBtn: maybeById<HTMLButtonElement>('composerUploadImageBtn'),
-  composerImageFileInput: maybeById<HTMLInputElement>('composerImageFileInput'),
-  composerImageUrlInput: maybeById<HTMLInputElement>('composerImageUrlInput'),
-  composerAddImageUrlBtn: maybeById<HTMLButtonElement>('composerAddImageUrlBtn'),
-  composerImageStatus: maybeById('composerImageStatus'),
+  composerImageBtn: byId<HTMLButtonElement>('composerImageBtn'),
+  composerImagePopover: byId('composerImagePopover'),
+  composerUploadImageBtn: byId<HTMLButtonElement>('composerUploadImageBtn'),
+  composerImageFileInput: byId<HTMLInputElement>('composerImageFileInput'),
+  composerImageUrlInput: byId<HTMLInputElement>('composerImageUrlInput'),
+  composerAddImageUrlBtn: byId<HTMLButtonElement>('composerAddImageUrlBtn'),
+  composerImageStatus: byId('composerImageStatus'),
   composerColorPicker: byId('composerColorPicker'),
   composerCancelBtn: byId<HTMLButtonElement>('composerCancelBtn'),
   composerSaveBtn: byId<HTMLButtonElement>('composerSaveBtn'),
@@ -186,12 +197,12 @@ const els = {
   othersSectionLabel: byId('othersSectionLabel'),
   othersGrid: byId('othersGrid'),
   emptyState: byId('emptyState'),
-  emptyStateTitle: maybeById('emptyStateTitle'),
-  emptyStateSubtitle: maybeById('emptyStateSubtitle'),
+  emptyStateTitle: byId('emptyStateTitle'),
+  emptyStateSubtitle: byId('emptyStateSubtitle'),
 
   editModalBackdrop: byId('editModalBackdrop'),
   editModalCard: byId('editModalCard'),
-  editModalImagesRow: maybeById('editModalImagesRow'),
+  editModalImagesRow: byId('editModalImagesRow'),
   editModalTitle: byId<HTMLInputElement>('editModalTitle'),
   editModalDescription: byId<HTMLTextAreaElement>('editModalDescription'),
   editModalPinBtn: byId<HTMLButtonElement>('editModalPinBtn'),
@@ -201,23 +212,21 @@ const els = {
   editModalTagPopover: byId('editModalTagPopover'),
   editModalTagSearch: byId<HTMLInputElement>('editModalTagSearch'),
   editModalTagOptions: byId('editModalTagOptions'),
-  editModalImageBtn: maybeById<HTMLButtonElement>('editModalImageBtn'),
-  editModalImagePopover: maybeById('editModalImagePopover'),
-  editModalUploadImageBtn: maybeById<HTMLButtonElement>('editModalUploadImageBtn'),
-  editModalImageFileInput: maybeById<HTMLInputElement>('editModalImageFileInput'),
-  editModalImageUrlInput: maybeById<HTMLInputElement>('editModalImageUrlInput'),
-  editModalAddImageUrlBtn: maybeById<HTMLButtonElement>('editModalAddImageUrlBtn'),
-  editModalImageStatus: maybeById('editModalImageStatus'),
+  editModalImageBtn: byId<HTMLButtonElement>('editModalImageBtn'),
+  editModalImagePopover: byId('editModalImagePopover'),
+  editModalUploadImageBtn: byId<HTMLButtonElement>('editModalUploadImageBtn'),
+  editModalImageFileInput: byId<HTMLInputElement>('editModalImageFileInput'),
+  editModalImageUrlInput: byId<HTMLInputElement>('editModalImageUrlInput'),
+  editModalAddImageUrlBtn: byId<HTMLButtonElement>('editModalAddImageUrlBtn'),
+  editModalImageStatus: byId('editModalImageStatus'),
   editModalColorPicker: byId('editModalColorPicker'),
   editModalDeleteBtn: byId<HTMLButtonElement>('editModalDeleteBtn'),
   editModalSaveBtn: byId<HTMLButtonElement>('editModalSaveBtn'),
 
-  // Topbar Lock Button
-  topbarLockBtn: maybeById<HTMLButtonElement>('topbarLockBtn'),
-
-  imageLightboxBackdrop: maybeById('imageLightboxBackdrop'),
-  closeLightboxBtn: maybeById<HTMLButtonElement>('closeLightboxBtn'),
-  lightboxImage: maybeById<HTMLImageElement>('lightboxImage'),
+  topbarLockBtn: byId<HTMLButtonElement>('topbarLockBtn'),
+  imageLightboxBackdrop: byId('imageLightboxBackdrop'),
+  closeLightboxBtn: byId<HTMLButtonElement>('closeLightboxBtn'),
+  lightboxImage: byId<HTMLImageElement>('lightboxImage'),
 };
 
 // Preferences
@@ -229,51 +238,103 @@ function savePreferences(): void {
   savePreferencesFromState(state);
 }
 
-// Persistence & Cloud Sync
+// Persistence debounce for board edits
 let boardPersistTimer: number | null = null;
-let activePersistPromise: Promise<void> | null = null;
-let persistAgainRequested = false;
 
-function scheduleBoardPersist(immediate = false): void {
+function clearBoardPersistTimer(): boolean {
   if (boardPersistTimer !== null) {
     window.clearTimeout(boardPersistTimer);
     boardPersistTimer = null;
+    return true;
   }
+  return false;
+}
+
+function scheduleBoardPersist(immediate = false): void {
+  clearBoardPersistTimer();
   if (immediate) {
-    void persistEncryptedVault();
+    void persistEncryptedVault().catch((err) => {
+      console.warn('Board persist failed:', err);
+    });
     return;
   }
   boardPersistTimer = window.setTimeout(() => {
     boardPersistTimer = null;
-    void persistEncryptedVault();
+    void persistEncryptedVault().catch((err) => {
+      console.warn('Debounced board persist failed:', err);
+    });
   }, 500);
 }
 
-function applyDecryptedPayload(decrypted: VaultPayload): void {
-  state.notes = Array.isArray(decrypted.notes) ? decrypted.notes : [];
-  state.tags = Array.isArray(decrypted.tags) ? decrypted.tags : [];
-  state.boards = Array.isArray(decrypted.boards) ? decrypted.boards : [];
-  if (state.activeBoardId && !state.boards.some((b) => b.id === state.activeBoardId)) {
-    state.activeBoardId = null;
+/**
+ * Synchronously commits any open edit modal, composer draft, or board text edit into `state`.
+ * Returns `true` if any data changed (so `lockVault` persists before clearing state).
+ */
+function commitOpenDraftsToState(): boolean {
+  let dirty = clearBoardPersistTimer();
+
+  if (boardEditor.isOpen() && boardEditor.commitPendingEdits()) {
+    dirty = true;
   }
+
+  if (state.editingNoteId && state.editingDraft) {
+    const idx = state.notes.findIndex((n) => n.id === state.editingNoteId);
+    const existing = idx !== -1 ? state.notes[idx] : undefined;
+    if (existing) {
+      const newTitle = els.editModalTitle.value.trim();
+      const newDesc = els.editModalDescription.value.trim();
+      const changed =
+        existing.title !== newTitle ||
+        existing.description !== newDesc ||
+        existing.pinned !== state.editingDraft.pinned ||
+        existing.color !== state.editingDraft.color ||
+        JSON.stringify(existing.tags) !== JSON.stringify(state.editingDraft.tags) ||
+        JSON.stringify(existing.images || []) !== JSON.stringify(state.editingDraft.images);
+      if (changed) {
+        state.notes[idx] = {
+          ...existing,
+          title: newTitle,
+          description: newDesc,
+          pinned: state.editingDraft.pinned,
+          color: state.editingDraft.color,
+          tags: [...state.editingDraft.tags],
+          images: [...state.editingDraft.images],
+          updatedAt: Date.now(),
+        };
+        dirty = true;
+      }
+    }
+    state.editingNoteId = null;
+    state.editingDraft = null;
+    els.editModalBackdrop.classList.add('hidden');
+  }
+
+  if (state.composer.expanded) {
+    const title = els.composerTitle.value.trim();
+    const description = els.composerDescription.value.trim();
+    if (title || description || state.composer.images.length > 0) {
+      const now = Date.now();
+      state.notes.unshift({
+        id: createId('note'),
+        title,
+        description,
+        images: [...state.composer.images],
+        tags: [...state.composer.tags],
+        pinned: state.composer.pinned,
+        color: state.composer.color,
+        createdAt: now,
+        updatedAt: now,
+      });
+      dirty = true;
+    }
+    resetComposer();
+  }
+
+  return dirty;
 }
 
-async function lockVault(flushPending = false, errorMsg?: string): Promise<void> {
-  if (flushPending && state.passphrase) {
-    if (boardPersistTimer !== null) {
-      await persistEncryptedVault();
-    } else if (activePersistPromise) {
-      await activePersistPromise;
-    }
-  }
-  if (boardPersistTimer !== null) {
-    window.clearTimeout(boardPersistTimer);
-    boardPersistTimer = null;
-  }
-  persistAgainRequested = false;
-
-  state.passphrase = null;
-  pendingLegacyUpgradePayload = null;
+function clearSensitiveStateAndDom(): void {
+  clearBoardPersistTimer();
   sessionAllowedExternalUrls.clear();
   state.notes = [];
   state.boards = [];
@@ -291,14 +352,14 @@ async function lockVault(flushPending = false, errorMsg?: string): Promise<void>
   closeLightbox();
   els.editModalTitle.value = '';
   els.editModalDescription.value = '';
-  if (els.editModalImagesRow) els.editModalImagesRow.innerHTML = '';
+  els.editModalImagesRow.innerHTML = '';
   els.editModalTagsRow.innerHTML = '';
   els.editModalTimestamp.textContent = '';
   els.composerTagSearch.value = '';
   els.editModalTagSearch.value = '';
-  if (els.composerImageUrlInput) els.composerImageUrlInput.value = '';
-  if (els.editModalImageUrlInput) els.editModalImageUrlInput.value = '';
-  if (els.newBoardInput) els.newBoardInput.value = '';
+  els.composerImageUrlInput.value = '';
+  els.editModalImageUrlInput.value = '';
+  els.newBoardInput.value = '';
   els.newTagInput.value = '';
   els.activeFilterText.innerHTML = '';
   els.activeFilterBanner.classList.add('hidden');
@@ -313,107 +374,103 @@ async function lockVault(flushPending = false, errorMsg?: string): Promise<void>
   els.emptyState.classList.add('hidden');
   els.pinnedGrid.innerHTML = '';
   els.othersGrid.innerHTML = '';
-  if (els.sidebarBoardsList) els.sidebarBoardsList.innerHTML = '';
+  els.sidebarBoardsList.innerHTML = '';
   els.sidebarTagsList.innerHTML = '';
   els.countAll.textContent = '0';
   els.countPinned.textContent = '0';
-  if (els.countBoards) els.countBoards.textContent = '0';
-
-  lockScreen.setMode(state.lastEncryptedEnvelope ? 'unlock' : 'setup', errorMsg);
+  els.countBoards.textContent = '0';
 }
 
-async function writeEncryptedVaultOnce(): Promise<void> {
-  const passphrase = state.passphrase;
-  if (!passphrase) {
-    throw new Error('Cannot persist vault while locked without a passphrase.');
-  }
-  const payload: VaultPayload = {
-    notes: structuredClone(state.notes),
-    tags: [...state.tags],
-    boards: structuredClone(state.boards),
-  };
-  const envelope = await CrypsyCrypto.encryptPayload(payload, passphrase);
-  if (state.passphrase !== passphrase) {
+function renderConflictBanner(conflict: PendingSyncConflict | null): void {
+  if (!conflict) {
+    els.syncConflictBanner.classList.add('hidden');
     return;
   }
-  state.lastEncryptedEnvelope = envelope;
-  await saveVaultEnvelopeToCache(envelope);
-
-  if (CrypsyCloudSync.isConnected()) {
-    try {
-      await CrypsyCloudSync.writeVaultToCloudFolder(envelope);
-      updateCloudStatusUI();
-    } catch (e) {
-      console.warn('Failed writing vault to cloud folder:', e);
-    }
-  }
-
-  vaultModal.updateCiphertextPreview();
+  els.syncConflictMsg.textContent = conflict.message;
+  els.syncConflictBanner.classList.remove('hidden');
 }
+
+// Vault Session Engine (Load / Save / Sync / Conflict / Lock)
+const vaultSession: VaultSession = new VaultSession({
+  cache: createBrowserVaultCache(),
+  cloud: {
+    isConnected,
+    getConnectionStatus,
+    readVault: readVaultFromCloudFolder,
+    writeVault: writeVaultToCloudFolder,
+    markRemoteStampAccepted,
+    reconnectSavedHandle,
+  },
+  host: {
+    get passphrase() {
+      return state.passphrase;
+    },
+    set passphrase(v: string | null) {
+      state.passphrase = v;
+    },
+    get lastEncryptedEnvelope() {
+      return state.lastEncryptedEnvelope;
+    },
+    set lastEncryptedEnvelope(v) {
+      state.lastEncryptedEnvelope = v;
+    },
+    getPayloadSnapshot: (): VaultPayload => ({
+      notes: state.notes,
+      tags: state.tags,
+      boards: state.boards,
+    }),
+    applyPayload: (payload: VaultPayload) => {
+      state.notes = payload.notes;
+      state.tags = payload.tags;
+      state.boards = payload.boards ?? [];
+      if (state.activeBoardId && !state.boards.some((b) => b.id === state.activeBoardId)) {
+        state.activeBoardId = null;
+      }
+    },
+    hasLocalContent: () => state.notes.length > 0 || state.boards.length > 0,
+    isBusyEditing: () =>
+      boardEditor.isGestureActive() ||
+      boardEditor.isEditingText() ||
+      state.editingNoteId !== null ||
+      state.composer.expanded,
+    commitOpenDrafts: commitOpenDraftsToState,
+    clearSensitiveStateAndDom,
+    renderAll: () => renderAll(),
+    refreshBoardFromExternal: () => boardEditor.refreshFromExternal(),
+    showLockScreen: (mode, errorMsg, options) => lockScreen.setMode(mode, errorMsg, options),
+    hideLockScreen: () => lockScreen.hide(),
+    onSaveStatusChanged: (status) => {
+      updateLastUpdatedUI(status);
+      vaultModal.updateCiphertextPreview();
+    },
+    onCloudStatusChanged: (status) => updateCloudStatusUI(status),
+    onConflictChanged: (conflict) => renderConflictBanner(conflict),
+    confirmAction: (message) => window.confirm(message),
+  },
+});
 
 async function persistEncryptedVault(): Promise<void> {
-  if (!state.passphrase) {
-    throw new Error('Cannot persist vault while locked without a passphrase.');
-  }
-  if (boardPersistTimer !== null) {
-    window.clearTimeout(boardPersistTimer);
-    boardPersistTimer = null;
-  }
-  if (activePersistPromise) {
-    persistAgainRequested = true;
-    await activePersistPromise;
-    return;
-  }
-  const run = (async () => {
-    try {
-      do {
-        persistAgainRequested = false;
-        await writeEncryptedVaultOnce();
-      } while (persistAgainRequested && state.passphrase);
-    } finally {
-      activePersistPromise = null;
-    }
-  })();
-  activePersistPromise = run;
-  await run;
+  clearBoardPersistTimer();
+  await vaultSession.persist();
 }
 
-async function tryLoadEnvelope(envelope: EncryptedEnvelope): Promise<boolean> {
-  state.lastEncryptedEnvelope = envelope;
-  await saveVaultEnvelopeToCache(envelope);
-
-  if (state.passphrase) {
-    try {
-      const decrypted = await CrypsyCrypto.decryptPayload(envelope, state.passphrase);
-      pendingLegacyUpgradePayload = null;
-      applyDecryptedPayload(decrypted);
-      lockScreen.hide();
-      renderAll();
-      return true;
-    } catch {
-      await lockVault(
-        false,
-        'Vault passphrase changed or does not match this session. Enter passphrase to unlock.'
-      );
-      return false;
-    }
-  }
-
-  // Detect unmigrated legacy vaults encrypted with the old hardcoded default key
-  // and force the user to re-key with a personal passphrase before accessing data.
+/**
+ * Shared mutation helper: applies state mutation, renders IMMEDIATELY before I/O,
+ * then persists encrypted vault in the background/awaited path with surfaced status.
+ */
+async function commitMutation(mutate: () => boolean | void): Promise<void> {
+  const result = mutate();
+  if (result === false) return;
+  renderAll();
   try {
-    const legacyDecrypted = await CrypsyCrypto.decryptPayload(
-      envelope,
-      LEGACY_DEFAULT_DEVICE_SECRET
-    );
-    pendingLegacyUpgradePayload = legacyDecrypted;
-    lockScreen.setMode('upgrade');
-    return false;
-  } catch {
-    pendingLegacyUpgradePayload = null;
-    lockScreen.setMode('unlock');
-    return false;
+    await persistEncryptedVault();
+  } catch (err) {
+    console.warn('Vault save failed:', err);
   }
+}
+
+async function lockVault(flushPending = false, errorMsg?: string): Promise<void> {
+  await vaultSession.lock({ flushPending, ...(errorMsg ? { errorMsg } : {}) });
 }
 
 async function initVault(): Promise<void> {
@@ -425,61 +482,64 @@ async function initVault(): Promise<void> {
     els.sidebar.classList.add('collapsed');
   }
 
-  // Listen for external cloud folder updates (e.g. synced from another device)
-  CrypsyCloudSync.onExternalUpdate(async (externalEnvelope) => {
-    if (
-      boardEditor.isGestureActive() ||
-      boardEditor.isEditingText() ||
-      state.editingNoteId !== null ||
-      state.composer.expanded
-    ) {
-      return;
-    }
-    const loaded = await tryLoadEnvelope(externalEnvelope);
-    if (loaded) {
-      boardEditor.refreshFromExternal();
-    }
+  onExternalUpdate(async (externalEnvelope, stamp) => {
+    await vaultSession.handleExternalUpdate(externalEnvelope, stamp);
     updateCloudStatusUI();
   });
 
-  // Check if running from a cloud folder and pre-select provider if detected
-  const detectedCloud = CrypsyCloudSync.detectRunningCloudLocation();
+  const detectedCloud = detectRunningCloudLocation();
   if (detectedCloud && detectedCloud.providerId) {
     state.selectedProviderId = detectedCloud.providerId;
   }
 
-  // Check if a cloud folder was previously linked
-  const cloudState = await CrypsyCloudSync.restoreSavedConnection();
-  pendingCloudNeedsPermission = cloudState.status === 'needs_permission';
-  updateCloudStatusUI(cloudState);
+  const cloudState = await restoreSavedConnection();
+  updateCloudStatusUI(cloudState.status);
 
-  setInterval(updateLastUpdatedUI, 30000);
+  setInterval(() => updateLastUpdatedUI(), 30000);
   updatesController.init();
 
-  if (cloudState.status === 'connected') {
-    const cloudEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
-    if (cloudEnvelope) {
-      await tryLoadEnvelope(cloudEnvelope);
-      updateLastUpdatedUI();
-      return;
-    }
-  }
+  await vaultSession.init(cloudState.status);
+  updateLastUpdatedUI();
+}
 
-  const cachedEnvelope = await loadVaultEnvelopeFromCache();
-  if (!cachedEnvelope) {
-    lockScreen.setMode('setup');
+function updateLastUpdatedUI(status: VaultSaveStatus = vaultSession.getSaveStatus()): void {
+  els.lastUpdatedBadge.classList.remove('synced', 'saving', 'warning', 'error');
+
+  if (status.state === 'saving') {
+    els.lastUpdatedBadge.classList.remove('hidden');
+    els.lastUpdatedBadge.classList.add('saving');
+    els.lastUpdatedText.textContent = 'Saving...';
+    els.lastUpdatedBadge.title = 'Encrypting and saving vault...';
     return;
   }
 
-  await tryLoadEnvelope(cachedEnvelope);
-}
+  if (status.state === 'failed') {
+    els.lastUpdatedBadge.classList.remove('hidden');
+    els.lastUpdatedBadge.classList.add('error');
+    els.lastUpdatedText.textContent = 'Save failed';
+    els.lastUpdatedBadge.title = status.message;
+    return;
+  }
 
-function updateLastUpdatedUI(): void {
-  if (!els.lastUpdatedBadge || !els.lastUpdatedText) return;
+  if (status.state === 'conflict') {
+    els.lastUpdatedBadge.classList.remove('hidden');
+    els.lastUpdatedBadge.classList.add('error');
+    els.lastUpdatedText.textContent = 'Sync conflict';
+    els.lastUpdatedBadge.title = status.message;
+    return;
+  }
 
-  const meta = CrypsyCloudSync.getSavedProviderMeta();
-  const isConnected = CrypsyCloudSync.isConnected();
-  const fileModifiedMs = CrypsyCloudSync.getLastKnownFileModified();
+  if (status.state === 'needs_permission') {
+    els.lastUpdatedBadge.classList.remove('hidden');
+    els.lastUpdatedBadge.classList.add('warning');
+    els.lastUpdatedText.textContent = 'Saved locally (paused)';
+    els.lastUpdatedBadge.title = status.message;
+    return;
+  }
+
+  const meta = getSavedProviderMeta();
+  const connected = isConnected();
+  const fileModifiedMs = getLastKnownFileModified();
   const envelopeUpdatedMs =
     state.lastEncryptedEnvelope && state.lastEncryptedEnvelope.updatedAt
       ? Date.parse(state.lastEncryptedEnvelope.updatedAt)
@@ -487,10 +547,11 @@ function updateLastUpdatedUI(): void {
   const syncedAtMs = meta && meta.lastSyncedAt ? Date.parse(meta.lastSyncedAt) : 0;
   const latestNoteMs = state.notes.reduce((max, n) => Math.max(max, n.updatedAt || 0), 0);
   const latestBoardMs = state.boards.reduce((max, b) => Math.max(max, b.updatedAt || 0), 0);
+  const savedAtMs = status.state === 'saved' ? status.at : 0;
 
-  const bestTimestamp = isConnected
-    ? Math.max(fileModifiedMs || 0, syncedAtMs || 0, envelopeUpdatedMs || 0)
-    : Math.max(envelopeUpdatedMs || 0, latestNoteMs || 0, latestBoardMs || 0);
+  const bestTimestamp = connected
+    ? Math.max(fileModifiedMs || 0, syncedAtMs || 0, envelopeUpdatedMs || 0, savedAtMs)
+    : Math.max(envelopeUpdatedMs || 0, latestNoteMs || 0, latestBoardMs || 0, savedAtMs);
 
   if (!bestTimestamp) {
     els.lastUpdatedBadge.classList.add('hidden');
@@ -499,32 +560,32 @@ function updateLastUpdatedUI(): void {
 
   const rel = formatRelativeTime(bestTimestamp);
   const fullDate = new Date(bestTimestamp).toLocaleString();
-  const prefix = isConnected ? 'Synced' : 'Updated';
+  const prefix = connected ? 'Synced' : 'Saved';
 
   els.lastUpdatedBadge.classList.remove('hidden');
-  els.lastUpdatedBadge.classList.toggle('synced', isConnected);
+  els.lastUpdatedBadge.classList.toggle('synced', connected);
   els.lastUpdatedText.textContent = `${prefix} ${rel}`;
   els.lastUpdatedBadge.title = `${prefix} at ${fullDate}`;
 }
 
-function updateCloudStatusUI(restoredState?: Pick<RestoreConnectionResult, 'status'>): void {
-  const meta = CrypsyCloudSync.getSavedProviderMeta();
-  const isConnected =
-    CrypsyCloudSync.isConnected() && (!restoredState || restoredState.status === 'connected');
-  const detectedCloud = CrypsyCloudSync.detectRunningCloudLocation();
+function updateCloudStatusUI(explicitStatus?: CloudConnectionStatus): void {
+  const status = explicitStatus ?? getConnectionStatus();
+  const meta = getSavedProviderMeta();
+  const detectedCloud = detectRunningCloudLocation();
 
-  if (restoredState && restoredState.status === 'needs_permission' && meta) {
+  if (status === 'needs_permission' && meta) {
     els.reconnectBannerMsg.innerHTML = `Linked to <strong>${escapeHtml(meta.providerName)} (${escapeHtml(meta.folderName)})</strong>. Click to resume live auto-sync.`;
     els.reconnectCloudBanner.classList.remove('hidden');
     els.cloudSetupBtn.classList.remove('synced', 'detected');
     els.cloudSetupBtnLabel.textContent = `Resume ${meta.providerName}`;
+    els.cloudSetupBtn.title = `Permission needed to sync with ${meta.providerName} (/${meta.folderName})`;
     updateLastUpdatedUI();
     return;
   }
 
   els.reconnectCloudBanner.classList.add('hidden');
 
-  if (isConnected && meta) {
+  if (status === 'connected' && meta) {
     els.cloudSetupBtn.classList.remove('detected');
     els.cloudSetupBtn.classList.add('synced');
     els.cloudSetupBtnLabel.textContent = `${meta.providerName}: /${meta.folderName}`;
@@ -557,17 +618,11 @@ function applyThemeUI(): void {
   if (metaTheme) {
     metaTheme.setAttribute('content', isLight ? '#ffffff' : '#202124');
   }
-  if (els.themeToggleLabel) {
-    els.themeToggleLabel.textContent = isLight ? 'Light mode' : 'Dark mode';
-  }
-  if (els.themeIconSun && els.themeIconMoon) {
-    els.themeIconSun.classList.toggle('hidden', isLight);
-    els.themeIconMoon.classList.toggle('hidden', !isLight);
-  }
-  if (els.themeToggleBtn) {
-    els.themeToggleBtn.title = isLight ? 'Switch to Dark theme' : 'Switch to Light theme';
-    els.themeToggleBtn.setAttribute('aria-pressed', String(isLight));
-  }
+  els.themeToggleLabel.textContent = isLight ? 'Light mode' : 'Dark mode';
+  els.themeIconSun.classList.toggle('hidden', isLight);
+  els.themeIconMoon.classList.toggle('hidden', !isLight);
+  els.themeToggleBtn.title = isLight ? 'Switch to Dark theme' : 'Switch to Light theme';
+  els.themeToggleBtn.setAttribute('aria-pressed', String(isLight));
 }
 
 function closeSidebarIfMobile(): void {
@@ -580,9 +635,9 @@ async function shareOrDownloadVaultJson(): Promise<void> {
   if (!state.lastEncryptedEnvelope) return;
   const filename = `crypsy-vault-${new Date().toISOString().slice(0, 10)}.crypsy.json`;
 
-  if (CrypsyCloudSync.isNativeApp()) {
+  if (isNativeApp()) {
     try {
-      await CrypsyCloudSync.shareVaultWithNativeSheet(state.lastEncryptedEnvelope, filename);
+      await shareVaultWithNativeSheet(state.lastEncryptedEnvelope, filename);
       return;
     } catch (err) {
       if (err instanceof Error && /cancel|abort/i.test(err.message)) return;
@@ -621,16 +676,23 @@ async function importEncryptedVaultFile(file: File, backdropToClose?: HTMLElemen
   try {
     const text = await file.text();
     const parsed: unknown = JSON.parse(text);
-    if (!CrypsyCrypto.isValidEncryptedEnvelope(parsed)) {
-      throw new Error('Missing required encrypted vault fields');
+    if (!isValidEncryptedEnvelope(parsed)) {
+      throw new Error('Invalid .crypsy vault file: missing or malformed encryption fields.');
     }
-    const ok = await tryLoadEnvelope(parsed);
-    if (ok && CrypsyCloudSync.isConnected()) {
-      await CrypsyCloudSync.writeVaultToCloudFolder(parsed);
+    const outcome = await vaultSession.importEnvelope(parsed, {
+      requireConfirmIfNonEmpty: true,
+      source: 'file',
+    });
+    if (outcome !== 'cancelled') {
+      backdropToClose?.classList.add('hidden');
     }
-    backdropToClose?.classList.add('hidden');
-  } catch {
-    alert('Invalid .crypsy vault file.');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Invalid .crypsy vault file.';
+    if (lockScreen.isOpen()) {
+      lockScreen.showError(msg);
+    } else {
+      alert(msg);
+    }
   }
 }
 
@@ -651,25 +713,21 @@ function applyViewModeUI(): void {
 }
 
 function applySidebarSectionsUI(): void {
-  if (els.toggleBoardsSectionBtn && els.sidebarBoardsContent) {
-    els.toggleBoardsSectionBtn.setAttribute('aria-expanded', String(state.boardsSectionExpanded));
-    els.toggleBoardsSectionBtn.title = state.boardsSectionExpanded
-      ? 'Collapse Boards'
-      : 'Expand Boards';
-    els.sidebarBoardsContent.classList.toggle('hidden', !state.boardsSectionExpanded);
-  }
-  if (els.toggleTagsSectionBtn && els.sidebarTagsContent) {
-    els.toggleTagsSectionBtn.setAttribute('aria-expanded', String(state.tagsSectionExpanded));
-    els.toggleTagsSectionBtn.title = state.tagsSectionExpanded ? 'Collapse Tags' : 'Expand Tags';
-    els.sidebarTagsContent.classList.toggle('hidden', !state.tagsSectionExpanded);
-  }
-  if (els.toggleGuideSectionBtn && els.sidebarGuideContent) {
-    els.toggleGuideSectionBtn.setAttribute('aria-expanded', String(state.guideSectionExpanded));
-    els.toggleGuideSectionBtn.title = state.guideSectionExpanded
-      ? 'Collapse Quick Guide'
-      : 'Expand Quick Guide';
-    els.sidebarGuideContent.classList.toggle('hidden', !state.guideSectionExpanded);
-  }
+  els.toggleBoardsSectionBtn.setAttribute('aria-expanded', String(state.boardsSectionExpanded));
+  els.toggleBoardsSectionBtn.title = state.boardsSectionExpanded
+    ? 'Collapse Boards'
+    : 'Expand Boards';
+  els.sidebarBoardsContent.classList.toggle('hidden', !state.boardsSectionExpanded);
+
+  els.toggleTagsSectionBtn.setAttribute('aria-expanded', String(state.tagsSectionExpanded));
+  els.toggleTagsSectionBtn.title = state.tagsSectionExpanded ? 'Collapse Tags' : 'Expand Tags';
+  els.sidebarTagsContent.classList.toggle('hidden', !state.tagsSectionExpanded);
+
+  els.toggleGuideSectionBtn.setAttribute('aria-expanded', String(state.guideSectionExpanded));
+  els.toggleGuideSectionBtn.title = state.guideSectionExpanded
+    ? 'Collapse Quick Guide'
+    : 'Expand Quick Guide';
+  els.sidebarGuideContent.classList.toggle('hidden', !state.guideSectionExpanded);
 }
 
 // Shared Custom Context Menu, Cloud Wizard, Updates & Spatial Boards Controllers
@@ -680,7 +738,8 @@ const cloudWizard = new CloudWizardController({
   setSelectedProviderId: (id) => {
     state.selectedProviderId = id;
   },
-  tryLoadEnvelope,
+  onLoadCloudEnvelope: (envelope) =>
+    vaultSession.importEnvelope(envelope, { source: 'cloud' }),
   persistEncryptedVault,
   updateCloudStatusUI,
   shareOrDownloadVaultJson,
@@ -724,8 +783,14 @@ const vaultModal = new VaultModalController({
   },
   validateNewPassphrase,
   onRekeyPassphrase: async (nextPassphrase) => {
+    const prev = state.passphrase;
     state.passphrase = nextPassphrase;
-    await persistEncryptedVault();
+    try {
+      await persistEncryptedVault();
+    } catch (err) {
+      state.passphrase = prev;
+      throw err;
+    }
   },
   onLockNow: async () => {
     await lockVault(true);
@@ -734,52 +799,38 @@ const vaultModal = new VaultModalController({
   onImportVaultFile: importEncryptedVaultFile,
 });
 
-const lockScreen = new LockScreenController({
-  isPendingCloudPermission: () => pendingCloudNeedsPermission,
-  clearPendingCloudPermission: () => {
-    pendingCloudNeedsPermission = false;
-  },
+const lockScreen: LockScreenController = new LockScreenController({
+  isPendingCloudPermission: () => getConnectionStatus() === 'needs_permission',
   getSelectedProviderId: () => state.selectedProviderId,
   validateNewPassphrase,
   onCreateOrUpgradeVault: async (mode, passphrase) => {
-    state.passphrase = passphrase;
-    try {
-      if (mode === 'upgrade' && pendingLegacyUpgradePayload) {
-        applyDecryptedPayload(pendingLegacyUpgradePayload);
-        pendingLegacyUpgradePayload = null;
-      } else {
-        state.notes = createSeedNotes();
-        state.boards = [];
-      }
-      await persistEncryptedVault();
-      renderAll();
-    } catch (err) {
-      state.passphrase = null;
-      throw err;
-    }
+    await vaultSession.createOrUpgradeVault(mode, passphrase, {
+      notes: createSeedNotes(),
+      tags: ['security', 'ideas', 'work', 'personal'],
+      boards: [],
+    });
   },
   onUnlockVault: async (passphrase) => {
-    const envelope = state.lastEncryptedEnvelope ?? (await loadVaultEnvelopeFromCache());
-    if (!envelope) throw new Error('No vault found');
-    const decrypted = await CrypsyCrypto.decryptPayload(envelope, passphrase);
-    state.passphrase = passphrase;
-    applyDecryptedPayload(decrypted);
-    renderAll();
-    boardEditor.refreshFromExternal();
+    await vaultSession.unlockWithPassphrase(passphrase);
   },
-  onCloudStatusConnected: () => updateCloudStatusUI({ status: 'connected' }),
-  onTryLoadEnvelope: tryLoadEnvelope,
+  onTryLegacyUpgrade: () => vaultSession.tryBeginLegacyUpgrade(),
+  onCancelPendingImport: () => vaultSession.cancelPendingImport(),
+  onResumeCloudSync: () => vaultSession.resumeCloudSync(),
+  onCloudStatusConnected: () => updateCloudStatusUI('connected'),
+  onLoadCloudEnvelope: async (envelope) => {
+    await vaultSession.importEnvelope(envelope, { source: 'cloud' });
+  },
   onImportVaultFile: (file) => importEncryptedVaultFile(file),
 });
 
-const boardEditor = new BoardEditorController({
+const boardEditor: BoardEditorController = new BoardEditorController({
   getBoard: () => state.boards.find((b) => b.id === state.activeBoardId) ?? null,
   getSearchQuery: () => state.searchQuery,
   getAllTags: () => state.tags,
   contextMenu,
   isLocked: () => lockScreen.isOpen(),
   onAddTagToVault: (tag) => {
-    const clean = tag.trim().toLowerCase().replace(/^#/, '');
+    const clean = normalizeTag(tag);
     if (clean && !state.tags.includes(clean)) {
       state.tags.push(clean);
     }
@@ -789,7 +840,9 @@ const boardEditor = new BoardEditorController({
   onBoardMutated: (board, immediate = false) => {
     board.updatedAt = Date.now();
     renderSidebar();
-    renderNotes();
+    if (!boardEditor.isOpen()) {
+      renderNotes();
+    }
     updateLastUpdatedUI();
     scheduleBoardPersist(immediate);
   },
@@ -797,11 +850,17 @@ const boardEditor = new BoardEditorController({
     void deleteBoard(boardId);
   },
   onCloseBoard: () => {
-    if (boardPersistTimer !== null) {
-      void persistEncryptedVault();
+    if (clearBoardPersistTimer()) {
+      void persistEncryptedVault().catch((err) => {
+        console.warn('Board close persist failed:', err);
+      });
     }
     state.activeBoardId = null;
     renderAll();
+    void vaultSession.flushPendingExternalUpdate();
+  },
+  onIdleForSync: () => {
+    void vaultSession.flushPendingExternalUpdate();
   },
   onOpenLightbox: (src) => {
     openLightbox(src);
@@ -834,8 +893,12 @@ async function createBoard(rawTitle?: string): Promise<void> {
   state.activeFilter = { type: 'boards', tag: null };
   savePreferences();
   applySidebarSectionsUI();
-  await persistEncryptedVault();
   openBoardEditor(board.id);
+  try {
+    await persistEncryptedVault();
+  } catch (err) {
+    console.warn('Failed to persist new board:', err);
+  }
 }
 
 function openBoardEditor(boardId: string): void {
@@ -847,84 +910,93 @@ function openBoardEditor(boardId: string): void {
 }
 
 async function deleteBoard(boardId: string): Promise<void> {
-  state.boards = state.boards.filter((b) => b.id !== boardId);
-  if (state.activeBoardId === boardId) {
-    state.activeBoardId = null;
-    if (boardEditor.isOpen()) {
-      boardEditor.close();
-    }
+  const board = state.boards.find((b) => b.id === boardId);
+  if (!board) return;
+  const label = board.title.trim() || 'Untitled Board';
+  if (!window.confirm(`Delete board "${label}"? This cannot be undone.`)) {
+    return;
   }
-  await persistEncryptedVault();
-  renderAll();
+  await commitMutation(() => {
+    state.boards = state.boards.filter((b) => b.id !== boardId);
+    if (state.activeBoardId === boardId) {
+      state.activeBoardId = null;
+      if (boardEditor.isOpen()) {
+        boardEditor.close();
+      }
+    }
+  });
 }
 
 async function toggleNotePin(noteId: string): Promise<void> {
-  const note = state.notes.find((n) => n.id === noteId);
-  if (!note) return;
-  note.pinned = !note.pinned;
-  note.updatedAt = Date.now();
-  await persistEncryptedVault();
-  renderAll();
+  await commitMutation(() => {
+    const note = state.notes.find((n) => n.id === noteId);
+    if (!note) return false;
+    note.pinned = !note.pinned;
+    note.updatedAt = Date.now();
+  });
 }
 
-async function deleteNote(noteId: string): Promise<void> {
-  state.notes = state.notes.filter((n) => n.id !== noteId);
-  await persistEncryptedVault();
-  renderAll();
+async function deleteNote(noteId: string): Promise<boolean> {
+  const note = state.notes.find((n) => n.id === noteId);
+  if (!note) return false;
+  const label = note.title.trim() || 'Untitled note';
+  if (!window.confirm(`Delete note "${label}"? This cannot be undone.`)) {
+    return false;
+  }
+  await commitMutation(() => {
+    state.notes = state.notes.filter((n) => n.id !== noteId);
+  });
+  return true;
 }
 
 async function duplicateNote(noteId: string): Promise<void> {
-  if (!duplicateNoteInList(state.notes, noteId)) return;
-  await persistEncryptedVault();
-  renderAll();
+  await commitMutation(() => Boolean(duplicateNoteInList(state.notes, noteId)));
 }
 
 async function setNoteColor(noteId: string, color: NoteColor): Promise<void> {
-  const note = state.notes.find((n) => n.id === noteId);
-  if (!note || note.color === color) return;
-  note.color = color;
-  note.updatedAt = Date.now();
-  await persistEncryptedVault();
-  renderAll();
+  await commitMutation(() => {
+    const note = state.notes.find((n) => n.id === noteId);
+    if (!note || note.color === color) return false;
+    note.color = color;
+    note.updatedAt = Date.now();
+  });
 }
 
 async function toggleBoardPin(boardId: string): Promise<void> {
-  const board = state.boards.find((b) => b.id === boardId);
-  if (!board) return;
-  board.pinned = !board.pinned;
-  board.updatedAt = Date.now();
-  await persistEncryptedVault();
-  renderAll();
+  await commitMutation(() => {
+    const board = state.boards.find((b) => b.id === boardId);
+    if (!board) return false;
+    board.pinned = !board.pinned;
+    board.updatedAt = Date.now();
+  });
 }
 
 async function duplicateBoard(boardId: string): Promise<void> {
-  if (!duplicateBoardInList(state.boards, boardId)) return;
-  await persistEncryptedVault();
-  renderAll();
+  await commitMutation(() => Boolean(duplicateBoardInList(state.boards, boardId)));
 }
 
 async function setBoardColor(boardId: string, color: NoteColor): Promise<void> {
-  const board = state.boards.find((b) => b.id === boardId);
-  if (!board || board.color === color) return;
-  board.color = color;
-  board.updatedAt = Date.now();
-  await persistEncryptedVault();
-  renderAll();
+  await commitMutation(() => {
+    const board = state.boards.find((b) => b.id === boardId);
+    if (!board || board.color === color) return false;
+    board.color = color;
+    board.updatedAt = Date.now();
+  });
 }
 
 async function deleteTag(tagToDelete: string): Promise<void> {
-  deleteTagInVault(state, tagToDelete);
-  await persistEncryptedVault();
-  renderAll();
+  await commitMutation(() => {
+    deleteTagInVault(state, tagToDelete);
+  });
 }
 
 async function renameTag(oldTag: string, rawNextTag: string): Promise<void> {
-  if (!renameTagInVault(state, oldTag, rawNextTag)) {
+  const changed = renameTagInVault(state, oldTag, rawNextTag);
+  if (!changed) {
     renderSidebar();
     return;
   }
-  await persistEncryptedVault();
-  renderAll();
+  await commitMutation(() => true);
 }
 
 function startInlineSidebarRename(
@@ -984,7 +1056,7 @@ function openNoteContextMenu(clientX: number, clientY: number, note: Note): void
         }
       },
       onSetColor: (c) => setNoteColor(note.id, c),
-      onDelete: () => deleteNote(note.id),
+      onDelete: () => void deleteNote(note.id),
     })
   );
 }
@@ -1000,10 +1072,10 @@ function openBoardContextMenu(
         startInlineSidebarRename(sidebarRowEl, board.title || 'Untitled Board', async (val) => {
           const nextTitle = val.trim();
           if (nextTitle && nextTitle !== board.title) {
-            board.title = nextTitle;
-            board.updatedAt = Date.now();
-            await persistEncryptedVault();
-            renderAll();
+            await commitMutation(() => {
+              board.title = nextTitle;
+              board.updatedAt = Date.now();
+            });
             if (state.activeBoardId === board.id) {
               boardEditor.refreshFromExternal();
             }
@@ -1022,7 +1094,7 @@ function openBoardContextMenu(
       onTogglePin: () => toggleBoardPin(board.id),
       onDuplicate: () => duplicateBoard(board.id),
       onSetColor: (c) => setBoardColor(board.id, c),
-      onDelete: () => deleteBoard(board.id),
+      onDelete: () => void deleteBoard(board.id),
     })
   );
 }
@@ -1042,9 +1114,7 @@ function renderSidebar(): void {
   const pinnedCount =
     state.notes.filter((n) => n.pinned).length + state.boards.filter((b) => b.pinned).length;
   els.countPinned.textContent = String(pinnedCount);
-  if (els.countBoards) {
-    els.countBoards.textContent = String(state.boards.length);
-  }
+  els.countBoards.textContent = String(state.boards.length);
 
   document.querySelectorAll('.sidebar-nav .nav-item[data-filter-type]').forEach((btn) => {
     const filterType = btn.getAttribute('data-filter-type');
@@ -1055,36 +1125,35 @@ function renderSidebar(): void {
     btn.classList.toggle('active', isActive);
   });
 
-  if (els.sidebarBoardsList) {
-    const sortedBoards = [...state.boards].sort((a, b) => {
-      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-      return b.updatedAt - a.updatedAt;
-    });
-    els.sidebarBoardsList.innerHTML = sortedBoards
-      .map((board) => {
-        const isActive = state.activeBoardId === board.id;
-        return `
-          <div class="nav-item sidebar-board-item ${isActive ? 'active' : ''}" data-open-board="${escapeHtml(board.id)}">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <rect x="3" y="3" width="8" height="8" rx="1.5"></rect>
-              <rect x="13" y="3" width="8" height="5" rx="1.5"></rect>
-              <rect x="13" y="10" width="8" height="11" rx="1.5"></rect>
-              <rect x="3" y="13" width="8" height="8" rx="1.5"></rect>
-            </svg>
-            <span class="nav-label">${escapeHtml(board.title || 'Untitled Board')}</span>
-            <span class="nav-count">${board.items.length}</span>
-            <button type="button" class="tag-delete-btn" data-delete-board="${escapeHtml(board.id)}" title="Delete board">&times;</button>
-          </div>
-        `;
-      })
-      .join('');
-  }
+  const sortedBoards = [...state.boards].sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    return b.updatedAt - a.updatedAt;
+  });
+  els.sidebarBoardsList.innerHTML = sortedBoards
+    .map((board) => {
+      const isActive = state.activeBoardId === board.id;
+      const itemCount = Number(board.items.length) || 0;
+      return `
+        <div class="nav-item sidebar-board-item ${isActive ? 'active' : ''}" data-open-board="${escapeHtml(board.id)}">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <rect x="3" y="3" width="8" height="8" rx="1.5"></rect>
+            <rect x="13" y="3" width="8" height="5" rx="1.5"></rect>
+            <rect x="13" y="10" width="8" height="11" rx="1.5"></rect>
+            <rect x="3" y="13" width="8" height="8" rx="1.5"></rect>
+          </svg>
+          <span class="nav-label">${escapeHtml(board.title || 'Untitled Board')}</span>
+          <span class="nav-count">${itemCount}</span>
+          <button type="button" class="tag-delete-btn" data-delete-board="${escapeHtml(board.id)}" title="Delete board">&times;</button>
+        </div>
+      `;
+    })
+    .join('');
 
   els.sidebarTagsList.innerHTML = state.tags
     .map((tag) => {
       const count =
         state.notes.filter((n) => n.tags.includes(tag)).length +
-        state.boards.filter((b) => (b.tags || []).includes(tag)).length;
+        state.boards.filter((b) => b.tags.includes(tag)).length;
       const isActive = state.activeFilter.type === 'tag' && state.activeFilter.tag === tag;
       return `
         <div class="nav-item ${isActive ? 'active' : ''}" data-tag="${escapeHtml(tag)}">
@@ -1103,12 +1172,8 @@ function renderSidebar(): void {
 
 function renderFilterBanner(): void {
   const isBoardsView = state.activeFilter.type === 'boards';
-  if (els.boardsActionBar) {
-    els.boardsActionBar.classList.toggle('hidden', !isBoardsView);
-  }
-  if (els.composerWrapper) {
-    els.composerWrapper.classList.toggle('hidden', isBoardsView);
-  }
+  els.boardsActionBar.classList.toggle('hidden', !isBoardsView);
+  els.composerWrapper.classList.toggle('hidden', isBoardsView);
 
   const parts: string[] = [];
   if (state.activeFilter.type === 'pinned') {
@@ -1131,15 +1196,14 @@ function renderFilterBanner(): void {
 }
 
 async function toggleNoteCheckbox(noteId: string, lineIndex: number): Promise<void> {
-  const note = state.notes.find((n) => n.id === noteId);
-  if (!note || typeof note.description !== 'string') return;
-  const nextDesc = toggleCheckboxLine(note.description, lineIndex);
-  if (nextDesc === null) return;
-
-  note.description = nextDesc;
-  note.updatedAt = Date.now();
-  await persistEncryptedVault();
-  renderAll();
+  await commitMutation(() => {
+    const note = state.notes.find((n) => n.id === noteId);
+    if (!note || typeof note.description !== 'string') return false;
+    const nextDesc = toggleCheckboxLine(note.description, lineIndex);
+    if (nextDesc === null) return false;
+    note.description = nextDesc;
+    note.updatedAt = Date.now();
+  });
 }
 
 type WorkspaceCardEntry =
@@ -1174,16 +1238,12 @@ function renderNotes(): void {
   if (entries.length === 0) {
     els.pinnedSection.classList.add('hidden');
     els.othersSection.classList.add('hidden');
-    if (els.emptyStateTitle) {
-      els.emptyStateTitle.textContent =
-        state.activeFilter.type === 'boards' ? 'No encrypted boards yet' : 'No encrypted notes found';
-    }
-    if (els.emptyStateSubtitle) {
-      els.emptyStateSubtitle.textContent =
-        state.activeFilter.type === 'boards'
-          ? 'Create a spatial board above or from the Boards menu in the sidebar.'
-          : 'Create a note above or try adjusting your search or tag filter.';
-    }
+    els.emptyStateTitle.textContent =
+      state.activeFilter.type === 'boards' ? 'No encrypted boards yet' : 'No encrypted notes found';
+    els.emptyStateSubtitle.textContent =
+      state.activeFilter.type === 'boards'
+        ? 'Create a spatial board above or from the Boards menu in the sidebar.'
+        : 'Create a note above or try adjusting your search or tag filter.';
     els.emptyState.classList.remove('hidden');
     return;
   }
@@ -1251,20 +1311,13 @@ function resetComposer(): void {
   els.composerFooter.classList.add('hidden');
   els.composerTagsRow.classList.add('hidden');
   els.composerTagPopover.classList.add('hidden');
-  els.composerImagePopover?.classList.add('hidden');
-  if (els.composerImagesRow) {
-    els.composerImagesRow.classList.add('hidden');
-    els.composerImagesRow.innerHTML = '';
-  }
+  els.composerImagePopover.classList.add('hidden');
+  els.composerImagesRow.classList.add('hidden');
+  els.composerImagesRow.innerHTML = '';
   updateColorDots(els.composerColorPicker, 'default');
 }
 
-function renderDraftImages(
-  rowEl: HTMLElement | null,
-  images: NoteImage[],
-  removeAttr: string
-): void {
-  if (!rowEl) return;
+function renderDraftImages(rowEl: HTMLElement, images: NoteImage[], removeAttr: string): void {
   if (images.length === 0) {
     rowEl.classList.add('hidden');
     rowEl.innerHTML = '';
@@ -1324,6 +1377,7 @@ async function saveComposerNote(): Promise<void> {
   const description = els.composerDescription.value.trim();
   if (!title && !description && state.composer.images.length === 0) {
     resetComposer();
+    await vaultSession.flushPendingExternalUpdate();
     return;
   }
 
@@ -1340,10 +1394,11 @@ async function saveComposerNote(): Promise<void> {
     updatedAt: now,
   };
 
-  state.notes.unshift(newNote);
   resetComposer();
-  await persistEncryptedVault();
-  renderAll();
+  await commitMutation(() => {
+    state.notes.unshift(newNote);
+  });
+  await vaultSession.flushPendingExternalUpdate();
 }
 
 function updateColorDots(pickerEl: HTMLElement, activeColor: NoteColor): void {
@@ -1359,7 +1414,7 @@ function renderTagPopoverOptions(
   selectedTags: string[],
   onToggleTag: (tag: string) => void
 ): void {
-  const q = searchValue.trim().toLowerCase().replace(/^#/, '');
+  const q = normalizeTag(searchValue);
   const matchingTags = state.tags.filter((t) => t.toLowerCase().includes(q));
 
   let html = matchingTags
@@ -1415,7 +1470,7 @@ function openEditModal(noteId: string): void {
     description: note.description,
     pinned: note.pinned,
     color: note.color || 'default',
-    tags: [...(note.tags || [])],
+    tags: [...note.tags],
     images: [...(note.images || [])],
   };
 
@@ -1429,7 +1484,7 @@ function openEditModal(noteId: string): void {
   renderEditModalTags();
 
   els.editModalTagPopover.classList.add('hidden');
-  els.editModalImagePopover?.classList.add('hidden');
+  els.editModalImagePopover.classList.add('hidden');
   els.editModalBackdrop.classList.remove('hidden');
   autoResizeTextarea(els.editModalDescription);
   els.editModalDescription.focus();
@@ -1453,11 +1508,13 @@ async function saveAndCloseEditModal(): Promise<void> {
 
   const idx = state.notes.findIndex((n) => n.id === state.editingNoteId);
   const existing = idx !== -1 ? state.notes[idx] : undefined;
+  let changed = false;
+
   if (existing) {
     const newTitle = els.editModalTitle.value.trim();
     const newDesc = els.editModalDescription.value.trim();
 
-    const changed =
+    changed =
       existing.title !== newTitle ||
       existing.description !== newDesc ||
       existing.pinned !== state.editingDraft.pinned ||
@@ -1476,7 +1533,6 @@ async function saveAndCloseEditModal(): Promise<void> {
         images: [...state.editingDraft.images],
         updatedAt: Date.now(),
       };
-      await persistEncryptedVault();
     }
   }
 
@@ -1484,30 +1540,37 @@ async function saveAndCloseEditModal(): Promise<void> {
   state.editingDraft = null;
   els.editModalBackdrop.classList.add('hidden');
   renderAll();
+
+  if (changed) {
+    try {
+      await persistEncryptedVault();
+    } catch (err) {
+      console.warn('Failed to persist edited note:', err);
+    }
+  }
+
+  await vaultSession.flushPendingExternalUpdate();
 }
 
 function openLightbox(src: string): void {
-  if (!els.imageLightboxBackdrop || !els.lightboxImage || !src) return;
+  if (!src) return;
   els.lightboxImage.src = src;
   els.imageLightboxBackdrop.classList.remove('hidden');
 }
 
 function closeLightbox(): void {
-  if (!els.imageLightboxBackdrop || !els.lightboxImage) return;
   els.imageLightboxBackdrop.classList.add('hidden');
   els.lightboxImage.src = '';
 }
 
 // Event Listeners
 function bindEvents(): void {
-  // Sidebar toggle
   els.sidebarToggleBtn.addEventListener('click', () => {
     els.sidebar.classList.toggle('collapsed');
     fitBoardMinimaps();
     window.setTimeout(fitBoardMinimaps, 220);
   });
 
-  // Sidebar navigation (All / Pinned / Boards)
   document.querySelectorAll('.sidebar-nav .nav-item[data-filter-type]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const type = btn.getAttribute('data-filter-type');
@@ -1527,25 +1590,24 @@ function bindEvents(): void {
     closeSidebarIfMobile();
   });
 
-  // Sidebar Boards expand, list & creation
-  els.toggleBoardsSectionBtn?.addEventListener('click', () => {
+  els.toggleBoardsSectionBtn.addEventListener('click', () => {
     state.boardsSectionExpanded = !state.boardsSectionExpanded;
     applySidebarSectionsUI();
     savePreferences();
   });
 
-  els.newBoardForm?.addEventListener('submit', async (e) => {
+  els.newBoardForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const raw = els.newBoardInput?.value ?? '';
-    if (els.newBoardInput) els.newBoardInput.value = '';
+    const raw = els.newBoardInput.value;
+    els.newBoardInput.value = '';
     await createBoard(raw);
   });
 
-  els.createBoardHeroBtn?.addEventListener('click', () => {
+  els.createBoardHeroBtn.addEventListener('click', () => {
     void createBoard();
   });
 
-  els.sidebarBoardsList?.addEventListener('click', async (e) => {
+  els.sidebarBoardsList.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement | null;
     if (!target) return;
 
@@ -1570,7 +1632,6 @@ function bindEvents(): void {
     }
   });
 
-  // Sidebar tags click & delete
   els.sidebarTagsList.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement | null;
     if (!target) return;
@@ -1599,7 +1660,7 @@ function bindEvents(): void {
     }
   });
 
-  els.sidebarBoardsList?.addEventListener('contextmenu', (e) => {
+  els.sidebarBoardsList.addEventListener('contextmenu', (e) => {
     if (shouldBypassCustomContextMenu(e, lockScreen.getOverlayEl())) return;
     const target = e.target as HTMLElement | null;
     const row = target?.closest<HTMLElement>('[data-open-board]');
@@ -1650,34 +1711,33 @@ function bindEvents(): void {
     ]);
   });
 
-  // Create new tag in sidebar
   els.newTagForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const raw = els.newTagInput.value.trim().toLowerCase().replace(/^#/, '');
+    const raw = normalizeTag(els.newTagInput.value);
     if (!raw) return;
-    if (!state.tags.includes(raw)) {
-      state.tags.push(raw);
-      await persistEncryptedVault();
-    }
     els.newTagInput.value = '';
     state.activeFilter = { type: 'tag', tag: raw };
-    renderAll();
+    if (!state.tags.includes(raw)) {
+      await commitMutation(() => {
+        state.tags.push(raw);
+      });
+    } else {
+      renderAll();
+    }
   });
 
-  // Expand / collapse sidebar sections
-  els.toggleTagsSectionBtn?.addEventListener('click', () => {
+  els.toggleTagsSectionBtn.addEventListener('click', () => {
     state.tagsSectionExpanded = !state.tagsSectionExpanded;
     applySidebarSectionsUI();
     savePreferences();
   });
 
-  els.toggleGuideSectionBtn?.addEventListener('click', () => {
+  els.toggleGuideSectionBtn.addEventListener('click', () => {
     state.guideSectionExpanded = !state.guideSectionExpanded;
     applySidebarSectionsUI();
     savePreferences();
   });
 
-  // Search input
   els.searchInput.addEventListener('input', () => {
     state.searchQuery = els.searchInput.value;
     els.clearSearchBtn.classList.toggle('hidden', !state.searchQuery);
@@ -1694,7 +1754,6 @@ function bindEvents(): void {
     els.searchInput.focus();
   });
 
-  // Reset filter banner
   els.resetFilterBtn.addEventListener('click', () => {
     state.activeFilter = { type: 'all', tag: null } satisfies ActiveFilter;
     state.searchQuery = '';
@@ -1703,7 +1762,6 @@ function bindEvents(): void {
     renderAll();
   });
 
-  // View toggle
   els.viewToggleBtn.addEventListener('click', () => {
     state.viewMode = state.viewMode === 'grid' ? 'list' : 'grid';
     applyViewModeUI();
@@ -1722,34 +1780,52 @@ function bindEvents(): void {
     true
   );
 
-  // Theme toggle
-  els.themeToggleBtn?.addEventListener('click', () => {
+  els.themeToggleBtn.addEventListener('click', () => {
     state.theme = state.theme === 'dark' ? 'light' : 'dark';
     applyThemeUI();
     savePreferences();
   });
 
-  // Cloud Setup & Reconnect Banner
+  // Cloud Setup, Reconnect Banner & Conflict Resolution Banner
   els.cloudSetupBtn.addEventListener('click', () => {
     cloudWizard.open();
   });
 
   els.resumeCloudSyncBtn.addEventListener('click', async () => {
-    const ok = await CrypsyCloudSync.reconnectSavedHandle();
-    if (ok) {
-      pendingCloudNeedsPermission = false;
-      const existingCloudVault = await CrypsyCloudSync.readVaultFromCloudFolder();
-      if (existingCloudVault) {
-        await tryLoadEnvelope(existingCloudVault);
-      } else if (state.passphrase) {
-        await persistEncryptedVault();
-      }
-      updateCloudStatusUI({ status: 'connected' });
+    const res = await vaultSession.resumeCloudSync();
+    if (res.error) {
+      alert(res.error);
     }
   });
 
   els.changeCloudFolderBtn.addEventListener('click', () => {
     cloudWizard.open(1);
+  });
+
+  els.conflictMergeBtn.addEventListener('click', async () => {
+    try {
+      await vaultSession.resolveConflict('merge');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not merge conflicting vault changes.');
+    }
+  });
+
+  els.conflictKeepLocalBtn.addEventListener('click', async () => {
+    if (!window.confirm('Overwrite the cloud vault file with your local copy?')) return;
+    try {
+      await vaultSession.resolveConflict('keep_local');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not push local vault to cloud.');
+    }
+  });
+
+  els.conflictKeepRemoteBtn.addEventListener('click', async () => {
+    if (!window.confirm('Discard unsynced local changes and load the cloud copy?')) return;
+    try {
+      await vaultSession.resolveConflict('keep_remote');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not load cloud vault copy.');
+    }
   });
 
   // Composer & Edit-Modal shared draft surface wiring
@@ -1822,9 +1898,9 @@ function bindEvents(): void {
 
   els.composerCancelBtn.addEventListener('click', () => {
     resetComposer();
+    void vaultSession.flushPendingExternalUpdate();
   });
 
-  // Click outside composer to auto-save & close draft popovers
   document.addEventListener('click', (e) => {
     const target = e.target as Node | null;
     if (state.composer.expanded && target && !els.noteComposer.contains(target)) {
@@ -1938,7 +2014,6 @@ function bindEvents(): void {
     }
   });
 
-  // Global paste (routes to active Board Editor, or to modal/composer when not typing in inputs)
   document.addEventListener('paste', (e) => {
     if (boardEditor.isOpen()) {
       void boardEditor.handlePaste(e);
@@ -1957,12 +2032,11 @@ function bindEvents(): void {
     void surface.handleClipboardPaste(e);
   });
 
-  // Lightbox close handlers
-  els.closeLightboxBtn?.addEventListener('click', () => {
+  els.closeLightboxBtn.addEventListener('click', () => {
     closeLightbox();
   });
 
-  els.imageLightboxBackdrop?.addEventListener('click', (e) => {
+  els.imageLightboxBackdrop.addEventListener('click', (e) => {
     if (e.target === els.imageLightboxBackdrop) {
       closeLightbox();
     }
@@ -1970,12 +2044,13 @@ function bindEvents(): void {
 
   els.editModalDeleteBtn.addEventListener('click', async () => {
     if (!state.editingNoteId) return;
-    state.notes = state.notes.filter((n) => n.id !== state.editingNoteId);
-    state.editingNoteId = null;
-    state.editingDraft = null;
-    els.editModalBackdrop.classList.add('hidden');
-    await persistEncryptedVault();
-    renderAll();
+    const deleted = await deleteNote(state.editingNoteId);
+    if (deleted) {
+      state.editingNoteId = null;
+      state.editingDraft = null;
+      els.editModalBackdrop.classList.add('hidden');
+      await vaultSession.flushPendingExternalUpdate();
+    }
   });
 
   els.editModalSaveBtn.addEventListener('click', () => {
@@ -1988,9 +2063,8 @@ function bindEvents(): void {
     }
   });
 
-  // Vault Inspector Modal & Topbar Lock
   els.encryptionBadge.addEventListener('click', () => vaultModal.open());
-  els.topbarLockBtn?.addEventListener('click', () => {
+  els.topbarLockBtn.addEventListener('click', () => {
     if (state.passphrase) {
       void lockVault(true);
     }
@@ -2030,7 +2104,6 @@ function bindEvents(): void {
     }
   });
 
-  // Global keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     if (lockScreen.isOpen()) {
       return;
@@ -2041,10 +2114,7 @@ function bindEvents(): void {
     }
 
     if (e.key === 'Escape') {
-      if (
-        els.imageLightboxBackdrop &&
-        !els.imageLightboxBackdrop.classList.contains('hidden')
-      ) {
+      if (!els.imageLightboxBackdrop.classList.contains('hidden')) {
         closeLightbox();
         return;
       }
@@ -2066,7 +2136,7 @@ function bindEvents(): void {
     }
 
     if (
-      (!els.imageLightboxBackdrop || els.imageLightboxBackdrop.classList.contains('hidden')) &&
+      els.imageLightboxBackdrop.classList.contains('hidden') &&
       boardEditor.handleKeyDown(e)
     ) {
       return;

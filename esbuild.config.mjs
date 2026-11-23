@@ -5,6 +5,9 @@ import * as esbuild from 'esbuild';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+if (!pkg.version) {
+  throw new Error('package.json is missing a "version" field.');
+}
 const isWatch = process.argv.includes('--watch');
 const noMinify = process.argv.includes('--no-minify');
 
@@ -16,7 +19,7 @@ const buildOptions = {
   format: 'iife',
   target: 'es2022',
   define: {
-    __CRYPSY_VERSION__: JSON.stringify(pkg.version || '1.6.4'),
+    __CRYPSY_VERSION__: JSON.stringify(pkg.version),
   },
   sourcemap: isWatch ? 'inline' : false,
   minify: !isWatch && !noMinify,

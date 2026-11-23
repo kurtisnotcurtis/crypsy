@@ -4,16 +4,33 @@
  * and mobile share/import wizard modal.
  */
 
-import { CrypsyCloudSync } from '../vault/cloud-sync';
-import type { CloudProviderId, EncryptedEnvelope, RestoreConnectionResult } from '../types';
-import { byId, maybeById } from '../utils';
+import {
+  PROVIDERS,
+  buildSelfContainedHtmlInBrowser,
+  getProviderPathHint,
+  getSavedProviderMeta,
+  isConnected,
+  isFileSystemAccessSupported,
+  isNativeApp,
+  markRemoteStampAccepted,
+  pickCloudFolder,
+  provisionCloudFolderAssets,
+  readVaultFromCloudFolder,
+  unlinkCloudFolder,
+} from '../vault/cloud-sync';
+import type {
+  CloudConnectionStatus,
+  CloudProviderId,
+  EncryptedEnvelope,
+} from '../types';
+import { byId } from '../utils';
 
 export interface CloudWizardHost {
   getSelectedProviderId: () => CloudProviderId;
   setSelectedProviderId: (id: CloudProviderId) => void;
-  tryLoadEnvelope: (envelope: EncryptedEnvelope) => Promise<boolean>;
+  onLoadCloudEnvelope: (envelope: EncryptedEnvelope) => Promise<'applied' | 'needs_unlock' | 'cancelled'>;
   persistEncryptedVault: () => Promise<void>;
-  updateCloudStatusUI: (restoredState?: Pick<RestoreConnectionResult, 'status'>) => void;
+  updateCloudStatusUI: (status?: CloudConnectionStatus) => void;
   shareOrDownloadVaultJson: () => Promise<void>;
   importEncryptedVaultFile: (file: File, backdropToClose?: HTMLElement) => Promise<void>;
 }
@@ -43,12 +60,12 @@ export class CloudWizardController {
     step1: byId('wizardStep1'),
     step2: byId('wizardStep2'),
     step3: byId('wizardStep3'),
-    desktopSyncBox: maybeById('wizardDesktopSyncBox'),
-    mobileSyncBox: maybeById('wizardMobileSyncBox'),
-    mobileShareVaultBtn: maybeById<HTMLButtonElement>('mobileShareVaultBtn'),
-    mobileImportVaultInput: maybeById<HTMLInputElement>('mobileImportVaultInput'),
-    mobileBackBtn: maybeById<HTMLButtonElement>('wizardMobileBackBtn'),
-    mobileDoneBtn: maybeById<HTMLButtonElement>('wizardMobileDoneBtn'),
+    desktopSyncBox: byId('wizardDesktopSyncBox'),
+    mobileSyncBox: byId('wizardMobileSyncBox'),
+    mobileShareVaultBtn: byId<HTMLButtonElement>('mobileShareVaultBtn'),
+    mobileImportVaultInput: byId<HTMLInputElement>('mobileImportVaultInput'),
+    mobileBackBtn: byId<HTMLButtonElement>('wizardMobileBackBtn'),
+    mobileDoneBtn: byId<HTMLButtonElement>('wizardMobileDoneBtn'),
   };
 
   constructor(host: CloudWizardHost) {
@@ -70,13 +87,13 @@ export class CloudWizardController {
       this.els.backdrop.classList.remove('hidden');
       return;
     }
-    if (CrypsyCloudSync.isNativeApp()) {
+    if (isNativeApp()) {
       this.setStep(2);
       this.els.backdrop.classList.remove('hidden');
       return;
     }
-    const meta = CrypsyCloudSync.getSavedProviderMeta();
-    if (CrypsyCloudSync.isConnected() && meta) {
+    const meta = getSavedProviderMeta();
+    if (isConnected() && meta) {
       this.host.setSelectedProviderId(meta.providerId || 'onedrive');
       this.setStep(3);
     } else {
@@ -97,22 +114,21 @@ export class CloudWizardController {
     this.els.step2Error.classList.add('hidden');
 
     if (stepNum === 2) {
-      const fsSupported =
-        !CrypsyCloudSync.isNativeApp() && CrypsyCloudSync.isFileSystemAccessSupported();
-      this.els.desktopSyncBox?.classList.toggle('hidden', !fsSupported);
-      this.els.mobileSyncBox?.classList.toggle('hidden', fsSupported);
-      this.els.mobileBackBtn?.classList.toggle('hidden', CrypsyCloudSync.isNativeApp());
+      const fsSupported = !isNativeApp() && isFileSystemAccessSupported();
+      this.els.desktopSyncBox.classList.toggle('hidden', !fsSupported);
+      this.els.mobileSyncBox.classList.toggle('hidden', fsSupported);
+      this.els.mobileBackBtn.classList.toggle('hidden', isNativeApp());
       if (fsSupported) {
         const providerId = this.host.getSelectedProviderId();
-        const provider = CrypsyCloudSync.PROVIDERS[providerId] ?? CrypsyCloudSync.PROVIDERS.custom;
+        const provider = PROVIDERS[providerId] ?? PROVIDERS.custom;
         this.els.selectedProviderTitle.textContent = `Typical ${provider.name} Location on Your OS:`;
-        this.els.osPathHintCode.textContent = CrypsyCloudSync.getProviderPathHint(providerId);
+        this.els.osPathHintCode.textContent = getProviderPathHint(providerId);
         this.els.folderPickerHintText.textContent = provider.folderHint;
       }
     }
 
     if (stepNum === 3) {
-      const meta = CrypsyCloudSync.getSavedProviderMeta();
+      const meta = getSavedProviderMeta();
       if (meta) {
         this.els.connectedProviderHeading.textContent = `Connected to ${meta.providerName} (/${meta.folderName})`;
         this.els.connectedFolderDetails.textContent = `Your encrypted vault and portable app files are placed inside "${meta.parentFolderName}/${meta.folderName}".`;
@@ -140,14 +156,14 @@ export class CloudWizardController {
 
     this.els.toStep2Btn.addEventListener('click', () => this.setStep(2));
     this.els.backToStep1Btn.addEventListener('click', () => this.setStep(1));
-    this.els.mobileBackBtn?.addEventListener('click', () => this.setStep(1));
-    this.els.mobileDoneBtn?.addEventListener('click', () => this.close());
+    this.els.mobileBackBtn.addEventListener('click', () => this.setStep(1));
+    this.els.mobileDoneBtn.addEventListener('click', () => this.close());
 
-    this.els.mobileShareVaultBtn?.addEventListener('click', () => {
+    this.els.mobileShareVaultBtn.addEventListener('click', () => {
       void this.host.shareOrDownloadVaultJson();
     });
 
-    this.els.mobileImportVaultInput?.addEventListener('change', async (e) => {
+    this.els.mobileImportVaultInput.addEventListener('change', async (e) => {
       const input = e.target as HTMLInputElement;
       const file = input.files?.[0];
       if (!file) return;
@@ -174,29 +190,42 @@ export class CloudWizardController {
       const includeHtml = this.els.provisionPortableHtmlCb.checked;
 
       try {
-        await CrypsyCloudSync.pickCloudFolder(this.host.getSelectedProviderId(), createSub);
+        await pickCloudFolder(this.host.getSelectedProviderId(), createSub);
 
-        const existingEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
-        if (existingEnvelope) {
-          const loaded = await this.host.tryLoadEnvelope(existingEnvelope);
-          if (!loaded) {
+        const readRes = await readVaultFromCloudFolder();
+        if (readRes.status === 'corrupt' || readRes.status === 'error') {
+          this.els.step2Error.textContent = readRes.message;
+          this.els.step2Error.classList.remove('hidden');
+          this.host.updateCloudStatusUI('connected');
+          return;
+        }
+
+        if (readRes.status === 'ok') {
+          const outcome = await this.host.onLoadCloudEnvelope(readRes.envelope);
+          if (outcome === 'applied') {
+            markRemoteStampAccepted(readRes.stamp);
+          } else {
             this.close();
           }
-        } else {
+        } else if (readRes.status === 'not_found') {
           await this.host.persistEncryptedVault();
+        } else {
+          this.els.step2Error.textContent = 'Folder permission was not granted.';
+          this.els.step2Error.classList.remove('hidden');
+          return;
         }
 
         try {
-          await CrypsyCloudSync.provisionCloudFolderAssets(includeHtml);
+          await provisionCloudFolderAssets(includeHtml);
         } catch (assetErr) {
           if (includeHtml) {
-            await CrypsyCloudSync.provisionCloudFolderAssets(false);
+            await provisionCloudFolderAssets(false);
             console.warn('Could not bundle Crypsy-Portable.html in browser:', assetErr);
           } else {
             throw assetErr;
           }
         }
-        this.host.updateCloudStatusUI({ status: 'connected' });
+        this.host.updateCloudStatusUI('connected');
         this.setStep(3);
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
@@ -208,7 +237,7 @@ export class CloudWizardController {
 
     this.els.reprovisionBtn.addEventListener('click', async () => {
       try {
-        await CrypsyCloudSync.provisionCloudFolderAssets(true);
+        await provisionCloudFolderAssets(true);
         await this.host.persistEncryptedVault();
         this.els.reprovisionBtn.textContent = 'Files Updated!';
         setTimeout(() => {
@@ -221,8 +250,8 @@ export class CloudWizardController {
     });
 
     this.els.unlinkBtn.addEventListener('click', async () => {
-      await CrypsyCloudSync.unlinkCloudFolder();
-      this.host.updateCloudStatusUI({ status: 'unlinked' });
+      await unlinkCloudFolder();
+      this.host.updateCloudStatusUI('unlinked');
       this.setStep(1);
     });
 
@@ -230,7 +259,7 @@ export class CloudWizardController {
 
     this.els.downloadPortableBtn.addEventListener('click', async () => {
       try {
-        const html = await CrypsyCloudSync.buildSelfContainedHtmlInBrowser();
+        const html = await buildSelfContainedHtmlInBrowser();
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');

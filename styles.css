@@ -1691,6 +1691,24 @@ mark.search-highlight {
   color: var(--emerald);
 }
 
+.last-updated-badge.saving {
+  border-color: rgba(138, 180, 248, 0.35);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.last-updated-badge.warning {
+  border-color: rgba(251, 188, 4, 0.45);
+  background: rgba(251, 188, 4, 0.12);
+  color: #fbbc04;
+}
+
+.last-updated-badge.error {
+  border-color: rgba(242, 139, 130, 0.5);
+  background: rgba(242, 139, 130, 0.14);
+  color: var(--danger);
+}
+
 .last-updated-dot {
   width: 6px;
   height: 6px;
@@ -1715,6 +1733,11 @@ mark.search-highlight {
   flex-wrap: wrap;
   gap: 12px;
   font-size: 0.88rem;
+}
+
+.conflict-banner {
+  background-color: rgba(242, 139, 130, 0.12);
+  border-bottom-color: rgba(242, 139, 130, 0.4);
 }
 
 .reconnect-banner-text {

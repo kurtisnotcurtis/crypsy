@@ -2,15 +2,17 @@
  * Shared domain types for Crypsy Note.
  */
 
-export type NoteColor =
-  | 'default'
-  | 'coral'
-  | 'amber'
-  | 'sage'
-  | 'teal'
-  | 'cobalt'
-  | 'plum'
-  | (string & {});
+export const NOTE_COLORS = [
+  'default',
+  'coral',
+  'amber',
+  'sage',
+  'teal',
+  'cobalt',
+  'plum',
+] as const;
+
+export type NoteColor = (typeof NOTE_COLORS)[number];
 
 export interface NoteImage {
   id: string;
@@ -38,9 +40,14 @@ export interface BoardViewport {
   zoom: number;
 }
 
-export type BoardTextAlign = 'left' | 'center' | 'right';
-export type BoardInkTool = 'pen' | 'highlighter';
-export type BoardGridStyle = 'dots' | 'grid' | 'ruled' | 'blank';
+export const BOARD_TEXT_ALIGNS = ['left', 'center', 'right'] as const;
+export type BoardTextAlign = (typeof BOARD_TEXT_ALIGNS)[number];
+
+export const BOARD_INK_TOOLS = ['pen', 'highlighter'] as const;
+export type BoardInkTool = (typeof BOARD_INK_TOOLS)[number];
+
+export const BOARD_GRID_STYLES = ['dots', 'grid', 'ruled', 'blank'] as const;
+export type BoardGridStyle = (typeof BOARD_GRID_STYLES)[number];
 
 export interface BoardItemBase {
   id: string;
@@ -122,7 +129,39 @@ export interface EncryptedEnvelope {
   iv: string;
   ciphertext: string;
   updatedAt: string;
+  revision?: number | undefined;
 }
+
+export interface CloudFileStamp {
+  lastModified: number;
+  size: number;
+  fingerprint: string;
+}
+
+export type CloudConnectionStatus = 'connected' | 'needs_permission' | 'unlinked';
+
+export type CloudReadResult =
+  | { status: 'ok'; envelope: EncryptedEnvelope; stamp: CloudFileStamp }
+  | { status: 'not_found' }
+  | { status: 'corrupt'; message: string }
+  | { status: 'no_permission' }
+  | { status: 'unlinked' }
+  | { status: 'error'; message: string };
+
+export type CloudWriteResult =
+  | { status: 'ok'; stamp: CloudFileStamp }
+  | { status: 'conflict'; remoteEnvelope: EncryptedEnvelope; stamp: CloudFileStamp }
+  | { status: 'no_permission' }
+  | { status: 'unlinked' }
+  | { status: 'error'; message: string };
+
+export type VaultSaveStatus =
+  | { state: 'idle' }
+  | { state: 'saving' }
+  | { state: 'saved'; at: number }
+  | { state: 'failed'; message: string }
+  | { state: 'conflict'; message: string }
+  | { state: 'needs_permission'; message: string };
 
 export type CloudProviderId =
   | 'gdrive'
@@ -159,12 +198,24 @@ export interface CloudProviderMeta {
 }
 
 export interface RestoreConnectionResult {
-  status: 'connected' | 'needs_permission' | 'unlinked';
+  status: CloudConnectionStatus;
   meta: CloudProviderMeta | null;
 }
 
 export type ViewMode = 'grid' | 'list';
 export type ThemeMode = 'dark' | 'light';
+
+export interface UiPreferences {
+  viewMode: ViewMode;
+  theme: ThemeMode;
+  boardsSectionExpanded: boolean;
+  tagsSectionExpanded: boolean;
+  guideSectionExpanded: boolean;
+  autoCheckUpdates: boolean;
+  autoLockMinutes: number;
+  lockOnHide: boolean;
+  blockExternalMedia: boolean;
+}
 
 export type ActiveFilter =
   | { type: 'all' | 'pinned' | 'boards'; tag: null }
@@ -187,21 +238,12 @@ export interface EditingDraft {
   color: NoteColor;
 }
 
-export interface AppState {
+export interface AppState extends UiPreferences {
   notes: Note[];
   boards: Board[];
   tags: string[];
   searchQuery: string;
   activeFilter: ActiveFilter;
-  viewMode: ViewMode;
-  theme: ThemeMode;
-  boardsSectionExpanded: boolean;
-  tagsSectionExpanded: boolean;
-  guideSectionExpanded: boolean;
-  autoCheckUpdates: boolean;
-  autoLockMinutes: number;
-  lockOnHide: boolean;
-  blockExternalMedia: boolean;
   passphrase: string | null;
   lastEncryptedEnvelope: EncryptedEnvelope | null;
   selectedProviderId: CloudProviderId;

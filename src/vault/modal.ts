@@ -5,7 +5,7 @@
  */
 
 import type { EncryptedEnvelope } from '../types';
-import { byId, maybeById } from '../utils';
+import { byId } from '../utils';
 
 export interface VaultModalHost {
   getLastEnvelope: () => EncryptedEnvelope | null;
@@ -33,9 +33,9 @@ interface VaultModalElements {
   ciphertextPreview: HTMLElement;
   exportEncryptedBtn: HTMLButtonElement;
   importEncryptedInput: HTMLInputElement;
-  autoLockSelect: HTMLSelectElement | null;
-  lockOnHideCb: HTMLInputElement | null;
-  blockExternalMediaCb: HTMLInputElement | null;
+  autoLockSelect: HTMLSelectElement;
+  lockOnHideCb: HTMLInputElement;
+  blockExternalMediaCb: HTMLInputElement;
 }
 
 export class VaultModalController {
@@ -55,9 +55,9 @@ export class VaultModalController {
       ciphertextPreview: byId('ciphertextPreview'),
       exportEncryptedBtn: byId<HTMLButtonElement>('exportEncryptedBtn'),
       importEncryptedInput: byId<HTMLInputElement>('importEncryptedInput'),
-      autoLockSelect: maybeById<HTMLSelectElement>('autoLockSelect'),
-      lockOnHideCb: maybeById<HTMLInputElement>('lockOnHideCb'),
-      blockExternalMediaCb: maybeById<HTMLInputElement>('blockExternalMediaCb'),
+      autoLockSelect: byId<HTMLSelectElement>('autoLockSelect'),
+      lockOnHideCb: byId<HTMLInputElement>('lockOnHideCb'),
+      blockExternalMediaCb: byId<HTMLInputElement>('blockExternalMediaCb'),
     };
     this.bindEvents();
   }
@@ -72,15 +72,9 @@ export class VaultModalController {
     this.els.confirmPassphraseInput.value = '';
     this.els.passphraseFeedback.className = 'vault-feedback hidden';
     this.els.passphraseFeedback.textContent = '';
-    if (this.els.autoLockSelect) {
-      this.els.autoLockSelect.value = String(this.host.getAutoLockMinutes());
-    }
-    if (this.els.lockOnHideCb) {
-      this.els.lockOnHideCb.checked = this.host.getLockOnHide();
-    }
-    if (this.els.blockExternalMediaCb) {
-      this.els.blockExternalMediaCb.checked = this.host.getBlockExternalMedia();
-    }
+    this.els.autoLockSelect.value = String(this.host.getAutoLockMinutes());
+    this.els.lockOnHideCb.checked = this.host.getLockOnHide();
+    this.els.blockExternalMediaCb.checked = this.host.getBlockExternalMedia();
     this.els.backdrop.classList.remove('hidden');
   }
 
@@ -114,19 +108,16 @@ export class VaultModalController {
       if (e.target === this.els.backdrop) this.close();
     });
 
-    this.els.autoLockSelect?.addEventListener('change', () => {
-      if (!this.els.autoLockSelect) return;
+    this.els.autoLockSelect.addEventListener('change', () => {
       const val = parseInt(this.els.autoLockSelect.value, 10);
       this.host.setAutoLockMinutes(Number.isFinite(val) ? val : 15);
     });
 
-    this.els.lockOnHideCb?.addEventListener('change', () => {
-      if (!this.els.lockOnHideCb) return;
+    this.els.lockOnHideCb.addEventListener('change', () => {
       this.host.setLockOnHide(this.els.lockOnHideCb.checked);
     });
 
-    this.els.blockExternalMediaCb?.addEventListener('change', () => {
-      if (!this.els.blockExternalMediaCb) return;
+    this.els.blockExternalMediaCb.addEventListener('change', () => {
       this.host.setBlockExternalMedia(this.els.blockExternalMediaCb.checked);
     });
 

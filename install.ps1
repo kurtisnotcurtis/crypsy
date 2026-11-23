@@ -32,7 +32,19 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
         $basePath = Read-Host "Enter target cloud folder path"
     }
     $targetDir = Join-Path $basePath "Crypsy"
-    New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-    Copy-Item "$ScriptDir\index.html","$ScriptDir\styles.css","$ScriptDir\crypto.js","$ScriptDir\cloud-sync.js","$ScriptDir\app.js" -Destination $targetDir -Force
+    $targetDistDir = Join-Path $targetDir "dist"
+    New-Item -ItemType Directory -Force -Path $targetDistDir | Out-Null
+    Copy-Item "$ScriptDir\index.html","$ScriptDir\styles.css" -Destination $targetDir -Force
+    if (Test-Path "$ScriptDir\logo.svg") {
+        Copy-Item "$ScriptDir\logo.svg" -Destination $targetDir -Force
+    }
+    if (Test-Path "$ScriptDir\Crypsy-Portable.html") {
+        Copy-Item "$ScriptDir\Crypsy-Portable.html" -Destination $targetDir -Force
+    }
+    if (Test-Path "$ScriptDir\dist\app.bundle.js") {
+        Copy-Item "$ScriptDir\dist\app.bundle.js" -Destination $targetDistDir -Force
+    } else {
+        Write-Warning "dist\app.bundle.js not found. Run 'npm run build' with Node.js first, or open Crypsy-Portable.html."
+    }
     Write-Host "`n[OK] Crypsy installed to: $targetDir" -ForegroundColor Green
 }

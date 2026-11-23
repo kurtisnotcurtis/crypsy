@@ -28,7 +28,9 @@ import { BoardInkToolbar } from './ink-toolbar';
 import { BoardLiveCanvas } from './live-canvas';
 import {
   alignBoardItemsInPlace,
+  bringItemsToFrontInPlace,
   cloneItemsForPaste,
+  sendItemsToBackInPlace,
   summarizeBoardItemsForClipboard,
 } from './ops';
 import { renderBoardItemHtml } from './render';
@@ -66,7 +68,6 @@ import {
   escapeHtml,
   getRotatedRectAabb,
   isEditableElement,
-  maybeById,
 } from '../utils';
 
 export interface BoardEditorHost {
@@ -86,6 +87,7 @@ export interface BoardEditorHost {
   onBoardMutated: (board: Board, immediate?: boolean) => void;
   onDeleteBoard: (boardId: string) => void;
   onCloseBoard: () => void;
+  onIdleForSync?: () => void;
   onOpenLightbox: (src: string) => void;
   isExternalImageAllowed?: (url: string) => boolean;
   onAllowExternalUrl?: (url: string) => void;
@@ -236,12 +238,13 @@ export class BoardEditorController {
     selectionOverlay: byId('boardSelectionOverlay'),
     inkLiveCanvas: byId<HTMLCanvasElement>('boardInkLiveCanvas'),
     marqueeRect: byId('boardMarqueeRect'),
-    canvasHint: maybeById('boardCanvasHint'),
+    canvasHint: byId('boardCanvasHint'),
   };
 
   private selectedIds = new Set<string>();
   private editingItemId: string | null = null;
   private editingLinkLabelId: string | null = null;
+  private textEditUndoPushed = false;
   private snapToGrid = false;
   private spacePressed = false;
   private activeTouchPoints = new Map<number, { clientX: number; clientY: number }>();
@@ -407,6 +410,14 @@ export class BoardEditorController {
   }
 
   /**
+   * Commits any active text-box or link-label edit into the board model before lock/save.
+   */
+  public commitPendingEdits(): boolean {
+    if (!this.isOpen()) return false;
+    return this.commitActiveTextEdit();
+  }
+
+  /**
    * Clears all decrypted board snapshots, clipboard copies, and DOM nodes from memory on lock.
    */
   public clearSensitiveMemory(): void {
@@ -416,6 +427,7 @@ export class BoardEditorController {
     this.selectedIds.clear();
     this.editingItemId = null;
     this.editingLinkLabelId = null;
+    this.textEditUndoPushed = false;
     this.gesture = null;
     this.activeTouchPoints.clear();
     this.clearLongPressTimer();
@@ -434,6 +446,13 @@ export class BoardEditorController {
     if (!board) {
       this.close();
       return;
+    }
+    // Clear pre-sync undo history so Ctrl+Z never reverts a synced remote update
+    this.history.clear();
+    this.updateHistoryButtons();
+    const validIds = new Set(board.items.map((it) => it.id));
+    for (const id of Array.from(this.selectedIds)) {
+      if (!validIds.has(id)) this.selectedIds.delete(id);
     }
     this.els.titleInput.value = board.title;
     this.els.shell.setAttribute('data-color', board.color || 'default');
@@ -698,8 +717,14 @@ export class BoardEditorController {
 
     this.pushUndoSnapshot(board);
     board.items.push(strokeItem);
-    this.renderItems();
-    this.host.onBoardMutated(board, true);
+    const strokeHtml = renderBoardItemHtml(strokeItem, this.host.getSearchQuery(), {
+      selected: false,
+      editingText: false,
+      editingLinkLabel: false,
+      allowExternalUrl: this.host.isExternalImageAllowed,
+    });
+    this.els.itemsLayer.insertAdjacentHTML('beforeend', strokeHtml);
+    this.host.onBoardMutated(board, false);
   }
 
   private commitLassoSelection(
@@ -778,11 +803,14 @@ export class BoardEditorController {
   private undo(): void {
     const board = this.host.getBoard();
     if (!board) return;
+    this.commitActiveTextEdit();
     const prev = this.history.undo(board.items);
     if (!prev) return;
     board.items = prev;
     this.selectedIds.clear();
     this.editingItemId = null;
+    this.editingLinkLabelId = null;
+    this.textEditUndoPushed = false;
     this.renderItems();
     this.updateSelectionOverlay();
     this.updateSelectionBar();
@@ -793,11 +821,14 @@ export class BoardEditorController {
   private redo(): void {
     const board = this.host.getBoard();
     if (!board) return;
+    this.commitActiveTextEdit();
     const next = this.history.redo(board.items);
     if (!next) return;
     board.items = next;
     this.selectedIds.clear();
     this.editingItemId = null;
+    this.editingLinkLabelId = null;
+    this.textEditUndoPushed = false;
     this.renderItems();
     this.updateSelectionOverlay();
     this.updateSelectionBar();
@@ -844,7 +875,6 @@ export class BoardEditorController {
     board.viewport.panX = vx - canvasX * nextZoom;
     board.viewport.panY = vy - canvasY * nextZoom;
     this.applyViewport(board);
-    this.host.onBoardMutated(board, false);
   }
 
   private fitBoardToView(): void {
@@ -853,7 +883,6 @@ export class BoardEditorController {
     if (board.items.length === 0) {
       board.viewport = { panX: 0, panY: 0, zoom: 1 };
       this.applyViewport(board);
-      this.host.onBoardMutated(board, false);
       return;
     }
 
@@ -882,7 +911,6 @@ export class BoardEditorController {
     board.viewport.panX = rect.width / 2 - ((minX + maxX) / 2) * zoom;
     board.viewport.panY = rect.height / 2 - ((minY + maxY) / 2) * zoom;
     this.applyViewport(board);
-    this.host.onBoardMutated(board, false);
   }
 
   private renderBoardMeta(board: Board): void {
@@ -1051,9 +1079,10 @@ export class BoardEditorController {
     this.selectionBar.update(selectedItems);
   }
 
-  private commitActiveTextEdit(preserveItemId?: string): void {
+  private commitActiveTextEdit(preserveItemId?: string): boolean {
     const board = this.host.getBoard();
-    if (!board) return;
+    if (!board) return false;
+    let mutated = false;
 
     if (this.editingItemId) {
       const ta = this.els.itemsLayer.querySelector<HTMLTextAreaElement>(
@@ -1064,15 +1093,25 @@ export class BoardEditorController {
       if (item && item.type === 'text' && ta) {
         const nextVal = ta.value;
         if (nextVal.trim() === '' && item.id !== preserveItemId) {
+          if (!this.textEditUndoPushed) {
+            this.pushUndoSnapshot(board);
+          }
           board.items.splice(idx, 1);
           this.selectedIds.delete(item.id);
           this.host.onBoardMutated(board, true);
+          mutated = true;
         } else if (item.content !== nextVal) {
+          if (!this.textEditUndoPushed) {
+            this.pushUndoSnapshot(board);
+          }
           item.content = nextVal;
           this.host.onBoardMutated(board, true);
+          mutated = true;
         }
       }
       this.editingItemId = null;
+      this.textEditUndoPushed = false;
+      this.host.onIdleForSync?.();
     }
 
     if (this.editingLinkLabelId) {
@@ -1083,12 +1122,18 @@ export class BoardEditorController {
       if (item && item.type === 'link' && inp) {
         const nextLabel = inp.value.trim();
         if (item.label !== nextLabel) {
+          this.pushUndoSnapshot(board);
           item.label = nextLabel || undefined;
           this.host.onBoardMutated(board, true);
+          mutated = true;
         }
       }
       this.editingLinkLabelId = null;
+      this.textEditUndoPushed = false;
+      this.host.onIdleForSync?.();
     }
+
+    return mutated;
   }
 
   private createTextItem(x: number, y: number, initialContent = '', startEditing = true): void {
@@ -1114,6 +1159,7 @@ export class BoardEditorController {
     board.items.push(newItem);
     this.selectedIds = new Set([newItem.id]);
     this.editingItemId = startEditing ? newItem.id : null;
+    this.textEditUndoPushed = startEditing;
     this.renderItems();
     this.updateSelectionBar();
     if (!startEditing) {
@@ -1404,17 +1450,14 @@ export class BoardEditorController {
   }
 
   private bringSelectedToFront(): void {
-    this.mutateSelectedItems((items, board) => {
-      let z = this.nextZIndex(board);
-      for (const it of items) it.zIndex = z++;
+    this.mutateSelectedItems((_items, board) => {
+      bringItemsToFrontInPlace(board.items, this.selectedIds);
     });
   }
 
   private sendSelectedToBack(): void {
-    this.mutateSelectedItems((items, board) => {
-      const minZ = board.items.reduce((min, it) => Math.min(min, it.zIndex || 1), 1);
-      let z = Math.max(1, minZ - items.length);
-      for (const it of items) it.zIndex = z++;
+    this.mutateSelectedItems((_items, board) => {
+      sendItemsToBackInPlace(board.items, this.selectedIds);
     });
   }
 
@@ -1739,11 +1782,7 @@ export class BoardEditorController {
     this.els.deleteBtn.addEventListener('click', () => {
       const board = this.host.getBoard();
       if (!board) return;
-      const id = board.id;
-      this.selectedIds.clear();
-      this.editingItemId = null;
-      this.els.backdrop.classList.add('hidden');
-      this.host.onDeleteBoard(id);
+      this.host.onDeleteBoard(board.id);
     });
   }
 
@@ -1770,6 +1809,10 @@ export class BoardEditorController {
         const itemId = target.getAttribute('data-board-textarea');
         const item = board?.items.find((it) => it.id === itemId);
         if (board && item && item.type === 'text') {
+          if (!this.textEditUndoPushed && item.content !== target.value) {
+            this.pushUndoSnapshot(board);
+            this.textEditUndoPushed = true;
+          }
           item.content = target.value;
           if (item.height && target.scrollHeight + 16 > item.height) {
             item.height = undefined;
@@ -1832,6 +1875,7 @@ export class BoardEditorController {
         this.commitActiveTextEdit();
         this.selectedIds = new Set([item.id]);
         this.editingItemId = item.id;
+        this.textEditUndoPushed = false;
         this.renderItems();
         this.updateSelectionBar();
       } else if (item.type === 'image') {
@@ -1840,6 +1884,7 @@ export class BoardEditorController {
         this.commitActiveTextEdit();
         this.selectedIds = new Set([item.id]);
         this.editingLinkLabelId = item.id;
+        this.textEditUndoPushed = false;
         this.renderItems();
         this.updateSelectionBar();
       }
@@ -1907,7 +1952,6 @@ export class BoardEditorController {
           board.viewport.panX -= e.deltaX;
           board.viewport.panY -= e.deltaY;
           this.applyViewport(board);
-          this.host.onBoardMutated(board, false);
         }
       },
       { passive: false }
@@ -2559,7 +2603,7 @@ export class BoardEditorController {
     if (this.gesture.kind === 'pinch') {
       if (!this.gesture.pointerIds.includes(e.pointerId)) return;
       this.gesture = null;
-      if (board) this.host.onBoardMutated(board, false);
+      this.host.onIdleForSync?.();
       return;
     }
     if (this.gesture.pointerId !== e.pointerId) return;
@@ -2576,7 +2620,7 @@ export class BoardEditorController {
     if (!board) return;
 
     if (finished.kind === 'pan') {
-      this.host.onBoardMutated(board, false);
+      this.host.onIdleForSync?.();
       return;
     }
 
@@ -2584,6 +2628,7 @@ export class BoardEditorController {
       if (e.type !== 'pointercancel' || e.pointerType !== 'touch') {
         this.commitStrokeFromGesture(board, finished);
       }
+      this.host.onIdleForSync?.();
       return;
     }
 
@@ -2591,6 +2636,7 @@ export class BoardEditorController {
       if (finished.erasedAny) {
         this.host.onBoardMutated(board, true);
       }
+      this.host.onIdleForSync?.();
       return;
     }
 
@@ -2598,6 +2644,7 @@ export class BoardEditorController {
       if (e.type !== 'pointercancel') {
         this.commitLassoSelection(board, finished);
       }
+      this.host.onIdleForSync?.();
       return;
     }
 
@@ -2617,6 +2664,7 @@ export class BoardEditorController {
           this.createTextItem(finished.startCanvasX, finished.startCanvasY, '', true);
         }
       }
+      this.host.onIdleForSync?.();
       return;
     }
 
@@ -2633,9 +2681,11 @@ export class BoardEditorController {
       const clickedItem = board.items.find((it) => it.id === singleId);
       if (clickedItem && clickedItem.type === 'text') {
         this.editingItemId = clickedItem.id;
+        this.textEditUndoPushed = false;
         this.renderItems();
         this.updateSelectionBar();
       }
     }
+    this.host.onIdleForSync?.();
   }
 }

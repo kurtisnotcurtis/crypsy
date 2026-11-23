@@ -2,8 +2,13 @@
  * Crypsy — Lock Screen & Vault Passphrase Setup / Unlock / Upgrade Controller
  */
 
-import { CrypsyCloudSync } from './cloud-sync';
-import { MIN_PASSPHRASE_LENGTH } from './crypto';
+import {
+  isConnected,
+  isFileSystemAccessSupported,
+  pickCloudFolder,
+  readVaultFromCloudFolder,
+} from './cloud-sync';
+import { MIN_PASSPHRASE_LENGTH, VaultDecryptionError } from './crypto';
 import type { CloudProviderId, EncryptedEnvelope } from '../types';
 import { byId } from '../utils';
 
@@ -11,13 +16,15 @@ export type LockScreenMode = 'unlock' | 'setup' | 'upgrade';
 
 export interface LockScreenHost {
   isPendingCloudPermission: () => boolean;
-  clearPendingCloudPermission: () => void;
   getSelectedProviderId: () => CloudProviderId;
   validateNewPassphrase: (pass: string, confirm: string) => string | null;
   onCreateOrUpgradeVault: (mode: 'setup' | 'upgrade', passphrase: string) => Promise<void>;
   onUnlockVault: (passphrase: string) => Promise<void>;
+  onTryLegacyUpgrade: () => Promise<boolean>;
+  onCancelPendingImport: () => void;
+  onResumeCloudSync: () => Promise<{ reconnected: boolean; error?: string }>;
   onCloudStatusConnected: () => void;
-  onTryLoadEnvelope: (envelope: EncryptedEnvelope) => Promise<boolean>;
+  onLoadCloudEnvelope: (envelope: EncryptedEnvelope) => Promise<void>;
   onImportVaultFile: (file: File) => Promise<void>;
 }
 
@@ -33,6 +40,8 @@ interface LockScreenElements {
   submitBtn: HTMLButtonElement;
   resumeCloudBtn: HTMLButtonElement;
   linkCloudBtn: HTMLButtonElement;
+  legacyUpgradeBtn: HTMLButtonElement;
+  cancelImportBtn: HTMLButtonElement;
   importVaultInput: HTMLInputElement;
 }
 
@@ -55,6 +64,8 @@ export class LockScreenController {
       submitBtn: byId<HTMLButtonElement>('unlockSubmitBtn'),
       resumeCloudBtn: byId<HTMLButtonElement>('lockResumeCloudBtn'),
       linkCloudBtn: byId<HTMLButtonElement>('lockLinkCloudBtn'),
+      legacyUpgradeBtn: byId<HTMLButtonElement>('lockLegacyUpgradeBtn'),
+      cancelImportBtn: byId<HTMLButtonElement>('lockCancelImportBtn'),
       importVaultInput: byId<HTMLInputElement>('lockImportVaultInput'),
     };
     this.bindEvents();
@@ -75,7 +86,11 @@ export class LockScreenController {
     this.els.overlay.classList.add('hidden');
   }
 
-  public setMode(mode: LockScreenMode, errorMsg?: string): void {
+  public setMode(
+    mode: LockScreenMode,
+    errorMsg?: string,
+    options: { canCancelImport?: boolean } = {}
+  ): void {
     this.mode = mode;
     const isCreate = mode === 'setup' || mode === 'upgrade';
 
@@ -117,12 +132,10 @@ export class LockScreenController {
     this.els.resumeCloudBtn.classList.toggle('hidden', !this.host.isPendingCloudPermission());
     this.els.linkCloudBtn.classList.toggle(
       'hidden',
-      !(
-        mode === 'setup' &&
-        CrypsyCloudSync.isFileSystemAccessSupported() &&
-        !CrypsyCloudSync.isConnected()
-      )
+      !(mode === 'setup' && isFileSystemAccessSupported() && !isConnected())
     );
+    this.els.legacyUpgradeBtn.classList.toggle('hidden', mode !== 'unlock');
+    this.els.cancelImportBtn.classList.toggle('hidden', !options.canCancelImport);
 
     this.els.overlay.classList.remove('hidden');
     this.els.passphraseInput.focus();
@@ -170,10 +183,14 @@ export class LockScreenController {
       try {
         await this.host.onUnlockVault(attempt);
         this.hide();
-      } catch {
-        this.showError(
-          'Incorrect passphrase — AES-GCM authentication tag verification failed.'
-        );
+      } catch (err) {
+        if (err instanceof VaultDecryptionError) {
+          this.showError(err.message);
+        } else {
+          this.showError(
+            err instanceof Error ? err.message : 'Failed to open decrypted vault.'
+          );
+        }
       } finally {
         this.els.submitBtn.disabled = false;
         this.els.submitBtn.textContent = prevBtnText;
@@ -182,14 +199,11 @@ export class LockScreenController {
 
     this.els.resumeCloudBtn.addEventListener('click', async () => {
       try {
-        const ok = await CrypsyCloudSync.reconnectSavedHandle();
-        if (!ok) return;
-        this.host.clearPendingCloudPermission();
+        const res = await this.host.onResumeCloudSync();
+        if (!res.reconnected) return;
         this.els.resumeCloudBtn.classList.add('hidden');
-        this.host.onCloudStatusConnected();
-        const cloudEnvelope = await CrypsyCloudSync.readVaultFromCloudFolder();
-        if (cloudEnvelope) {
-          await this.host.onTryLoadEnvelope(cloudEnvelope);
+        if (res.error) {
+          this.showError(res.error);
         }
       } catch (err) {
         this.showError(
@@ -200,21 +214,38 @@ export class LockScreenController {
 
     this.els.linkCloudBtn.addEventListener('click', async () => {
       try {
-        await CrypsyCloudSync.pickCloudFolder(this.host.getSelectedProviderId(), true);
+        await pickCloudFolder(this.host.getSelectedProviderId(), true);
         this.host.onCloudStatusConnected();
-        const existingCloudVault = await CrypsyCloudSync.readVaultFromCloudFolder();
-        if (existingCloudVault) {
-          await this.host.onTryLoadEnvelope(existingCloudVault);
-        } else {
+        const readRes = await readVaultFromCloudFolder();
+        if (readRes.status === 'ok') {
+          await this.host.onLoadCloudEnvelope(readRes.envelope);
+        } else if (readRes.status === 'not_found') {
           this.setMode(
             'setup',
             'Cloud folder linked (no existing vault found). Create a passphrase above to initialize your vault.'
           );
+        } else if (readRes.status === 'corrupt' || readRes.status === 'error') {
+          this.showError(readRes.message);
+        } else {
+          this.showError('Cloud folder permission was not granted.');
         }
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
         this.showError(err instanceof Error ? err.message : 'Could not link cloud folder.');
       }
+    });
+
+    this.els.legacyUpgradeBtn.addEventListener('click', async () => {
+      this.els.errorMsg.classList.add('hidden');
+      try {
+        await this.host.onTryLegacyUpgrade();
+      } catch (err) {
+        this.showError(err instanceof Error ? err.message : 'Could not migrate legacy vault.');
+      }
+    });
+
+    this.els.cancelImportBtn.addEventListener('click', () => {
+      this.host.onCancelPendingImport();
     });
 
     this.els.importVaultInput.addEventListener('change', async (e) => {

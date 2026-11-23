@@ -191,7 +191,7 @@ export function createBoardCardHtml(
     )
     .join('');
 
-  const itemCount = board.items.length;
+  const itemCount = Number(board.items.length) || 0;
 
   return `
     <article class="note-card board-card" data-board-id="${escapeHtml(board.id)}" data-color="${escapeHtml(board.color || 'default')}">

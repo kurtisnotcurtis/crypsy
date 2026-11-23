@@ -4,8 +4,15 @@
  */
 
 import { renderBoardStrokeSvg } from './ink';
-import type { BoardItem } from '../types';
+import { BOARD_TEXT_ALIGNS, type BoardItem } from '../types';
 import { escapeHtml, highlightText, isExternalHttpUrl } from '../utils';
+
+const SAFE_TEXT_ALIGNS: ReadonlySet<string> = new Set(BOARD_TEXT_ALIGNS);
+
+function safeNum(val: unknown, fallback = 0): number {
+  const n = typeof val === 'number' ? val : Number(val);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 export function renderBlockedExternalImageHtml(
   src: string,
@@ -67,22 +74,29 @@ export function renderBoardItemHtml(
   query: string,
   options: RenderBoardItemOptions = {}
 ): string {
-  const ox = options.offsetX ?? 0;
-  const oy = options.offsetY ?? 0;
+  const ox = safeNum(options.offsetX, 0);
+  const oy = safeNum(options.offsetY, 0);
   const isSelected = Boolean(options.selected);
   const isEditing = Boolean(options.editingText);
   const isEditingLabel = Boolean(options.editingLinkLabel);
-  const rot = item.rotation || 0;
+  const x = safeNum(item.x, 0);
+  const y = safeNum(item.y, 0);
+  const width = Math.max(12, safeNum(item.width, 220));
+  const height = item.height !== undefined ? Math.max(12, safeNum(item.height, 0)) : 0;
+  const zIndex = Math.floor(safeNum(item.zIndex, 1));
+  const rot = safeNum(item.rotation, 0);
 
-  const heightStyle = item.height ? `height:${item.height}px;` : '';
-  const baseStyle = `left:${item.x - ox}px;top:${item.y - oy}px;width:${item.width}px;${heightStyle}z-index:${item.zIndex};transform:rotate(${rot}deg);`;
+  const heightStyle = height > 0 ? `height:${height}px;` : '';
+  const baseStyle = `left:${x - ox}px;top:${y - oy}px;width:${width}px;${heightStyle}z-index:${zIndex};transform:rotate(${rot}deg);`;
   const colorAttr = escapeHtml(item.color || 'default');
   const idAttr = options.minimap
     ? `data-rotation="${rot}"`
     : `data-board-item-id="${escapeHtml(item.id)}"`;
 
   if (item.type === 'text') {
-    const textStyle = `font-size:${item.fontSize || 15}px;text-align:${item.align || 'left'};font-weight:${item.bold ? '700' : '400'};font-style:${item.italic ? 'italic' : 'normal'};`;
+    const fontSize = Math.max(8, Math.min(120, safeNum(item.fontSize, 15)));
+    const align = SAFE_TEXT_ALIGNS.has(item.align) ? item.align : 'left';
+    const textStyle = `font-size:${fontSize}px;text-align:${align};font-weight:${item.bold ? '700' : '400'};font-style:${item.italic ? 'italic' : 'normal'};`;
     if (isEditing && !options.minimap) {
       return `
         <div class="board-item type-text ${isSelected ? 'selected' : ''} editing" ${idAttr} data-color="${colorAttr}" style="${baseStyle}">
@@ -124,8 +138,8 @@ export function renderBoardItemHtml(
   }
 
   if (item.type === 'stroke') {
-    const strokeH = item.height ?? item.sourceHeight;
-    const strokeStyle = `left:${item.x - ox}px;top:${item.y - oy}px;width:${item.width}px;height:${strokeH}px;z-index:${item.zIndex};transform:rotate(${rot}deg);`;
+    const strokeH = Math.max(12, safeNum(item.height ?? item.sourceHeight, 16));
+    const strokeStyle = `left:${x - ox}px;top:${y - oy}px;width:${width}px;height:${strokeH}px;z-index:${zIndex};transform:rotate(${rot}deg);`;
     const hlClass = item.tool === 'highlighter' ? 'is-highlighter' : '';
     return `
       <div class="board-item type-stroke ${hlClass} ${isSelected ? 'selected' : ''}" ${idAttr} style="${strokeStyle}">
@@ -134,6 +148,7 @@ export function renderBoardItemHtml(
     `;
   }
 
+  const safeHref = isExternalHttpUrl(item.url) ? item.url : '#';
   let domain = item.url;
   try {
     domain = new URL(item.url).hostname;
@@ -148,7 +163,7 @@ export function renderBoardItemHtml(
           ? `<input type="text" class="board-text-input" style="padding:2px 0;font-weight:600;font-size:0.95rem;" data-board-link-input="${escapeHtml(item.id)}" value="${escapeHtml(item.label || domain)}" />`
           : `<div class="board-link-label" title="Double-click to rename">${highlightText(item.label || domain, query)}</div>`
       }
-      <a class="board-link-url" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${highlightText(item.url, query)}</a>
+      <a class="board-link-url" href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer">${highlightText(item.url, query)}</a>
     </div>
   `;
 }

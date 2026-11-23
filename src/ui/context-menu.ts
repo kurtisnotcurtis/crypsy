@@ -6,7 +6,7 @@
  */
 
 import type { NoteColor } from '../types';
-import { escapeHtml, isEditableElement, maybeById } from '../utils';
+import { byId, escapeHtml, isEditableElement } from '../utils';
 
 export type ContextMenuEntry =
   | {
@@ -77,25 +77,25 @@ export function shouldBypassCustomContextMenu(
 }
 
 export class ContextMenuController {
-  private readonly menuEl: HTMLElement | null;
+  private readonly menuEl: HTMLElement;
   private entries: ContextMenuEntry[] = [];
   private previousFocus: HTMLElement | null = null;
 
   constructor(menuId = 'crypsyContextMenu') {
-    this.menuEl = maybeById(menuId);
+    this.menuEl = byId(menuId);
     this.bindEvents();
   }
 
   public isOpen(): boolean {
-    return Boolean(this.menuEl && !this.menuEl.classList.contains('hidden'));
+    return !this.menuEl.classList.contains('hidden');
   }
 
   public containsTarget(target: Node | null): boolean {
-    return Boolean(this.menuEl && target && this.menuEl.contains(target));
+    return Boolean(target && this.menuEl.contains(target));
   }
 
   public open(clientX: number, clientY: number, entries: ContextMenuEntry[]): void {
-    if (!this.menuEl || entries.length === 0) return;
+    if (entries.length === 0) return;
 
     this.entries = entries;
     this.previousFocus =

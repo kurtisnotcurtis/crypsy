@@ -14,33 +14,49 @@
  *   node install.js --target <path>  # Non-interactive install to <path>/Crypsy
  */
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const readline = require('readline');
 
 const ROOT_DIR = __dirname;
-const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8')).version || '1.0.0';
+const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8')).version;
+if (!PKG_VERSION) {
+  throw new Error('package.json is missing a "version" field.');
+}
 
 /**
  * Bundles index.html + styles.css + dist/app.bundle.js
- * into a single self-contained HTML string.
+ * into a single self-contained HTML string with a build-time SHA-256 CSP script hash.
  */
 function buildPortableHtml() {
   const indexHtml = fs.readFileSync(path.join(ROOT_DIR, 'index.html'), 'utf8');
   const stylesCss = fs.readFileSync(path.join(ROOT_DIR, 'styles.css'), 'utf8');
   const bundleJs = fs.readFileSync(path.join(ROOT_DIR, 'dist', 'app.bundle.js'), 'utf8');
 
+  const linkRegex = /<link\s+rel="stylesheet"\s+href="styles\.css"\s*\/?>/i;
+  const scriptRegex = /<script\s+src="dist\/app\.bundle\.js"><\/script>/i;
+  const cspScriptSrcRegex = /script-src\s+'self'/;
+
+  if (!linkRegex.test(indexHtml)) {
+    throw new Error('buildPortableHtml: could not find styles.css <link> tag in index.html');
+  }
+  if (!scriptRegex.test(indexHtml)) {
+    throw new Error('buildPortableHtml: could not find dist/app.bundle.js <script> tag in index.html');
+  }
+  if (!cspScriptSrcRegex.test(indexHtml)) {
+    throw new Error("buildPortableHtml: could not find script-src 'self' directive in index.html CSP");
+  }
+
+  const inlineScriptBody = `\n${bundleJs}\n`;
+  const scriptHash = crypto.createHash('sha256').update(inlineScriptBody, 'utf8').digest('base64');
+
   return indexHtml
     .replace(/<link\s+rel="manifest"\s+href="\.\/manifest\.webmanifest"\s*\/?>\s*\r?\n?/i, '')
-    .replace(
-      /<link\s+rel="stylesheet"\s+href="styles\.css"\s*\/?>/i,
-      () => `<style>\n${stylesCss}\n</style>`
-    )
-    .replace(
-      /<script\s+src="dist\/app\.bundle\.js"><\/script>/i,
-      () => `<script>\n${bundleJs}\n</script>`
-    );
+    .replace(cspScriptSrcRegex, `script-src 'sha256-${scriptHash}'`)
+    .replace(linkRegex, () => `<style>\n${stylesCss}\n</style>`)
+    .replace(scriptRegex, () => `<script>${inlineScriptBody}</script>`);
 }
 
 function dirExists(p) {

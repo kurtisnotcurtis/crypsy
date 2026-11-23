@@ -2,7 +2,7 @@
  * Crypsy — Settings & GitHub Releases Update Checker Controller
  */
 
-import { APP_VERSION, escapeHtml, maybeById } from '../utils';
+import { APP_VERSION, byId, escapeHtml } from '../utils';
 
 interface GitHubReleaseAsset {
   name?: string;
@@ -42,14 +42,14 @@ export interface UpdatesHost {
 export class UpdatesController {
   private readonly host: UpdatesHost;
   private readonly els = {
-    appVersionBadge: maybeById('appVersionBadge'),
-    topbarUpdatesBtn: maybeById<HTMLButtonElement>('topbarUpdatesBtn'),
-    backdrop: maybeById('updatesModalBackdrop'),
-    closeBtn: maybeById<HTMLButtonElement>('closeUpdatesModalBtn'),
-    installedVersionLabel: maybeById('installedVersionLabel'),
-    autoCheckUpdatesCb: maybeById<HTMLInputElement>('autoCheckUpdatesCb'),
-    updateCheckStatus: maybeById('updateCheckStatus'),
-    checkUpdatesNowBtn: maybeById<HTMLButtonElement>('checkUpdatesNowBtn'),
+    appVersionBadge: byId('appVersionBadge'),
+    topbarUpdatesBtn: byId<HTMLButtonElement>('topbarUpdatesBtn'),
+    backdrop: byId('updatesModalBackdrop'),
+    closeBtn: byId<HTMLButtonElement>('closeUpdatesModalBtn'),
+    installedVersionLabel: byId('installedVersionLabel'),
+    autoCheckUpdatesCb: byId<HTMLInputElement>('autoCheckUpdatesCb'),
+    updateCheckStatus: byId('updateCheckStatus'),
+    checkUpdatesNowBtn: byId<HTMLButtonElement>('checkUpdatesNowBtn'),
   };
 
   constructor(host: UpdatesHost) {
@@ -58,41 +58,30 @@ export class UpdatesController {
   }
 
   public init(): void {
-    if (this.els.autoCheckUpdatesCb) {
-      this.els.autoCheckUpdatesCb.checked = this.host.getAutoCheckUpdates();
-    }
-    if (this.els.appVersionBadge) {
-      this.els.appVersionBadge.textContent = `v${APP_VERSION}`;
-      this.els.appVersionBadge.title = `Crypsy Note v${APP_VERSION} — Click to check for updates`;
-    }
-    if (this.els.installedVersionLabel) {
-      this.els.installedVersionLabel.textContent = `v${APP_VERSION}`;
-    }
+    this.els.autoCheckUpdatesCb.checked = this.host.getAutoCheckUpdates();
+    this.els.appVersionBadge.textContent = `v${APP_VERSION}`;
+    this.els.appVersionBadge.title = `Crypsy Note v${APP_VERSION} — Click to check for updates`;
+    this.els.installedVersionLabel.textContent = `v${APP_VERSION}`;
     if (this.host.getAutoCheckUpdates()) {
       void this.checkForUpdates(true);
     }
   }
 
   public isOpen(): boolean {
-    return Boolean(this.els.backdrop && !this.els.backdrop.classList.contains('hidden'));
+    return !this.els.backdrop.classList.contains('hidden');
   }
 
   public open(): void {
-    if (this.els.autoCheckUpdatesCb) {
-      this.els.autoCheckUpdatesCb.checked = this.host.getAutoCheckUpdates();
-    }
-    if (this.els.installedVersionLabel) {
-      this.els.installedVersionLabel.textContent = `v${APP_VERSION}`;
-    }
-    this.els.backdrop?.classList.remove('hidden');
+    this.els.autoCheckUpdatesCb.checked = this.host.getAutoCheckUpdates();
+    this.els.installedVersionLabel.textContent = `v${APP_VERSION}`;
+    this.els.backdrop.classList.remove('hidden');
   }
 
   public close(): void {
-    this.els.backdrop?.classList.add('hidden');
+    this.els.backdrop.classList.add('hidden');
   }
 
   public async checkForUpdates(silent = false): Promise<void> {
-    if (!this.els.updateCheckStatus) return;
     if (!silent) {
       this.els.updateCheckStatus.className = 'update-status-box';
       this.els.updateCheckStatus.textContent = 'Checking GitHub Releases...';
@@ -122,11 +111,9 @@ export class UpdatesController {
         'https://github.com/kurtisnotcurtis/crypsy/releases/latest';
 
       if (isNewer) {
-        if (this.els.appVersionBadge) {
-          this.els.appVersionBadge.classList.add('update-available');
-          this.els.appVersionBadge.textContent = `v${APP_VERSION} • Update`;
-          this.els.appVersionBadge.title = `Update available: ${latestTag}`;
-        }
+        this.els.appVersionBadge.classList.add('update-available');
+        this.els.appVersionBadge.textContent = `v${APP_VERSION} • Update`;
+        this.els.appVersionBadge.title = `Update available: ${latestTag}`;
         this.els.updateCheckStatus.className = 'update-status-box has-update';
         this.els.updateCheckStatus.innerHTML = `
           <div><strong>Update available: ${escapeHtml(latestTag)}</strong> (installed: v${escapeHtml(APP_VERSION)})</div>
@@ -136,10 +123,8 @@ export class UpdatesController {
           </div>
         `;
       } else {
-        if (this.els.appVersionBadge) {
-          this.els.appVersionBadge.classList.remove('update-available');
-          this.els.appVersionBadge.textContent = `v${APP_VERSION}`;
-        }
+        this.els.appVersionBadge.classList.remove('update-available');
+        this.els.appVersionBadge.textContent = `v${APP_VERSION}`;
         this.els.updateCheckStatus.className = 'update-status-box up-to-date';
         this.els.updateCheckStatus.innerHTML = `You're up to date on <strong>v${escapeHtml(APP_VERSION)}</strong> (latest: ${escapeHtml(latestTag || `v${APP_VERSION}`)}).`;
       }
@@ -153,21 +138,20 @@ export class UpdatesController {
   }
 
   private bindEvents(): void {
-    this.els.appVersionBadge?.addEventListener('click', () => this.open());
-    this.els.topbarUpdatesBtn?.addEventListener('click', () => this.open());
-    this.els.closeBtn?.addEventListener('click', () => this.close());
-    this.els.backdrop?.addEventListener('click', (e) => {
+    this.els.appVersionBadge.addEventListener('click', () => this.open());
+    this.els.topbarUpdatesBtn.addEventListener('click', () => this.open());
+    this.els.closeBtn.addEventListener('click', () => this.close());
+    this.els.backdrop.addEventListener('click', (e) => {
       if (e.target === this.els.backdrop) this.close();
     });
-    this.els.autoCheckUpdatesCb?.addEventListener('change', () => {
-      if (!this.els.autoCheckUpdatesCb) return;
+    this.els.autoCheckUpdatesCb.addEventListener('change', () => {
       const enabled = this.els.autoCheckUpdatesCb.checked;
       this.host.setAutoCheckUpdates(enabled);
       if (enabled) {
         void this.checkForUpdates(false);
       }
     });
-    this.els.checkUpdatesNowBtn?.addEventListener('click', () => {
+    this.els.checkUpdatesNowBtn.addEventListener('click', () => {
       void this.checkForUpdates(false);
     });
   }

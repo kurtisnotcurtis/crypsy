@@ -3,7 +3,7 @@
  */
 
 import type { ActiveFilter, Board, Note } from '../types';
-import { createId } from '../utils';
+import { createId, normalizeTag } from '../utils';
 
 export interface VaultCollection {
   notes: Note[];
@@ -97,7 +97,7 @@ export function renameTagInVault(
   oldTag: string,
   rawNextTag: string
 ): boolean {
-  const nextTag = rawNextTag.trim().toLowerCase().replace(/^#/, '');
+  const nextTag = normalizeTag(rawNextTag);
   if (!nextTag || nextTag === oldTag) {
     return false;
   }

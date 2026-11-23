@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   renderBlockedExternalImageHtml,
+  renderBoardItemHtml,
   renderBoardTextContentHtml,
 } from '../src/board/render';
 import { createBoardCardHtml, createNoteCardHtml } from '../src/ui/card-render';
@@ -20,12 +21,42 @@ import {
 } from '../src/utils';
 
 describe('utils, media & context-menu', () => {
-  it('escapes HTML and highlights search matches safely', () => {
+  it('escapes HTML and highlights search matches safely without corrupting entities', () => {
     assert.equal(escapeHtml('<script>"&\'</script>'), '&lt;script&gt;&quot;&amp;&#39;&lt;/script&gt;');
     assert.equal(
       highlightText('Hello <world>', 'world'),
       'Hello &lt;<mark class="search-highlight">world</mark>&gt;'
     );
+    // Regression: searching "amp" in "Tom & Jerry" must not match inside &amp;
+    assert.equal(highlightText('Tom & Jerry', 'amp'), 'Tom &amp; Jerry');
+    assert.equal(
+      highlightText('Tom & Jerry', '&'),
+      'Tom <mark class="search-highlight">&amp;</mark> Jerry'
+    );
+    assert.equal(
+      highlightText('5 < 10 & "quoted" \'ok\'', '<'),
+      '5 <mark class="search-highlight">&lt;</mark> 10 &amp; &quot;quoted&quot; &#39;ok&#39;'
+    );
+  });
+
+  it('prevents attribute injection even if renderBoardItemHtml receives malformed fields', () => {
+    const hostileItem = {
+      id: 'bad',
+      type: 'text',
+      x: '0" onload="alert(1)',
+      y: 0,
+      width: '200" onclick="alert(1)',
+      zIndex: 1,
+      rotation: 0,
+      content: 'hi',
+      align: 'left" onmouseover="alert(1)',
+      fontSize: '15px"><script>alert(1)</script>',
+    } as unknown as Board['items'][number];
+    const html = renderBoardItemHtml(hostileItem, '');
+    assert.equal(html.includes('onload='), false);
+    assert.equal(html.includes('onclick='), false);
+    assert.equal(html.includes('onmouseover='), false);
+    assert.equal(html.includes('<script>'), false);
   });
 
   it('computes rotated AABB accurately', () => {

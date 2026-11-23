@@ -3,10 +3,16 @@
  */
 
 export const APP_VERSION =
-  typeof __CRYPSY_VERSION__ === 'string' ? __CRYPSY_VERSION__ : '1.6.4';
+  typeof __CRYPSY_VERSION__ === 'string' && __CRYPSY_VERSION__.length > 0
+    ? __CRYPSY_VERSION__
+    : 'dev';
 
 export function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+export function normalizeTag(raw: string): string {
+  return String(raw).trim().toLowerCase().replace(/^#/, '');
 }
 
 export function byId<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -15,10 +21,6 @@ export function byId<T extends HTMLElement = HTMLElement>(id: string): T {
     throw new Error(`Missing required DOM element: #${id}`);
   }
   return el as T;
-}
-
-export function maybeById<T extends HTMLElement = HTMLElement>(id: string): T | null {
-  return document.getElementById(id) as T | null;
 }
 
 export function escapeHtml(str: unknown): string {
@@ -31,13 +33,27 @@ export function escapeHtml(str: unknown): string {
 }
 
 export function highlightText(text: string, query: string): string {
-  const safe = escapeHtml(text);
-  if (!query || !query.trim()) return safe;
+  const raw = String(text);
+  if (!query || !query.trim()) return escapeHtml(raw);
   const cleanQ = query.trim().replace(/^#/, '');
-  if (!cleanQ) return safe;
+  if (!cleanQ) return escapeHtml(raw);
   const escapedRegex = cleanQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(`(${escapedRegex})`, 'gi');
-  return safe.replace(regex, '<mark class="search-highlight">$1</mark>');
+  const regex = new RegExp(escapedRegex, 'gi');
+  let out = '';
+  let lastIdx = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(raw)) !== null) {
+    if (match.index > lastIdx) {
+      out += escapeHtml(raw.slice(lastIdx, match.index));
+    }
+    out += `<mark class="search-highlight">${escapeHtml(match[0])}</mark>`;
+    lastIdx = regex.lastIndex;
+    if (match[0].length === 0) break;
+  }
+  if (lastIdx < raw.length) {
+    out += escapeHtml(raw.slice(lastIdx));
+  }
+  return out;
 }
 
 export function formatTimestamp(ms: number): string {

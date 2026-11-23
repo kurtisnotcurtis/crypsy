@@ -12,15 +12,20 @@ import { Capacitor } from '@capacitor/core';
 import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import type {
+  CloudConnectionStatus,
+  CloudFileStamp,
   CloudLocationInfo,
   CloudProviderConfig,
   CloudProviderId,
   CloudProviderMeta,
+  CloudReadResult,
+  CloudWriteResult,
   EncryptedEnvelope,
   OsPlatform,
   RestoreConnectionResult,
 } from '../types';
 import { idbDelete, idbGet, idbPut } from './cache';
+import { envelopeFingerprint, isValidEncryptedEnvelope } from './crypto';
 
 const IDB_NAME = 'crypsy_cloud_sync_db_v1';
 const IDB_STORE = 'handles';
@@ -90,12 +95,34 @@ export const PROVIDERS: Record<CloudProviderId, CloudProviderConfig> = {
   },
 };
 
-export type ExternalVaultUpdateCallback = (envelope: EncryptedEnvelope) => void;
+export type ExternalVaultUpdateCallback = (
+  envelope: EncryptedEnvelope,
+  stamp: CloudFileStamp
+) => void;
 
 let activeDirHandle: FileSystemDirectoryHandle | null = null;
-let lastKnownFileModified = 0;
+let hasGrantedPermission = false;
+let lastAcceptedFileStamp: CloudFileStamp | null = null;
+let lastNotifiedFingerprint: string | null = null;
 let pollIntervalId: ReturnType<typeof setInterval> | null = null;
 let onExternalVaultUpdateCallback: ExternalVaultUpdateCallback | null = null;
+let cleanPortableTemplateHtml: string | null = null;
+
+/**
+ * Captures the initial pristine standalone portable HTML before any user data is rendered.
+ * Must be called once on startup before `initVault()`.
+ */
+export function captureCleanPortableTemplate(): void {
+  if (typeof document === 'undefined') return;
+  const hasExternalCss = Boolean(document.querySelector('link[rel="stylesheet"][href="styles.css"]'));
+  const hasExternalJs = Boolean(document.querySelector('script[src="dist/app.bundle.js"]'));
+  const hasInlineCss = Array.from(document.querySelectorAll('style')).some(
+    (s) => (s.textContent?.length ?? 0) > 500
+  );
+  if (!hasExternalCss && !hasExternalJs && hasInlineCss) {
+    cleanPortableTemplateHtml = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  }
+}
 
 export function isFileSystemAccessSupported(): boolean {
   return typeof window !== 'undefined' && 'showDirectoryPicker' in window;
@@ -122,7 +149,24 @@ function getNativeProviderMeta(): CloudProviderMeta {
   };
 }
 
-async function readNativeVaultText(): Promise<string | null> {
+function isFileNotFoundError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { name?: string; message?: string; code?: string };
+  if (e.name === 'NotFoundError' || e.code === 'ENOENT') return true;
+  if (typeof e.message === 'string' && /not exist|not found|no such file/i.test(e.message)) {
+    return true;
+  }
+  return false;
+}
+
+function isPermissionDeniedError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { name?: string };
+  return e.name === 'NotAllowedError' || e.name === 'SecurityError';
+}
+
+async function readNativeVault(): Promise<CloudReadResult> {
+  let sawError: string | null = null;
   for (const directory of [Directory.Documents, Directory.Data]) {
     try {
       const res = await Filesystem.readFile({
@@ -130,14 +174,40 @@ async function readNativeVaultText(): Promise<string | null> {
         directory,
         encoding: Encoding.UTF8,
       });
-      if (typeof res.data === 'string' && res.data.trim()) {
-        return res.data;
+      if (typeof res.data !== 'string' || !res.data.trim()) {
+        return { status: 'corrupt', message: `${VAULT_FILENAME} is empty or unreadable.` };
       }
-    } catch {
-      // File may not exist in this directory yet
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(res.data);
+      } catch {
+        return {
+          status: 'corrupt',
+          message: `${VAULT_FILENAME} contains invalid JSON and will not be overwritten.`,
+        };
+      }
+      if (!isValidEncryptedEnvelope(parsed)) {
+        return {
+          status: 'corrupt',
+          message: `${VAULT_FILENAME} is missing valid encrypted envelope fields.`,
+        };
+      }
+      const stamp: CloudFileStamp = {
+        lastModified: Date.now(),
+        size: res.data.length,
+        fingerprint: envelopeFingerprint(parsed),
+      };
+      return { status: 'ok', envelope: parsed, stamp };
+    } catch (err) {
+      if (!isFileNotFoundError(err)) {
+        sawError = err instanceof Error ? err.message : String(err);
+      }
     }
   }
-  return null;
+  if (sawError) {
+    return { status: 'error', message: sawError };
+  }
+  return { status: 'not_found' };
 }
 
 async function writeNativeVaultText(content: string): Promise<boolean> {
@@ -255,7 +325,16 @@ export function detectRunningCloudLocation(): CloudLocationInfo | null {
 }
 
 export function getLastKnownFileModified(): number | null {
-  return lastKnownFileModified || null;
+  return lastAcceptedFileStamp?.lastModified ?? null;
+}
+
+export function getLastAcceptedFileStamp(): CloudFileStamp | null {
+  return lastAcceptedFileStamp;
+}
+
+export function markRemoteStampAccepted(stamp: CloudFileStamp | null): void {
+  lastAcceptedFileStamp = stamp;
+  lastNotifiedFingerprint = stamp?.fingerprint ?? null;
 }
 
 // IndexedDB helpers for persisting FileSystemDirectoryHandle across browser restarts
@@ -306,7 +385,11 @@ async function verifyPermission(
 ): Promise<boolean> {
   if (!fileHandle) return false;
   const opts: FileSystemHandlePermissionDescriptor = readWrite ? { mode: 'readwrite' } : {};
-  return (await fileHandle.queryPermission(opts)) === 'granted';
+  try {
+    return (await fileHandle.queryPermission(opts)) === 'granted';
+  } catch {
+    return false;
+  }
 }
 
 async function requestPermission(
@@ -340,7 +423,6 @@ export async function pickCloudFolder(
   });
 
   let targetHandle = pickedHandle;
-  // If the user selected the root of "OneDrive" or "My Drive" and asked for a subfolder, create/open "Crypsy"
   if (createSubfolder && pickedHandle.name.toLowerCase() !== 'crypsy') {
     targetHandle = await pickedHandle.getDirectoryHandle('Crypsy', {
       create: true,
@@ -348,6 +430,9 @@ export async function pickCloudFolder(
   }
 
   activeDirHandle = targetHandle;
+  hasGrantedPermission = true;
+  lastAcceptedFileStamp = null;
+  lastNotifiedFingerprint = null;
   await saveDirHandleToIDB(targetHandle);
 
   const provider = PROVIDERS[providerId] ?? PROVIDERS.custom;
@@ -371,17 +456,21 @@ export async function restoreSavedConnection(): Promise<RestoreConnectionResult>
   if (isNativeApp()) {
     const meta = getNativeProviderMeta();
     saveProviderMeta(meta);
+    hasGrantedPermission = true;
     return { status: 'connected', meta };
   }
 
   const meta = getSavedProviderMeta();
   const handle = await loadDirHandleFromIDB();
   if (!handle || !meta) {
+    activeDirHandle = null;
+    hasGrantedPermission = false;
     return { status: 'unlinked', meta: null };
   }
 
   activeDirHandle = handle;
   const hasPerm = await verifyPermission(handle, true);
+  hasGrantedPermission = hasPerm;
   if (hasPerm) {
     startSyncPolling();
     return { status: 'connected', meta };
@@ -393,8 +482,12 @@ export async function reconnectSavedHandle(): Promise<boolean> {
   if (!activeDirHandle) {
     activeDirHandle = await loadDirHandleFromIDB();
   }
-  if (!activeDirHandle) return false;
+  if (!activeDirHandle) {
+    hasGrantedPermission = false;
+    return false;
+  }
   const granted = await requestPermission(activeDirHandle, true);
+  hasGrantedPermission = granted;
   if (granted) {
     startSyncPolling();
   }
@@ -404,75 +497,185 @@ export async function reconnectSavedHandle(): Promise<boolean> {
 export async function unlinkCloudFolder(): Promise<void> {
   stopSyncPolling();
   activeDirHandle = null;
+  hasGrantedPermission = false;
+  lastAcceptedFileStamp = null;
+  lastNotifiedFingerprint = null;
   await clearDirHandleFromIDB();
   clearProviderMeta();
 }
 
-/**
- * Reads `vault.crypsy.json` from the active cloud directory if it exists.
- */
-export async function readVaultFromCloudFolder(): Promise<EncryptedEnvelope | null> {
-  if (isNativeApp()) {
-    try {
-      const text = await readNativeVaultText();
-      if (!text) return null;
-      lastKnownFileModified = Date.now();
-      return JSON.parse(text) as EncryptedEnvelope;
-    } catch {
-      return null;
+async function readCloudFileRaw(handle: FileSystemDirectoryHandle): Promise<CloudReadResult> {
+  let fileHandle: FileSystemFileHandle;
+  try {
+    fileHandle = await handle.getFileHandle(VAULT_FILENAME, { create: false });
+  } catch (err) {
+    if (isFileNotFoundError(err)) {
+      return { status: 'not_found' };
     }
+    if (isPermissionDeniedError(err)) {
+      hasGrantedPermission = false;
+      return { status: 'no_permission' };
+    }
+    return {
+      status: 'error',
+      message: err instanceof Error ? err.message : `Could not open ${VAULT_FILENAME}.`,
+    };
   }
 
-  if (!activeDirHandle) return null;
   try {
-    const fileHandle = await activeDirHandle.getFileHandle(VAULT_FILENAME, {
-      create: false,
-    });
     const file = await fileHandle.getFile();
-    lastKnownFileModified = file.lastModified;
     const text = await file.text();
-    return JSON.parse(text) as EncryptedEnvelope;
-  } catch {
-    // File does not exist yet in the folder
-    return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return {
+        status: 'corrupt',
+        message: `${VAULT_FILENAME} is unreadable (invalid JSON) and was left untouched.`,
+      };
+    }
+    if (!isValidEncryptedEnvelope(parsed)) {
+      return {
+        status: 'corrupt',
+        message: `${VAULT_FILENAME} is malformed (invalid encrypted envelope) and was left untouched.`,
+      };
+    }
+    const stamp: CloudFileStamp = {
+      lastModified: file.lastModified,
+      size: file.size,
+      fingerprint: envelopeFingerprint(parsed),
+    };
+    return { status: 'ok', envelope: parsed, stamp };
+  } catch (err) {
+    if (isPermissionDeniedError(err)) {
+      hasGrantedPermission = false;
+      return { status: 'no_permission' };
+    }
+    return {
+      status: 'error',
+      message: err instanceof Error ? err.message : `Could not read ${VAULT_FILENAME}.`,
+    };
   }
 }
 
 /**
- * Writes the encrypted AES-256-GCM envelope to `vault.crypsy.json` in the active cloud folder.
+ * Reads `vault.crypsy.json` from the active cloud directory.
+ * Returns `not_found` ONLY when the file does not exist; parse/shape errors return `corrupt`.
  */
-export async function writeVaultToCloudFolder(envelope: EncryptedEnvelope): Promise<boolean> {
+export async function readVaultFromCloudFolder(): Promise<CloudReadResult> {
   if (isNativeApp()) {
-    const ok = await writeNativeVaultText(JSON.stringify(envelope, null, 2));
-    if (ok) {
-      lastKnownFileModified = Date.now();
-      const meta = getNativeProviderMeta();
+    return readNativeVault();
+  }
+  if (!activeDirHandle) {
+    return { status: 'unlinked' };
+  }
+  const hasPerm = await verifyPermission(activeDirHandle, false);
+  if (!hasPerm) {
+    hasGrantedPermission = false;
+    return { status: 'no_permission' };
+  }
+  return readCloudFileRaw(activeDirHandle);
+}
+
+/**
+ * Writes the encrypted AES-256-GCM envelope to `vault.crypsy.json` in the active cloud folder.
+ * Refuses to overwrite if the file on disk changed since it was last read/written (unless `force: true`).
+ */
+export async function writeVaultToCloudFolder(
+  envelope: EncryptedEnvelope,
+  options: { force?: boolean; expectedFingerprint?: string | null } = {}
+): Promise<CloudWriteResult> {
+  const serialized = JSON.stringify(envelope, null, 2);
+
+  if (isNativeApp()) {
+    const ok = await writeNativeVaultText(serialized);
+    if (!ok) {
+      return { status: 'error', message: 'Failed to write encrypted vault to device storage.' };
+    }
+    const stamp: CloudFileStamp = {
+      lastModified: Date.now(),
+      size: serialized.length,
+      fingerprint: envelopeFingerprint(envelope),
+    };
+    markRemoteStampAccepted(stamp);
+    const meta = getNativeProviderMeta();
+    meta.lastSyncedAt = new Date().toISOString();
+    saveProviderMeta(meta);
+    return { status: 'ok', stamp };
+  }
+
+  if (!activeDirHandle) {
+    return { status: 'unlinked' };
+  }
+  const hasPerm = await verifyPermission(activeDirHandle, true);
+  if (!hasPerm) {
+    hasGrantedPermission = false;
+    return { status: 'no_permission' };
+  }
+  hasGrantedPermission = true;
+
+  // Optimistic concurrency check: refuse to overwrite a modified or corrupt remote file
+  if (!options.force) {
+    const existing = await readCloudFileRaw(activeDirHandle);
+    if (existing.status === 'no_permission') {
+      return { status: 'no_permission' };
+    }
+    if (existing.status === 'corrupt') {
+      return {
+        status: 'error',
+        message: `${VAULT_FILENAME} on disk is unreadable; refusing to overwrite.`,
+      };
+    }
+    if (existing.status === 'error') {
+      return { status: 'error', message: existing.message };
+    }
+    if (existing.status === 'ok') {
+      const expectedFp =
+        options.expectedFingerprint !== undefined
+          ? options.expectedFingerprint
+          : lastAcceptedFileStamp?.fingerprint ?? null;
+      if (expectedFp === null || existing.stamp.fingerprint !== expectedFp) {
+        return {
+          status: 'conflict',
+          remoteEnvelope: existing.envelope,
+          stamp: existing.stamp,
+        };
+      }
+    }
+  }
+
+  try {
+    const fileHandle = await activeDirHandle.getFileHandle(VAULT_FILENAME, {
+      create: true,
+    });
+    const writable = await fileHandle.createWritable();
+    await writable.write(serialized);
+    await writable.close();
+
+    const updatedFile = await fileHandle.getFile();
+    const stamp: CloudFileStamp = {
+      lastModified: updatedFile.lastModified,
+      size: updatedFile.size,
+      fingerprint: envelopeFingerprint(envelope),
+    };
+    markRemoteStampAccepted(stamp);
+
+    const meta = getSavedProviderMeta();
+    if (meta) {
       meta.lastSyncedAt = new Date().toISOString();
       saveProviderMeta(meta);
     }
-    return ok;
+    return { status: 'ok', stamp };
+  } catch (err) {
+    if (isPermissionDeniedError(err)) {
+      hasGrantedPermission = false;
+      return { status: 'no_permission' };
+    }
+    return {
+      status: 'error',
+      message: err instanceof Error ? err.message : `Failed writing ${VAULT_FILENAME}.`,
+    };
   }
-
-  if (!activeDirHandle) return false;
-  const hasPerm = await verifyPermission(activeDirHandle, true);
-  if (!hasPerm) return false;
-
-  const fileHandle = await activeDirHandle.getFileHandle(VAULT_FILENAME, {
-    create: true,
-  });
-  const writable = await fileHandle.createWritable();
-  await writable.write(JSON.stringify(envelope, null, 2));
-  await writable.close();
-
-  const updatedFile = await fileHandle.getFile();
-  lastKnownFileModified = updatedFile.lastModified;
-
-  const meta = getSavedProviderMeta();
-  if (meta) {
-    meta.lastSyncedAt = new Date().toISOString();
-    saveProviderMeta(meta);
-  }
-  return true;
 }
 
 /**
@@ -480,8 +683,8 @@ export async function writeVaultToCloudFolder(envelope: EncryptedEnvelope): Prom
  * directly into the user's cloud folder so they can open Crypsy on any other synced computer.
  */
 export async function provisionCloudFolderAssets(includePortableHtml = true): Promise<boolean> {
-  if (!activeDirHandle) {
-    throw new Error('No cloud folder linked yet.');
+  if (!activeDirHandle || !hasGrantedPermission) {
+    throw new Error('No cloud folder linked with write permission.');
   }
 
   const readmeText = [
@@ -527,99 +730,13 @@ export async function provisionCloudFolderAssets(includePortableHtml = true): Pr
   return true;
 }
 
-function sanitizeClonedPortableDom(): string {
-  const clone = document.documentElement.cloneNode(true) as HTMLElement;
-
-  const clearIds = [
-    'pinnedGrid',
-    'othersGrid',
-    'sidebarBoardsList',
-    'sidebarTagsList',
-    'composerImagesRow',
-    'composerTagsRow',
-    'editModalImagesRow',
-    'editModalTagsRow',
-    'editModalTimestamp',
-    'boardItemsLayer',
-    'boardTagsRow',
-    'ciphertextPreview',
-    'activeFilterText',
-    'reconnectBannerMsg',
-    'lastUpdatedText',
-    'crypsyContextMenu',
-  ];
-  for (const id of clearIds) {
-    const el = clone.querySelector(`#${id}`);
-    if (el) el.innerHTML = '';
-  }
-  clone.querySelectorAll('textarea').forEach((ta) => {
-    ta.textContent = '';
-  });
-  clone.querySelectorAll<HTMLInputElement>('input').forEach((inp) => {
-    const t = (inp.getAttribute('type') || 'text').toLowerCase();
-    if (t !== 'checkbox' && t !== 'radio' && t !== 'button' && t !== 'submit') {
-      inp.removeAttribute('value');
-    }
-  });
-
-  const hideIds = [
-    'reconnectCloudBanner',
-    'lastUpdatedBadge',
-    'clearSearchBtn',
-    'boardsActionBar',
-    'composerHeader',
-    'composerTagsRow',
-    'composerImagesRow',
-    'composerFooter',
-    'composerTagPopover',
-    'composerImagePopover',
-    'activeFilterBanner',
-    'pinnedSection',
-    'othersSection',
-    'emptyState',
-    'editModalBackdrop',
-    'editModalImagesRow',
-    'editModalTagPopover',
-    'editModalImagePopover',
-    'boardEditorBackdrop',
-    'boardSelectionBar',
-    'boardSelStrokeGroup',
-    'boardInkPopover',
-    'boardInkLiveCanvas',
-    'boardTagPopover',
-    'boardImagePopover',
-    'boardLinkPopover',
-    'boardMarqueeRect',
-    'wizardMobileSyncBox',
-    'cloudOnboardingBackdrop',
-    'vaultModalBackdrop',
-    'vaultPassphraseFeedback',
-    'updatesModalBackdrop',
-    'lockScreenOverlay',
-    'unlockErrorMsg',
-    'unlockConfirmWrapper',
-    'imageLightboxBackdrop',
-    'crypsyContextMenu',
-  ];
-  for (const id of hideIds) {
-    const el = clone.querySelector(`#${id}`);
-    if (el) el.classList.add('hidden');
-  }
-
-  const manifestLink = clone.querySelector('link[rel="manifest"]');
-  if (manifestLink) manifestLink.remove();
-
-  const cloudBtn = clone.querySelector('#cloudSetupBtn');
-  if (cloudBtn) {
-    cloudBtn.classList.remove('synced', 'detected');
-    cloudBtn.setAttribute('title', 'Connect or manage synced cloud provider folder');
-  }
-  const cloudLabel = clone.querySelector('#cloudSetupBtnLabel');
-  if (cloudLabel) cloudLabel.textContent = 'Setup Cloud Folder';
-  const lastUpdatedBadge = clone.querySelector('#lastUpdatedBadge');
-  if (lastUpdatedBadge) lastUpdatedBadge.setAttribute('title', 'Last vault update');
-
-  return '<!DOCTYPE html>\n' + clone.outerHTML;
+async function computeScriptSha256Csp(scriptBody: string): Promise<string> {
+  const bytes = new TextEncoder().encode(scriptBody);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const arr = new Uint8Array(digest);
+  let binary = '';
+  for (const b of arr) binary += String.fromCharCode(b);
+  return `'sha256-${btoa(binary)}'`;
 }
 
 /**
@@ -630,36 +747,7 @@ export async function buildSelfContainedHtmlInBrowser(): Promise<string> {
   const linkRegex = /<link\s+rel="stylesheet"\s+href="styles\.css"\s*\/?>/i;
   const scriptRegex = /<script\s+src="dist\/app\.bundle\.js"><\/script>/i;
 
-  try {
-    const [htmlRes, cssRes, bundleRes] = await Promise.all([
-      fetch(window.location.href).then((r) => (r.ok ? r.text() : '')),
-      fetch('styles.css').then((r) => (r.ok ? r.text() : '')),
-      fetch('dist/app.bundle.js').then((r) => (r.ok ? r.text() : '')),
-    ]);
-
-    if (cssRes && bundleRes) {
-      let baseHtml = htmlRes && linkRegex.test(htmlRes) && scriptRegex.test(htmlRes) ? htmlRes : '';
-      if (!baseHtml) {
-        const fallbackCandidates = ['app.html', 'index.html'];
-        for (const candidate of fallbackCandidates) {
-          const text = await fetch(candidate).then((r) => (r.ok ? r.text() : '')).catch(() => '');
-          if (text && linkRegex.test(text) && scriptRegex.test(text)) {
-            baseHtml = text;
-            break;
-          }
-        }
-      }
-      if (baseHtml) {
-        return baseHtml
-          .replace(/<link\s+rel="manifest"\s+href="\.\/manifest\.webmanifest"\s*\/?>\s*\r?\n?/i, '')
-          .replace(linkRegex, () => `<style>\n${cssRes}\n</` + 'style>')
-          .replace(scriptRegex, () => `<script>\n${bundleRes}\n</` + 'script>');
-      }
-    }
-  } catch {
-    // Expected on file:// where fetch() is blocked by CORS
-  }
-
+  // 1. Prefer the prebuilt portable file when served over HTTP/HTTPS (single source of truth)
   try {
     const portableRes = await fetch(PORTABLE_HTML_FILENAME).then((r) => (r.ok ? r.text() : ''));
     if (
@@ -671,17 +759,46 @@ export async function buildSelfContainedHtmlInBrowser(): Promise<string> {
       return portableRes;
     }
   } catch {
-    // Ignore fetch failure on file://
+    // Expected on file:// where fetch() is blocked by CORS
   }
 
-  const hasExternalCss = Boolean(document.querySelector('link[rel="stylesheet"][href="styles.css"]'));
-  const hasExternalJs = Boolean(document.querySelector('script[src="dist/app.bundle.js"]'));
-  const hasInlineCss = Array.from(document.querySelectorAll('style')).some(
-    (s) => (s.textContent?.length ?? 0) > 500
-  );
+  // 2. Fallback: assemble from modular dev assets with SHA-256 CSP hash (no 'unsafe-inline' script)
+  try {
+    const [htmlRes, cssRes, bundleRes] = await Promise.all([
+      fetch(window.location.href).then((r) => (r.ok ? r.text() : '')),
+      fetch('styles.css').then((r) => (r.ok ? r.text() : '')),
+      fetch('dist/app.bundle.js').then((r) => (r.ok ? r.text() : '')),
+    ]);
 
-  if (!hasExternalCss && !hasExternalJs && hasInlineCss) {
-    return sanitizeClonedPortableDom();
+    if (cssRes && bundleRes) {
+      let baseHtml = htmlRes && linkRegex.test(htmlRes) && scriptRegex.test(htmlRes) ? htmlRes : '';
+      if (!baseHtml) {
+        for (const candidate of ['app.html', 'index.html']) {
+          const text = await fetch(candidate).then((r) => (r.ok ? r.text() : '')).catch(() => '');
+          if (text && linkRegex.test(text) && scriptRegex.test(text)) {
+            baseHtml = text;
+            break;
+          }
+        }
+      }
+      if (baseHtml) {
+        const inlineScriptBody = `\n${bundleRes}\n`;
+        const scriptHash = await computeScriptSha256Csp(inlineScriptBody);
+        return baseHtml
+          .replace(/<link\s+rel="manifest"\s+href="\.\/manifest\.webmanifest"\s*\/?>\s*\r?\n?/i, '')
+          .replace(/script-src\s+'self'/, `script-src ${scriptHash}`)
+          .replace(linkRegex, () => `<style>\n${cssRes}\n</` + 'style>')
+          .replace(scriptRegex, () => `<script>${inlineScriptBody}</` + 'script>');
+      }
+    }
+  } catch {
+    // Expected on file:// where fetch() is blocked by CORS
+  }
+
+  // 3. When running from an already self-contained Crypsy-Portable.html over file://,
+  // return the pristine startup template captured before any vault data was decrypted.
+  if (cleanPortableTemplateHtml) {
+    return cleanPortableTemplateHtml;
   }
 
   throw new Error(
@@ -691,26 +808,32 @@ export async function buildSelfContainedHtmlInBrowser(): Promise<string> {
 
 /**
  * Polls `vault.crypsy.json` in the cloud directory to detect changes synced from other devices.
+ * Does NOT advance `lastAcceptedFileStamp` — callers must call `markRemoteStampAccepted(stamp)`
+ * once the remote envelope is actually applied.
  */
 function startSyncPolling(): void {
   stopSyncPolling();
   pollIntervalId = setInterval(async () => {
-    if (!activeDirHandle || !onExternalVaultUpdateCallback) return;
+    if (!activeDirHandle || !hasGrantedPermission || !onExternalVaultUpdateCallback) return;
     try {
       const hasPerm = await verifyPermission(activeDirHandle, false);
-      if (!hasPerm) return;
-      const fileHandle = await activeDirHandle.getFileHandle(VAULT_FILENAME, {
-        create: false,
-      });
-      const file = await fileHandle.getFile();
-      if (lastKnownFileModified > 0 && file.lastModified > lastKnownFileModified) {
-        lastKnownFileModified = file.lastModified;
-        const text = await file.text();
-        const envelope = JSON.parse(text) as EncryptedEnvelope;
-        onExternalVaultUpdateCallback(envelope);
+      if (!hasPerm) {
+        hasGrantedPermission = false;
+        return;
+      }
+      const res = await readCloudFileRaw(activeDirHandle);
+      if (res.status !== 'ok') return;
+
+      const acceptedFp = lastAcceptedFileStamp?.fingerprint ?? null;
+      if (
+        res.stamp.fingerprint !== acceptedFp &&
+        res.stamp.fingerprint !== lastNotifiedFingerprint
+      ) {
+        lastNotifiedFingerprint = res.stamp.fingerprint;
+        onExternalVaultUpdateCallback(res.envelope, res.stamp);
       }
     } catch {
-      // Ignore if file hasn't been created yet
+      // Ignore transient poll errors
     }
   }, 3500);
 }
@@ -726,31 +849,13 @@ export function onExternalUpdate(cb: ExternalVaultUpdateCallback): void {
   onExternalVaultUpdateCallback = cb;
 }
 
-export function isConnected(): boolean {
-  return isNativeApp() || Boolean(activeDirHandle);
+export function getConnectionStatus(): CloudConnectionStatus {
+  if (isNativeApp()) return 'connected';
+  if (activeDirHandle && hasGrantedPermission) return 'connected';
+  if (activeDirHandle || getSavedProviderMeta()) return 'needs_permission';
+  return 'unlinked';
 }
 
-export const CrypsyCloudSync = {
-  PROVIDERS,
-  VAULT_FILENAME,
-  PORTABLE_HTML_FILENAME,
-  isFileSystemAccessSupported,
-  isNativeApp,
-  getNativePlatform,
-  shareVaultWithNativeSheet,
-  detectOS,
-  getProviderPathHint,
-  detectRunningCloudLocation,
-  getLastKnownFileModified,
-  getSavedProviderMeta,
-  pickCloudFolder,
-  restoreSavedConnection,
-  reconnectSavedHandle,
-  unlinkCloudFolder,
-  readVaultFromCloudFolder,
-  writeVaultToCloudFolder,
-  provisionCloudFolderAssets,
-  buildSelfContainedHtmlInBrowser,
-  onExternalUpdate,
-  isConnected,
-};
+export function isConnected(): boolean {
+  return isNativeApp() || (Boolean(activeDirHandle) && hasGrantedPermission);
+}

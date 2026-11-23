@@ -23,9 +23,9 @@ export function filterNotes(
 
       if (!q) return true;
 
-      const titleMatch = (note.title || '').toLowerCase().includes(q);
-      const descMatch = (note.description || '').toLowerCase().includes(q);
-      const tagMatch = (note.tags || []).some((t) => t.toLowerCase().includes(cleanTagQuery));
+      const titleMatch = note.title.toLowerCase().includes(q);
+      const descMatch = note.description.toLowerCase().includes(q);
+      const tagMatch = note.tags.some((t) => t.toLowerCase().includes(cleanTagQuery));
       return titleMatch || descMatch || tagMatch;
     })
     .sort((a, b) => b.updatedAt - a.updatedAt);
@@ -50,16 +50,16 @@ export function filterBoards(
       if (
         activeFilter.type === 'tag' &&
         activeFilter.tag &&
-        !(board.tags || []).includes(activeFilter.tag)
+        !board.tags.includes(activeFilter.tag)
       ) {
         return false;
       }
 
       if (!q) return true;
 
-      const titleMatch = (board.title || '').toLowerCase().includes(q);
-      const tagMatch = (board.tags || []).some((t) => t.toLowerCase().includes(cleanTagQuery));
-      const itemMatch = (board.items || []).some((item) => {
+      const titleMatch = board.title.toLowerCase().includes(q);
+      const tagMatch = board.tags.some((t) => t.toLowerCase().includes(cleanTagQuery));
+      const itemMatch = board.items.some((item) => {
         if (item.type === 'text') return item.content.toLowerCase().includes(q);
         if (item.type === 'link') {
           return (

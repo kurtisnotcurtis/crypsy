@@ -3,70 +3,54 @@
  */
 
 import { MIN_PASSPHRASE_LENGTH } from './vault/crypto';
-import type { AppState, Note } from './types';
+import type { AppState, Note, UiPreferences } from './types';
 
 export const STORAGE_KEY_PREFS = 'crypsy_ui_prefs_v1';
 
 const ALLOWED_AUTO_LOCK_MINUTES = [0, 5, 15, 30, 60] as const;
 
-export interface ParsedPreferences {
-  viewMode?: 'grid' | 'list';
-  theme?: 'dark' | 'light';
-  boardsSectionExpanded?: boolean;
-  tagsSectionExpanded?: boolean;
-  guideSectionExpanded?: boolean;
-  autoCheckUpdates?: boolean;
-  autoLockMinutes?: number;
-  lockOnHide?: boolean;
-  blockExternalMedia?: boolean;
-}
+export const DEFAULT_PREFERENCES: UiPreferences = {
+  viewMode: 'grid',
+  theme: 'dark',
+  boardsSectionExpanded: true,
+  tagsSectionExpanded: true,
+  guideSectionExpanded: true,
+  autoCheckUpdates: false,
+  autoLockMinutes: 15,
+  lockOnHide: false,
+  blockExternalMedia: true,
+};
 
-interface RawStoredPrefs {
-  viewMode?: unknown;
-  theme?: unknown;
-  boardsSectionExpanded?: unknown;
-  tagsSectionExpanded?: unknown;
-  guideSectionExpanded?: unknown;
-  autoCheckUpdates?: unknown;
-  autoLockMinutes?: unknown;
-  lockOnHide?: unknown;
-  blockExternalMedia?: unknown;
-}
+type PrefKey = keyof UiPreferences;
+
+const PREF_VALIDATORS: { [K in PrefKey]: (val: unknown) => val is UiPreferences[K] } = {
+  viewMode: (v): v is UiPreferences['viewMode'] => v === 'list' || v === 'grid',
+  theme: (v): v is UiPreferences['theme'] => v === 'light' || v === 'dark',
+  boardsSectionExpanded: (v): v is boolean => typeof v === 'boolean',
+  tagsSectionExpanded: (v): v is boolean => typeof v === 'boolean',
+  guideSectionExpanded: (v): v is boolean => typeof v === 'boolean',
+  autoCheckUpdates: (v): v is boolean => typeof v === 'boolean',
+  autoLockMinutes: (v): v is number =>
+    typeof v === 'number' && (ALLOWED_AUTO_LOCK_MINUTES as readonly number[]).includes(v),
+  lockOnHide: (v): v is boolean => typeof v === 'boolean',
+  blockExternalMedia: (v): v is boolean => typeof v === 'boolean',
+};
+
+const PREF_KEYS = Object.keys(DEFAULT_PREFERENCES) as PrefKey[];
+
+export type ParsedPreferences = Partial<UiPreferences>;
 
 export function parseStoredPreferences(raw: string | null): ParsedPreferences {
   if (!raw) return {};
-  const prefs = JSON.parse(raw) as RawStoredPrefs;
-  const parsed: ParsedPreferences = {};
+  const prefs = JSON.parse(raw) as Record<string, unknown>;
+  if (!prefs || typeof prefs !== 'object') return {};
 
-  if (prefs.viewMode === 'list' || prefs.viewMode === 'grid') {
-    parsed.viewMode = prefs.viewMode;
-  }
-  if (prefs.theme === 'light' || prefs.theme === 'dark') {
-    parsed.theme = prefs.theme;
-  }
-  if (typeof prefs.boardsSectionExpanded === 'boolean') {
-    parsed.boardsSectionExpanded = prefs.boardsSectionExpanded;
-  }
-  if (typeof prefs.tagsSectionExpanded === 'boolean') {
-    parsed.tagsSectionExpanded = prefs.tagsSectionExpanded;
-  }
-  if (typeof prefs.guideSectionExpanded === 'boolean') {
-    parsed.guideSectionExpanded = prefs.guideSectionExpanded;
-  }
-  if (typeof prefs.autoCheckUpdates === 'boolean') {
-    parsed.autoCheckUpdates = prefs.autoCheckUpdates;
-  }
-  if (
-    typeof prefs.autoLockMinutes === 'number' &&
-    (ALLOWED_AUTO_LOCK_MINUTES as readonly number[]).includes(prefs.autoLockMinutes)
-  ) {
-    parsed.autoLockMinutes = prefs.autoLockMinutes;
-  }
-  if (typeof prefs.lockOnHide === 'boolean') {
-    parsed.lockOnHide = prefs.lockOnHide;
-  }
-  if (typeof prefs.blockExternalMedia === 'boolean') {
-    parsed.blockExternalMedia = prefs.blockExternalMedia;
+  const parsed: ParsedPreferences = {};
+  for (const key of PREF_KEYS) {
+    const val = prefs[key];
+    if (PREF_VALIDATORS[key](val)) {
+      (parsed as Record<PrefKey, unknown>)[key] = val;
+    }
   }
   return parsed;
 }
@@ -74,47 +58,18 @@ export function parseStoredPreferences(raw: string | null): ParsedPreferences {
 export function loadPreferencesIntoState(state: AppState): void {
   try {
     const parsed = parseStoredPreferences(localStorage.getItem(STORAGE_KEY_PREFS));
-    if (parsed.viewMode !== undefined) state.viewMode = parsed.viewMode;
-    if (parsed.theme !== undefined) state.theme = parsed.theme;
-    if (parsed.boardsSectionExpanded !== undefined) {
-      state.boardsSectionExpanded = parsed.boardsSectionExpanded;
-    }
-    if (parsed.tagsSectionExpanded !== undefined) {
-      state.tagsSectionExpanded = parsed.tagsSectionExpanded;
-    }
-    if (parsed.guideSectionExpanded !== undefined) {
-      state.guideSectionExpanded = parsed.guideSectionExpanded;
-    }
-    if (parsed.autoCheckUpdates !== undefined) {
-      state.autoCheckUpdates = parsed.autoCheckUpdates;
-    }
-    if (parsed.autoLockMinutes !== undefined) {
-      state.autoLockMinutes = parsed.autoLockMinutes;
-    }
-    if (parsed.lockOnHide !== undefined) state.lockOnHide = parsed.lockOnHide;
-    if (parsed.blockExternalMedia !== undefined) {
-      state.blockExternalMedia = parsed.blockExternalMedia;
-    }
+    Object.assign(state, parsed);
   } catch (e) {
     console.warn('Failed to load UI prefs:', e);
   }
 }
 
 export function savePreferencesFromState(state: AppState): void {
-  localStorage.setItem(
-    STORAGE_KEY_PREFS,
-    JSON.stringify({
-      viewMode: state.viewMode,
-      theme: state.theme,
-      boardsSectionExpanded: state.boardsSectionExpanded,
-      tagsSectionExpanded: state.tagsSectionExpanded,
-      guideSectionExpanded: state.guideSectionExpanded,
-      autoCheckUpdates: state.autoCheckUpdates,
-      autoLockMinutes: state.autoLockMinutes,
-      lockOnHide: state.lockOnHide,
-      blockExternalMedia: state.blockExternalMedia,
-    })
-  );
+  const out = {} as Record<PrefKey, unknown>;
+  for (const key of PREF_KEYS) {
+    out[key] = state[key];
+  }
+  localStorage.setItem(STORAGE_KEY_PREFS, JSON.stringify(out));
 }
 
 export function validateNewPassphrase(pass: string, confirm: string): string | null {

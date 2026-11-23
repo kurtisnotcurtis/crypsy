@@ -30,9 +30,10 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Build Crypsy & stage GitHub Pages site
+      - name: Build, test & stage GitHub Pages site
         run: |
           npm run build
+          npm test
           npm run pages:prepare
 
       - name: Setup Pages

@@ -1,0 +1,5 @@
+- Hardened vault decryption boundary, CSP (SHA-256 script hash), and gated legacy v1.x migration
+- Added cloud sync conflict detection/merge, queued remote updates, and corrupt-file overwrite protection
+- Preserved open note/board drafts on lock with abort-safe caching and live save/sync status indicators
+- Fixed board undo while typing, pan/zoom save churn, pen stroke performance, ink clipboard, and Send to Back
+- Fixed HTML entity corruption in search highlighting and added delete confirmation prompts

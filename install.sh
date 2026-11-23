@@ -12,7 +12,18 @@ else
   read -r -p "Enter target cloud folder path (e.g. ~/Dropbox or ~/OneDrive): " BASE_PATH
   BASE_PATH="${BASE_PATH/#\~/$HOME}"
   TARGET_DIR="$BASE_PATH/Crypsy"
-  mkdir -p "$TARGET_DIR"
-  cp "$SCRIPT_DIR/index.html" "$SCRIPT_DIR/styles.css" "$SCRIPT_DIR/crypto.js" "$SCRIPT_DIR/cloud-sync.js" "$SCRIPT_DIR/app.js" "$TARGET_DIR/"
+  mkdir -p "$TARGET_DIR/dist"
+  cp "$SCRIPT_DIR/index.html" "$SCRIPT_DIR/styles.css" "$TARGET_DIR/"
+  if [ -f "$SCRIPT_DIR/logo.svg" ]; then
+    cp "$SCRIPT_DIR/logo.svg" "$TARGET_DIR/"
+  fi
+  if [ -f "$SCRIPT_DIR/Crypsy-Portable.html" ]; then
+    cp "$SCRIPT_DIR/Crypsy-Portable.html" "$TARGET_DIR/"
+  fi
+  if [ -f "$SCRIPT_DIR/dist/app.bundle.js" ]; then
+    cp "$SCRIPT_DIR/dist/app.bundle.js" "$TARGET_DIR/dist/"
+  else
+    echo "[WARN] dist/app.bundle.js not found. Run 'npm run build' with Node.js first, or open Crypsy-Portable.html."
+  fi
   echo "[OK] Crypsy installed to: $TARGET_DIR"
 fi

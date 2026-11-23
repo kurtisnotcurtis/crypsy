@@ -14,6 +14,7 @@ import {
   duplicateNoteInList,
   renameTagInVault,
 } from '../src/vault/mutations';
+import { mergeVaultPayloads, normalizeVaultPayload } from '../src/vault/payload';
 
 const sampleNotes: Note[] = [
   {
@@ -32,7 +33,7 @@ const sampleNotes: Note[] = [
     description: 'AES-GCM encryption details',
     tags: ['work'],
     pinned: false,
-    color: 'ocean',
+    color: 'cobalt',
     createdAt: 150,
     updatedAt: 300,
   },
@@ -187,5 +188,137 @@ describe('vault search, mutations, preferences & menus', () => {
       boardMenuWithRename.some((e) => e.type === 'action' && e.id === 'rename-board'),
       true
     );
+  });
+
+  it('normalizes untrusted vault payloads at the decryption boundary', () => {
+    const hostile = {
+      notes: [
+        {
+          id: 'n-hostile',
+          title: 'Valid Note',
+          description: 'Body',
+          // Missing tags array (previously crashed renderSidebar!)
+          color: 'red" onmouseover="alert(1)',
+          pinned: 1,
+          images: [
+            { id: 'i1', src: 'javascript:alert(1)', sourceType: 'external', createdAt: 10 },
+            { id: 'i2', src: 'https://example.com/ok.png', sourceType: 'external', createdAt: 20 },
+          ],
+        },
+      ],
+      boards: [
+        {
+          id: 'b-hostile',
+          title: 'Board',
+          color: 'invalid',
+          gridStyle: 'xss',
+          viewport: { panX: 'bad', panY: 10, zoom: 999 },
+          items: [
+            {
+              id: 't1',
+              type: 'text',
+              x: '10" onload="alert(1)',
+              y: 20,
+              width: '200;background:url(x)',
+              zIndex: 'not-a-num',
+              rotation: '45',
+              content: 'hello',
+              align: 'left" onclick="evil()',
+              fontSize: '15px"><img src=x onerror=alert(1)>',
+            },
+            {
+              id: 'l1',
+              type: 'link',
+              x: 0,
+              y: 0,
+              width: 200,
+              zIndex: 2,
+              rotation: 0,
+              url: 'javascript:alert(1)',
+            },
+            {
+              id: 's1',
+              type: 'stroke',
+              tool: 'pen',
+              strokeColor: 'red" onload="alert(1)',
+              strokeWidth: '4" onerror="alert(1)',
+              sourceWidth: 100,
+              sourceHeight: 50,
+              x: 0,
+              y: 0,
+              width: 100,
+              height: 50,
+              zIndex: 3,
+              rotation: 0,
+              points: [[1, 2, 0.5], ['bad', 3, 0.5]],
+            },
+          ],
+        },
+      ],
+    };
+
+    const normalized = normalizeVaultPayload(hostile, 5000);
+    assert.equal(normalized.notes.length, 1);
+    assert.deepEqual(normalized.notes[0]!.tags, []);
+    assert.equal(normalized.notes[0]!.color, 'default');
+    assert.equal(normalized.notes[0]!.images?.length, 1);
+    assert.equal(normalized.notes[0]!.images?.[0]?.src, 'https://example.com/ok.png');
+
+    assert.equal(normalized.boards?.length, 1);
+    const board = normalized.boards![0]!;
+    assert.equal(board.color, 'default');
+    assert.equal(board.gridStyle, undefined);
+    assert.equal(board.viewport.panX, 0);
+    assert.equal(board.viewport.zoom, 2.5);
+    // javascript: link item was dropped
+    assert.equal(board.items.length, 2);
+    const textItem = board.items[0]!;
+    assert.equal(textItem.type, 'text');
+    assert.equal(textItem.x, 0);
+    assert.equal(textItem.width, 240);
+    assert.equal(textItem.align, 'left');
+    assert.equal(textItem.fontSize, 15);
+
+    const strokeItem = board.items[1]!;
+    assert.equal(strokeItem.type, 'stroke');
+    assert.equal(strokeItem.strokeColor, 'auto-ink');
+    assert.equal(strokeItem.strokeWidth, 3);
+    assert.deepEqual(strokeItem.points, [[1, 2, 0.5]]);
+  });
+
+  it('merges conflicting local and remote payloads keeping newer items and unioning additions', () => {
+    const local = {
+      notes: [
+        { ...sampleNotes[0]!, title: 'Local Newer', updatedAt: 500 },
+        {
+          id: 'n-local-only',
+          title: 'Local Added',
+          description: '',
+          tags: ['local'],
+          pinned: false,
+          color: 'default' as const,
+          createdAt: 400,
+          updatedAt: 400,
+        },
+      ],
+      tags: ['home', 'local'],
+      boards: [],
+    };
+    const remote = {
+      notes: [
+        { ...sampleNotes[0]!, title: 'Remote Older', updatedAt: 200 },
+        { ...sampleNotes[1]!, updatedAt: 300 },
+      ],
+      tags: ['home', 'work'],
+      boards: sampleBoards,
+    };
+
+    const merged = mergeVaultPayloads(local, remote);
+    assert.equal(merged.notes.length, 3);
+    assert.equal(merged.notes.find((n) => n.id === 'n1')?.title, 'Local Newer');
+    assert.ok(merged.notes.some((n) => n.id === 'n-local-only'));
+    assert.ok(merged.notes.some((n) => n.id === 'n2'));
+    assert.equal(merged.boards?.length, 1);
+    assert.deepEqual(merged.tags.sort(), ['home', 'local', 'work']);
   });
 });

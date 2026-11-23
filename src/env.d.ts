@@ -22,5 +22,4 @@ declare const __CRYPSY_VERSION__: string | undefined;
 
 interface Window {
   showDirectoryPicker(options?: DirectoryPickerOptions): Promise<FileSystemDirectoryHandle>;
-  CRYPSY_VERSION?: string;
 }

@@ -19,6 +19,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Verify release tag matches package.json
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$RELEASE_TAG" != "v$PKG_VERSION" ]; then
+            echo "Release tag ($RELEASE_TAG) does not match package.json version (v$PKG_VERSION)!" >&2
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -45,19 +57,20 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Decode Android signing keystore (if configured)
+      - name: Decode Android signing keystore (required)
         id: keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/crypsy-release.jks"
-            echo "keystore_path=$RUNNER_TEMP/crypsy-release.jks" >> "$GITHUB_OUTPUT"
-            echo "signed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::ANDROID_KEYSTORE_BASE64 secret not set; building an unsigned Android APK."
-            echo "signed=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "::error::Android release signing secrets are missing; refusing to publish an unsigned APK." >&2
+            exit 1
           fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/crypsy-release.jks"
+          echo "keystore_path=$RUNNER_TEMP/crypsy-release.jks" >> "$GITHUB_OUTPUT"
 
       - name: Build Android APK
         working-directory: android
@@ -77,10 +90,8 @@ jobs:
           mkdir -p release-assets
           if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
             cp android/app/build/outputs/apk/release/app-release.apk "release-assets/Crypsy-${RELEASE_TAG}-android.apk"
-          elif [ -f android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp android/app/build/outputs/apk/release/app-release-unsigned.apk "release-assets/Crypsy-${RELEASE_TAG}-android-unsigned.apk"
           else
-            echo "Release APK not found!" >&2
+            echo "Signed release APK not found!" >&2
             exit 1
           fi
 

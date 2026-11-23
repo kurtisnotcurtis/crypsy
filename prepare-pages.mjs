@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
 const outDir = path.join(rootDir, '_pages');
 
 fs.rmSync(outDir, { recursive: true, force: true });
@@ -34,7 +35,17 @@ for (const [srcRel, destRel] of copies) {
   if (!fs.existsSync(srcPath)) {
     throw new Error(`Missing asset for GitHub Pages staging: ${srcPath}`);
   }
-  fs.copyFileSync(srcPath, destPath);
+  if (srcRel === 'docs/index.html' && pkg.version) {
+    const landingHtml = fs
+      .readFileSync(srcPath, 'utf8')
+      .replace(
+        /(<span class="jk">"appVersion"<\/span>: <span class="js">")[^"]+("<\/span>)/,
+        `$1${pkg.version}$2`
+      );
+    fs.writeFileSync(destPath, landingHtml, 'utf8');
+  } else {
+    fs.copyFileSync(srcPath, destPath);
+  }
 }
 
 console.log(`Prepared GitHub Pages bundle in ${outDir} (${copies.length} files).`);
