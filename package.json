@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "esbuild tests/core.test.ts --bundle --platform=node --format=esm --outfile=dist/core.test.mjs && node --test dist/core.test.mjs",
     "build:js": "node esbuild.config.mjs",
     "watch": "node esbuild.config.mjs --watch",
     "build": "npm run typecheck && npm run build:js && node install.js --build-only",
