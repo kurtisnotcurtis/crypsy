@@ -1,8 +1,10 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 const isWatch = process.argv.includes('--watch');
 const noMinify = process.argv.includes('--no-minify');
 
@@ -13,6 +15,9 @@ const buildOptions = {
   bundle: true,
   format: 'iife',
   target: 'es2022',
+  define: {
+    __CRYPSY_VERSION__: JSON.stringify(pkg.version || '1.6.4'),
+  },
   sourcemap: isWatch ? 'inline' : false,
   minify: !isWatch && !noMinify,
   logLevel: 'info',

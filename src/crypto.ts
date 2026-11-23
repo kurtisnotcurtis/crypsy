@@ -127,12 +127,21 @@ export async function decryptPayload<T = VaultPayload>(
   return JSON.parse(dec.decode(plaintextBuffer)) as T;
 }
 
+export function isValidEncryptedEnvelope(value: unknown): value is EncryptedEnvelope {
+  if (!value || typeof value !== 'object') return false;
+  const obj = value as Record<string, unknown>;
+  return (
+    typeof obj.salt === 'string' &&
+    obj.salt.length > 0 &&
+    typeof obj.iv === 'string' &&
+    obj.iv.length > 0 &&
+    typeof obj.ciphertext === 'string' &&
+    obj.ciphertext.length > 0
+  );
+}
+
 export const CrypsyCrypto = {
   encryptPayload,
   decryptPayload,
+  isValidEncryptedEnvelope,
 };
-
-// Preserve global for incremental migration alongside legacy <script> tags
-if (typeof globalThis !== 'undefined') {
-  (globalThis as Record<string, unknown>).CrypsyCrypto = CrypsyCrypto;
-}

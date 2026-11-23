@@ -4,10 +4,12 @@
 
 export type NoteColor =
   | 'default'
-  | 'teal'
-  | 'cobalt'
+  | 'coral'
   | 'amber'
   | 'sage'
+  | 'teal'
+  | 'cobalt'
+  | 'plum'
   | (string & {});
 
 export interface NoteImage {

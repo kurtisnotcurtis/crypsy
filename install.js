@@ -163,12 +163,17 @@ function installToDirectory(baseDir, createSubfolder = true) {
   const portablePath = path.join(targetDir, 'Crypsy-Portable.html');
   fs.writeFileSync(portablePath, portableHtml, 'utf8');
 
-  // 2. Also copy modular source files for local development / inspection
-  for (const file of ['index.html', 'styles.css', 'crypto.js', 'cloud-sync.js', 'app.js', 'logo.svg']) {
+  // 2. Also copy modular runtime files for local development / inspection
+  for (const file of ['index.html', 'styles.css', 'logo.svg']) {
     const srcPath = path.join(ROOT_DIR, file);
     if (fs.existsSync(srcPath)) {
       fs.copyFileSync(srcPath, path.join(targetDir, file));
     }
+  }
+  const bundleSrc = path.join(ROOT_DIR, 'dist', 'app.bundle.js');
+  if (fs.existsSync(bundleSrc)) {
+    fs.mkdirSync(path.join(targetDir, 'dist'), { recursive: true });
+    fs.copyFileSync(bundleSrc, path.join(targetDir, 'dist', 'app.bundle.js'));
   }
 
   // 3. Write README-CRYPSY.txt

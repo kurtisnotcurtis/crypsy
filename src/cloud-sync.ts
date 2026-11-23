@@ -20,6 +20,7 @@ import type {
   OsPlatform,
   RestoreConnectionResult,
 } from './types';
+import { idbDelete, idbGet, idbPut } from './vault-cache';
 
 const IDB_NAME = 'crypsy_cloud_sync_db_v1';
 const IDB_STORE = 'handles';
@@ -258,33 +259,9 @@ export function getLastKnownFileModified(): number | null {
 }
 
 // IndexedDB helpers for persisting FileSystemDirectoryHandle across browser restarts
-function openHandleDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (!('indexedDB' in window)) {
-      reject(new Error('IndexedDB not supported'));
-      return;
-    }
-    const req = indexedDB.open(IDB_NAME, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(IDB_STORE)) {
-        db.createObjectStore(IDB_STORE);
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
 async function saveDirHandleToIDB(handle: FileSystemDirectoryHandle): Promise<void> {
   try {
-    const db = await openHandleDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      tx.objectStore(IDB_STORE).put(handle, HANDLE_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    await idbPut(IDB_NAME, IDB_STORE, HANDLE_KEY, handle);
   } catch (e) {
     console.warn('Could not persist directory handle:', e);
   }
@@ -292,13 +269,7 @@ async function saveDirHandleToIDB(handle: FileSystemDirectoryHandle): Promise<vo
 
 async function loadDirHandleFromIDB(): Promise<FileSystemDirectoryHandle | null> {
   try {
-    const db = await openHandleDB();
-    return await new Promise<FileSystemDirectoryHandle | null>((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readonly');
-      const req = tx.objectStore(IDB_STORE).get(HANDLE_KEY);
-      req.onsuccess = () => resolve((req.result as FileSystemDirectoryHandle | undefined) ?? null);
-      req.onerror = () => reject(req.error);
-    });
+    return await idbGet<FileSystemDirectoryHandle>(IDB_NAME, IDB_STORE, HANDLE_KEY);
   } catch {
     return null;
   }
@@ -306,13 +277,7 @@ async function loadDirHandleFromIDB(): Promise<FileSystemDirectoryHandle | null>
 
 async function clearDirHandleFromIDB(): Promise<void> {
   try {
-    const db = await openHandleDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      tx.objectStore(IDB_STORE).delete(HANDLE_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    await idbDelete(IDB_NAME, IDB_STORE, HANDLE_KEY);
   } catch {
     // ignore
   }
@@ -590,6 +555,12 @@ function sanitizeClonedPortableDom(): string {
   clone.querySelectorAll('textarea').forEach((ta) => {
     ta.textContent = '';
   });
+  clone.querySelectorAll<HTMLInputElement>('input').forEach((inp) => {
+    const t = (inp.getAttribute('type') || 'text').toLowerCase();
+    if (t !== 'checkbox' && t !== 'radio' && t !== 'button' && t !== 'submit') {
+      inp.removeAttribute('value');
+    }
+  });
 
   const hideIds = [
     'reconnectCloudBanner',
@@ -783,7 +754,3 @@ export const CrypsyCloudSync = {
   onExternalUpdate,
   isConnected,
 };
-
-if (typeof globalThis !== 'undefined') {
-  (globalThis as Record<string, unknown>).CrypsyCloudSync = CrypsyCloudSync;
-}
