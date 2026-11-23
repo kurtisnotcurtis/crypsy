@@ -29,9 +29,10 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Build Crypsy-Portable.html & Capacitor web assets
+      - name: Build Crypsy-Portable.html, run tests & prepare Capacitor web assets
         run: |
           npm run build
+          npm test
           npm run cap:prepare
           npx cap sync android
 
