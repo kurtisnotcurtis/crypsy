@@ -2,7 +2,7 @@
  * Declarative context menu builders for Spatial Board canvas and selected items.
  */
 
-import type { ContextMenuEntry } from './context-menu';
+import type { ContextMenuEntry } from '../ui/context-menu';
 import type {
   Board,
   BoardGridStyle,
@@ -11,7 +11,7 @@ import type {
   BoardTextAlign,
   BoardTextItem,
   NoteColor,
-} from './types';
+} from '../types';
 
 export interface CanvasContextMenuActions {
   activeTool: string;

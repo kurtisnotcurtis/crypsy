@@ -3,7 +3,7 @@
  */
 
 import type { ContextMenuEntry } from './context-menu';
-import type { Board, Note, NoteColor } from './types';
+import type { Board, Note, NoteColor } from '../types';
 
 export interface NoteContextMenuActions {
   onEdit: () => void;

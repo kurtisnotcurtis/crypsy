@@ -2,9 +2,9 @@
  * Crypsy — Pure Board Item Alignment & Clipboard Copy/Paste Helpers
  */
 
-import type { BoardAlignAxis } from './board-selection-bar';
-import type { BoardItem } from './types';
-import { createId } from './utils';
+import type { BoardAlignAxis } from './selection-bar';
+import type { BoardItem } from '../types';
+import { createId } from '../utils';
 
 export interface ItemAabb {
   minX: number;

@@ -9,34 +9,34 @@ import {
   type BoardClipboardHost,
   handleBoardPasteEvent,
   pasteFromBoardSystemClipboard,
-} from './board-clipboard';
+} from './clipboard';
 import {
   GRID_STYLES,
   GRID_STYLE_LABELS,
   buildCanvasContextMenuEntries,
   buildItemContextMenuEntries,
-} from './board-context-menu';
+} from './context-menu';
 import {
   type ItemMetrics,
   type ResizeHandleDir,
   clamp,
   computeResizedItemRect,
   normalizeAngleDeg,
-} from './board-geometry';
-import { BoardHistory } from './board-history';
-import { BoardInkToolbar } from './board-ink-toolbar';
-import { BoardLiveCanvas } from './board-live-canvas';
+} from './geometry';
+import { BoardHistory } from './history';
+import { BoardInkToolbar } from './ink-toolbar';
+import { BoardLiveCanvas } from './live-canvas';
 import {
   alignBoardItemsInPlace,
   cloneItemsForPaste,
   summarizeBoardItemsForClipboard,
-} from './board-ops';
-import { renderBoardItemHtml } from './board-render';
-import { BoardSelectionBar } from './board-selection-bar';
+} from './ops';
+import { renderBoardItemHtml } from './render';
+import { BoardSelectionBar } from './selection-bar';
 import {
   type ContextMenuController,
   shouldBypassCustomContextMenu,
-} from './context-menu';
+} from '../ui/context-menu';
 import {
   type StrokePoint,
   computePointPressure,
@@ -45,7 +45,7 @@ import {
   normalizeRawStroke,
   segmentHitsStroke,
 } from './ink';
-import { noteImageFromFile, noteImageFromUrl } from './media';
+import { noteImageFromFile, noteImageFromUrl } from '../media';
 import type {
   Board,
   BoardGridStyle,
@@ -58,7 +58,7 @@ import type {
   BoardTextItem,
   NoteColor,
   NoteImage,
-} from './types';
+} from '../types';
 import {
   autoResizeTextarea,
   byId,
@@ -67,7 +67,7 @@ import {
   getRotatedRectAabb,
   isEditableElement,
   maybeById,
-} from './utils';
+} from '../utils';
 
 export interface BoardEditorHost {
   getBoard: () => Board | null;

@@ -5,16 +5,16 @@
  * and the Edit Note Modal.
  */
 
-import { handleListEnterKeydown } from './markdown';
+import { handleListEnterKeydown } from '../markdown';
 import {
   extractClipboardImages,
   extractImageUrlFromClipboardHtml,
   extractStandaloneImageUrl,
   noteImageFromFile,
   noteImageFromUrl,
-} from './media';
-import type { NoteColor, NoteImage } from './types';
-import { autoResizeTextarea } from './utils';
+} from '../media';
+import type { NoteColor, NoteImage } from '../types';
+import { autoResizeTextarea } from '../utils';
 
 export interface NoteDraftData {
   pinned: boolean;

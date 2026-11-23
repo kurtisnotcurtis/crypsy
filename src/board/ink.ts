@@ -4,7 +4,7 @@
  * smooth variable-width SVG/Canvas2D stroke generation, eraser hit-testing, and lasso geometry.
  */
 
-import type { BoardStrokeItem } from './types';
+import type { BoardStrokeItem } from '../types';
 
 export interface InkSwatch {
   id: string;

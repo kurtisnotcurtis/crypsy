@@ -5,8 +5,8 @@
  * editable inputs (spellcheck) and Shift+Right-Click.
  */
 
-import type { NoteColor } from './types';
-import { escapeHtml, isEditableElement, maybeById } from './utils';
+import type { NoteColor } from '../types';
+import { escapeHtml, isEditableElement, maybeById } from '../utils';
 
 export type ContextMenuEntry =
   | {

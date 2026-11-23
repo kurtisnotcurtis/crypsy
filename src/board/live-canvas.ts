@@ -10,7 +10,7 @@ import {
   renderStrokeToCanvas2d,
   resolveLiveInkColor,
 } from './ink';
-import type { Board, BoardInkTool } from './types';
+import type { Board, BoardInkTool } from '../types';
 
 export class BoardLiveCanvas {
   private readonly canvas: HTMLCanvasElement;

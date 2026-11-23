@@ -4,8 +4,8 @@
  * manual lock button, and encrypted vault export/import controls.
  */
 
-import type { EncryptedEnvelope } from './types';
-import { byId, maybeById } from './utils';
+import type { EncryptedEnvelope } from '../types';
+import { byId, maybeById } from '../utils';
 
 export interface VaultModalHost {
   getLastEnvelope: () => EncryptedEnvelope | null;

@@ -2,7 +2,7 @@
  * Crypsy — Settings & GitHub Releases Update Checker Controller
  */
 
-import { APP_VERSION, escapeHtml, maybeById } from './utils';
+import { APP_VERSION, escapeHtml, maybeById } from '../utils';
 
 interface GitHubReleaseAsset {
   name?: string;

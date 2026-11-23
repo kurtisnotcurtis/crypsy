@@ -3,7 +3,7 @@
  * and local encrypted vault cache storage (IndexedDB + localStorage fallback).
  */
 
-import type { EncryptedEnvelope } from './types';
+import type { EncryptedEnvelope } from '../types';
 
 const STORAGE_KEY_VAULT = 'crypsy_encrypted_vault_v1';
 const VAULT_IDB_NAME = 'crypsy_vault_cache_db_v1';

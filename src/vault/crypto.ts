@@ -4,8 +4,8 @@
  * Keys are derived strictly from the user-supplied vault passphrase via PBKDF2-SHA256.
  */
 
-import type { EncryptedEnvelope, VaultPayload } from './types';
-import { APP_VERSION } from './utils';
+import type { EncryptedEnvelope, VaultPayload } from '../types';
+import { APP_VERSION } from '../utils';
 
 export const PBKDF2_ITERATIONS = 600000;
 const LEGACY_PBKDF2_ITERATIONS = 150000;

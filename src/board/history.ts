@@ -2,7 +2,7 @@
  * Crypsy — Board In-Session Undo/Redo History Stack
  */
 
-import type { BoardItem } from './types';
+import type { BoardItem } from '../types';
 
 function cloneBoardItems(items: BoardItem[]): BoardItem[] {
   return structuredClone(items);

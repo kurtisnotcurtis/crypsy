@@ -13,21 +13,21 @@
 import {
   buildBoardContextMenuEntries,
   buildNoteContextMenuEntries,
-} from './app-context-menus';
-import { BoardEditorController } from './board-editor';
+} from './ui/app-context-menus';
+import { BoardEditorController } from './board/editor';
 import {
   createBoardCardHtml,
   createNoteCardHtml,
   fitBoardMinimaps,
   renderImageOrPrivacyPlaceholderHtml as renderCardImageOrPlaceholder,
-} from './card-render';
-import { CrypsyCloudSync } from './cloud-sync';
-import { CloudWizardController } from './cloud-wizard';
-import { ContextMenuController, shouldBypassCustomContextMenu } from './context-menu';
-import { CrypsyCrypto } from './crypto';
-import { LockScreenController } from './lock-screen';
+} from './ui/card-render';
+import { CrypsyCloudSync } from './vault/cloud-sync';
+import { CloudWizardController } from './ui/cloud-wizard';
+import { ContextMenuController, shouldBypassCustomContextMenu } from './ui/context-menu';
+import { CrypsyCrypto } from './vault/crypto';
+import { LockScreenController } from './vault/lock-screen';
 import { toggleCheckboxLine } from './markdown';
-import { bindNoteDraftSurface } from './note-draft-surface';
+import { bindNoteDraftSurface } from './ui/note-draft-surface';
 import {
   createSeedNotes,
   loadPreferencesIntoState,
@@ -46,7 +46,7 @@ import type {
   RestoreConnectionResult,
   VaultPayload,
 } from './types';
-import { UpdatesController } from './updates';
+import { UpdatesController } from './ui/updates';
 import {
   APP_VERSION,
   autoResizeTextarea,
@@ -59,15 +59,15 @@ import {
   isExternalHttpUrl,
   maybeById,
 } from './utils';
-import { loadVaultEnvelopeFromCache, saveVaultEnvelopeToCache } from './vault-cache';
-import { VaultModalController } from './vault-modal';
+import { loadVaultEnvelopeFromCache, saveVaultEnvelopeToCache } from './vault/cache';
+import { VaultModalController } from './vault/modal';
 import {
   createNewBoard,
   deleteTagInVault,
   duplicateBoardInList,
   duplicateNoteInList,
   renameTagInVault,
-} from './vault-mutations';
+} from './vault/mutations';
 
 const LEGACY_DEFAULT_DEVICE_SECRET = 'crypsy-local-device-default-key-v1';
 

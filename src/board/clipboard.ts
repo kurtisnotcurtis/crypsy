@@ -9,8 +9,8 @@ import {
   extractStandaloneWebUrl,
   noteImageFromFile,
   noteImageFromUrl,
-} from './media';
-import type { Board, NoteImage } from './types';
+} from '../media';
+import type { Board, NoteImage } from '../types';
 
 export interface BoardClipboardHost {
   getInsertCanvasPoint: (board: Board) => { x: number; y: number };

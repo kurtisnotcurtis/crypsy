@@ -4,8 +4,8 @@
  */
 
 import { renderBoardStrokeSvg } from './ink';
-import type { BoardItem } from './types';
-import { escapeHtml, highlightText, isExternalHttpUrl } from './utils';
+import type { BoardItem } from '../types';
+import { escapeHtml, highlightText, isExternalHttpUrl } from '../utils';
 
 export function renderBlockedExternalImageHtml(
   src: string,

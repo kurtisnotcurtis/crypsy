@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { computeResizedItemRect, normalizeAngleDeg } from '../src/board-geometry';
-import { BoardHistory } from '../src/board-history';
-import { alignBoardItemsInPlace, summarizeBoardItemsForClipboard } from '../src/board-ops';
+import { computeResizedItemRect, normalizeAngleDeg } from '../src/board/geometry';
+import { BoardHistory } from '../src/board/history';
+import { alignBoardItemsInPlace, summarizeBoardItemsForClipboard } from '../src/board/ops';
 import {
   AUTO_INK_TOKEN,
   buildCenterlinePath,
@@ -15,7 +15,7 @@ import {
   sanitizeInkColor,
   segmentHitsStroke,
   simplifyStrokePoints,
-} from '../src/ink';
+} from '../src/board/ink';
 import type { BoardStrokeItem } from '../src/types';
 
 describe('board ink geometry', () => {

@@ -4,9 +4,9 @@
  * and mobile share/import wizard modal.
  */
 
-import { CrypsyCloudSync } from './cloud-sync';
-import type { CloudProviderId, EncryptedEnvelope, RestoreConnectionResult } from './types';
-import { byId, maybeById } from './utils';
+import { CrypsyCloudSync } from '../vault/cloud-sync';
+import type { CloudProviderId, EncryptedEnvelope, RestoreConnectionResult } from '../types';
+import { byId, maybeById } from '../utils';
 
 export interface CloudWizardHost {
   getSelectedProviderId: () => CloudProviderId;

@@ -19,8 +19,8 @@ import type {
   EncryptedEnvelope,
   OsPlatform,
   RestoreConnectionResult,
-} from './types';
-import { idbDelete, idbGet, idbPut } from './vault-cache';
+} from '../types';
+import { idbDelete, idbGet, idbPut } from './cache';
 
 const IDB_NAME = 'crypsy_cloud_sync_db_v1';
 const IDB_STORE = 'handles';

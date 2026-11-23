@@ -4,13 +4,13 @@ import { describe, it } from 'node:test';
 import {
   renderBlockedExternalImageHtml,
   renderBoardTextContentHtml,
-} from '../src/board-render';
-import { createBoardCardHtml, createNoteCardHtml } from '../src/card-render';
-import { clampMenuPosition } from '../src/context-menu';
+} from '../src/board/render';
+import { createBoardCardHtml, createNoteCardHtml } from '../src/ui/card-render';
+import { clampMenuPosition } from '../src/ui/context-menu';
 import { renderMarkdownDescription, toggleCheckboxLine } from '../src/markdown';
 import { extractStandaloneImageUrl, extractStandaloneWebUrl } from '../src/media';
 import type { Board, Note } from '../src/types';
-import { compareSemver } from '../src/updates';
+import { compareSemver } from '../src/ui/updates';
 import {
   createId,
   escapeHtml,

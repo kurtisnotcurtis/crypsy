@@ -6,7 +6,7 @@ import {
   decryptPayload,
   encryptPayload,
   isValidEncryptedEnvelope,
-} from '../src/crypto';
+} from '../src/vault/crypto';
 import type { VaultPayload } from '../src/types';
 
 describe('crypto', () => {

@@ -5,8 +5,8 @@
  */
 
 import { AUTO_INK_TOKEN, INK_SWATCHES } from './ink';
-import type { BoardInkTool } from './types';
-import { byId } from './utils';
+import type { BoardInkTool } from '../types';
+import { byId } from '../utils';
 
 export type BoardActiveTool = 'select' | 'lasso' | 'eraser' | 'pen' | 'highlighter';
 

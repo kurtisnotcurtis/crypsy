@@ -4,16 +4,16 @@
  * for text/stroke/tint/rotation/alignment controls, and toolbar button bindings.
  */
 
-import { normalizeAngleDeg } from './board-geometry';
-import { renderInkSwatchButtonsHtml } from './board-ink-toolbar';
+import { normalizeAngleDeg } from './geometry';
+import { renderInkSwatchButtonsHtml } from './ink-toolbar';
 import type {
   BoardItem,
   BoardStrokeItem,
   BoardTextAlign,
   BoardTextItem,
   NoteColor,
-} from './types';
-import { byId } from './utils';
+} from '../types';
+import { byId } from '../utils';
 
 export type BoardAlignAxis = 'left' | 'centerX' | 'right' | 'top' | 'centerY';
 

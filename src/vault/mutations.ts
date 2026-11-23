@@ -2,8 +2,8 @@
  * Crypsy — Pure Vault Collection Mutation Helpers (Notes, Boards, Tags)
  */
 
-import type { ActiveFilter, Board, Note } from './types';
-import { createId } from './utils';
+import type { ActiveFilter, Board, Note } from '../types';
+import { createId } from '../utils';
 
 export interface VaultCollection {
   notes: Note[];

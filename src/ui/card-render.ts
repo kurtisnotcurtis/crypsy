@@ -2,15 +2,15 @@
  * Crypsy — Workspace Card & Board Minimap Rendering Helpers
  */
 
-import { renderBlockedExternalImageHtml, renderBoardItemHtml } from './board-render';
-import { renderMarkdownDescription } from './markdown';
-import type { Board, Note } from './types';
+import { renderBlockedExternalImageHtml, renderBoardItemHtml } from '../board/render';
+import { renderMarkdownDescription } from '../markdown';
+import type { Board, Note } from '../types';
 import {
   escapeHtml,
   formatTimestamp,
   getRotatedRectAabb,
   highlightText,
-} from './utils';
+} from '../utils';
 
 export type ExternalImageAllowedFn = (src: string) => boolean;
 

@@ -2,7 +2,7 @@
  * Crypsy — UI Preferences Persistence, Passphrase Validation & First-Launch Seed Notes
  */
 
-import { MIN_PASSPHRASE_LENGTH } from './crypto';
+import { MIN_PASSPHRASE_LENGTH } from './vault/crypto';
 import type { AppState, Note } from './types';
 
 export const STORAGE_KEY_PREFS = 'crypsy_ui_prefs_v1';

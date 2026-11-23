@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import {
   buildBoardContextMenuEntries,
   buildNoteContextMenuEntries,
-} from '../src/app-context-menus';
+} from '../src/ui/app-context-menus';
 import { parseStoredPreferences, validateNewPassphrase } from '../src/preferences';
 import { filterBoards, filterNotes } from '../src/search-filter';
 import type { ActiveFilter, Board, Note } from '../src/types';
@@ -13,7 +13,7 @@ import {
   duplicateBoardInList,
   duplicateNoteInList,
   renameTagInVault,
-} from '../src/vault-mutations';
+} from '../src/vault/mutations';
 
 const sampleNotes: Note[] = [
   {
