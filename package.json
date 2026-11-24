@@ -7,6 +7,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node run-tests.mjs",
+    "test:e2e": "playwright test",
     "build:js": "node esbuild.config.mjs",
     "watch": "node esbuild.config.mjs --watch",
     "build": "npm run typecheck && npm run build:js && node install.js --build-only",
@@ -23,6 +24,7 @@
     "@capacitor/android": "^8.6.2",
     "@capacitor/cli": "^8.6.2",
     "@capacitor/ios": "^8.6.2",
+    "@playwright/test": "^1.65.1",
     "esbuild": "^0.25.0",
     "typescript": "^5.8.0"
   },

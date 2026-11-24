@@ -279,7 +279,7 @@ export function bindNoteDraftSurface(config: NoteDraftSurfaceConfig): NoteDraftS
       setImageStatus(
         noteImg.sourceType === 'embedded'
           ? 'Downloaded & encrypted as WebP!'
-          : 'Linked external image (CORS restricted download).'
+          : 'Linked external image (remote host blocked direct download).'
       );
       setTimeout(() => {
         imagePopover?.classList.add('hidden');

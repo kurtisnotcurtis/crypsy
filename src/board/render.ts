@@ -36,7 +36,9 @@ export function renderBoardTextContentHtml(content: string, query: string): stri
   return lines
     .map((line) => {
       if (!line) return '<br />';
-      const tokenRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"']+)/gi;
+      // Linear-time link matcher: excludes `[` inside link labels and bounds lengths to prevent ReDoS
+      const tokenRegex =
+        /\[([^\]\[]{1,500})\]\((https?:\/\/[^\s)]{1,2048})\)|(https?:\/\/[^\s<>"']{1,2048})/gi;
       let result = '';
       let lastIdx = 0;
       let match: RegExpExecArray | null;

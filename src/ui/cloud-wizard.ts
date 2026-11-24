@@ -20,6 +20,7 @@ import {
 } from '../vault/cloud-sync';
 import type {
   CloudConnectionStatus,
+  CloudFileStamp,
   CloudProviderId,
   EncryptedEnvelope,
 } from '../types';
@@ -28,7 +29,10 @@ import { byId } from '../utils';
 export interface CloudWizardHost {
   getSelectedProviderId: () => CloudProviderId;
   setSelectedProviderId: (id: CloudProviderId) => void;
-  onLoadCloudEnvelope: (envelope: EncryptedEnvelope) => Promise<'applied' | 'needs_unlock' | 'cancelled'>;
+  onLoadCloudEnvelope: (
+    envelope: EncryptedEnvelope,
+    stamp?: CloudFileStamp
+  ) => Promise<'applied' | 'needs_unlock' | 'cancelled'>;
   persistEncryptedVault: () => Promise<void>;
   updateCloudStatusUI: (status?: CloudConnectionStatus) => void;
   shareOrDownloadVaultJson: () => Promise<void>;
@@ -201,11 +205,18 @@ export class CloudWizardController {
         }
 
         if (readRes.status === 'ok') {
-          const outcome = await this.host.onLoadCloudEnvelope(readRes.envelope);
+          const outcome = await this.host.onLoadCloudEnvelope(readRes.envelope, readRes.stamp);
+          if (outcome === 'cancelled') {
+            await unlinkCloudFolder();
+            this.host.updateCloudStatusUI('unlinked');
+            return;
+          }
           if (outcome === 'applied') {
             markRemoteStampAccepted(readRes.stamp);
           } else {
+            this.host.updateCloudStatusUI('connected');
             this.close();
+            return;
           }
         } else if (readRes.status === 'not_found') {
           await this.host.persistEncryptedVault();

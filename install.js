@@ -205,8 +205,11 @@ function installToDirectory(baseDir, createSubfolder = true) {
     '  1. Open "Crypsy-Portable.html" (or "index.html") in Chrome, Edge, or Brave.',
     '  2. Click "Setup Cloud Folder" in the top-right bar and select this folder',
     `     (${targetDir}) so Crypsy auto-saves "vault.crypsy.json" here on every edit.`,
-    '  3. On any other computer synced with this cloud provider, open',
-    '     "Crypsy-Portable.html" directly from this folder!',
+    '  3. On other computers synced with this cloud provider, prefer opening a',
+    '     locally verified copy of "Crypsy-Portable.html" (checked against',
+    '     SHA256SUMS.txt from GitHub Releases) if anyone else can write to this',
+    '     cloud folder; client-side encryption protects vault confidentiality',
+    '     against storage readers, not untrusted writers modifying the HTML app.',
     '===================================================================',
   ].join(os.EOL);
 

@@ -8,7 +8,12 @@ export const APP_VERSION =
     : 'dev';
 
 export function createId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  const rand =
+    Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+  return `${prefix}-${Date.now()}-${rand}`;
 }
 
 export function normalizeTag(raw: string): string {
@@ -126,6 +131,20 @@ export function getRotatedRectAabb(
   return { minX, minY, maxX, maxY };
 }
 
+export function isSafeDataImageUrl(url: string): boolean {
+  return /^data:image\/(?:png|jpe?g|gif|webp|avif|bmp|ico);base64,[A-Za-z0-9+/=]+$/i.test(
+    String(url).trim()
+  );
+}
+
 export function isExternalHttpUrl(url: string): boolean {
-  return /^https?:\/\//i.test(url.trim());
+  const trimmed = String(url).trim();
+  if (!trimmed) return false;
+  if (/^https?:/i.test(trimmed)) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }

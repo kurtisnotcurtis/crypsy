@@ -104,6 +104,8 @@ let activeDirHandle: FileSystemDirectoryHandle | null = null;
 let hasGrantedPermission = false;
 let lastAcceptedFileStamp: CloudFileStamp | null = null;
 let lastNotifiedFingerprint: string | null = null;
+let lastPolledFileMeta: { lastModified: number; size: number } | null = null;
+let pollInFlight = false;
 let pollIntervalId: ReturnType<typeof setInterval> | null = null;
 let onExternalVaultUpdateCallback: ExternalVaultUpdateCallback | null = null;
 let cleanPortableTemplateHtml: string | null = null;
@@ -165,8 +167,35 @@ function isPermissionDeniedError(err: unknown): boolean {
   return e.name === 'NotAllowedError' || e.name === 'SecurityError';
 }
 
+export function pickBestNativeVaultCandidate(
+  candidates: Array<{ envelope: EncryptedEnvelope; stamp: CloudFileStamp }>
+): { envelope: EncryptedEnvelope; stamp: CloudFileStamp } | null {
+  if (candidates.length === 0) return null;
+  let best = candidates[0]!;
+  for (let i = 1; i < candidates.length; i++) {
+    const next = candidates[i]!;
+    const bestRev = best.envelope.revision ?? 0;
+    const nextRev = next.envelope.revision ?? 0;
+    if (nextRev > bestRev) {
+      best = next;
+    } else if (nextRev === bestRev) {
+      const bestTs = best.envelope.updatedAt ? Date.parse(best.envelope.updatedAt) : 0;
+      const nextTs = next.envelope.updatedAt ? Date.parse(next.envelope.updatedAt) : 0;
+      if (Number.isFinite(nextTs) && (!Number.isFinite(bestTs) || nextTs > bestTs)) {
+        best = next;
+      }
+    }
+  }
+  return best;
+}
+
 async function readNativeVault(): Promise<CloudReadResult> {
+  const validCandidates: Array<{ envelope: EncryptedEnvelope; stamp: CloudFileStamp }> = [];
+  let sawCorrupt: string | null = null;
   let sawError: string | null = null;
+
+  // Inspect BOTH Directory.Documents and Directory.Data so a fallback write to Data
+  // is never shadowed by an older stale vault remaining in Documents.
   for (const directory of [Directory.Documents, Directory.Data]) {
     try {
       const res = await Filesystem.readFile({
@@ -175,34 +204,50 @@ async function readNativeVault(): Promise<CloudReadResult> {
         encoding: Encoding.UTF8,
       });
       if (typeof res.data !== 'string' || !res.data.trim()) {
-        return { status: 'corrupt', message: `${VAULT_FILENAME} is empty or unreadable.` };
+        sawCorrupt = sawCorrupt ?? `${VAULT_FILENAME} is empty or unreadable.`;
+        continue;
       }
       let parsed: unknown;
       try {
         parsed = JSON.parse(res.data);
       } catch {
-        return {
-          status: 'corrupt',
-          message: `${VAULT_FILENAME} contains invalid JSON and will not be overwritten.`,
-        };
+        sawCorrupt =
+          sawCorrupt ?? `${VAULT_FILENAME} contains invalid JSON and will not be overwritten.`;
+        continue;
       }
       if (!isValidEncryptedEnvelope(parsed)) {
-        return {
-          status: 'corrupt',
-          message: `${VAULT_FILENAME} is missing valid encrypted envelope fields.`,
-        };
+        sawCorrupt =
+          sawCorrupt ?? `${VAULT_FILENAME} is missing valid encrypted envelope fields.`;
+        continue;
+      }
+      let mtime = Date.now();
+      try {
+        const stat = await Filesystem.stat({ path: NATIVE_VAULT_PATH, directory });
+        if (typeof stat.mtime === 'number' && Number.isFinite(stat.mtime)) {
+          mtime = stat.mtime;
+        }
+      } catch {
+        // stat optional on some devices
       }
       const stamp: CloudFileStamp = {
-        lastModified: Date.now(),
+        lastModified: mtime,
         size: res.data.length,
         fingerprint: envelopeFingerprint(parsed),
       };
-      return { status: 'ok', envelope: parsed, stamp };
+      validCandidates.push({ envelope: parsed, stamp });
     } catch (err) {
       if (!isFileNotFoundError(err)) {
         sawError = err instanceof Error ? err.message : String(err);
       }
     }
+  }
+
+  const best = pickBestNativeVaultCandidate(validCandidates);
+  if (best) {
+    return { status: 'ok', envelope: best.envelope, stamp: best.stamp };
+  }
+  if (sawCorrupt) {
+    return { status: 'corrupt', message: sawCorrupt };
   }
   if (sawError) {
     return { status: 'error', message: sawError };
@@ -229,7 +274,8 @@ async function writeNativeVaultText(content: string): Promise<boolean> {
 }
 
 /**
- * Shares an encrypted vault envelope via the native iOS/Android OS share sheet.
+ * Shares an encrypted vault envelope via the native iOS/Android OS share sheet
+ * and cleans up the temporary exported cache file afterward.
  */
 export async function shareVaultWithNativeSheet(
   envelope: EncryptedEnvelope,
@@ -244,14 +290,21 @@ export async function shareVaultWithNativeSheet(
     encoding: Encoding.UTF8,
     recursive: true,
   });
-  const { uri } = await Filesystem.getUri({
-    path: filename,
-    directory: Directory.Cache,
-  });
-  await Share.share({
-    title: 'Crypsy Encrypted Vault',
-    files: [uri],
-  });
+  try {
+    const { uri } = await Filesystem.getUri({
+      path: filename,
+      directory: Directory.Cache,
+    });
+    await Share.share({
+      title: 'Crypsy Encrypted Vault',
+      files: [uri],
+    });
+  } finally {
+    await Filesystem.deleteFile({
+      path: filename,
+      directory: Directory.Cache,
+    }).catch(() => {});
+  }
   return true;
 }
 
@@ -335,6 +388,11 @@ export function getLastAcceptedFileStamp(): CloudFileStamp | null {
 export function markRemoteStampAccepted(stamp: CloudFileStamp | null): void {
   lastAcceptedFileStamp = stamp;
   lastNotifiedFingerprint = stamp?.fingerprint ?? null;
+  lastPolledFileMeta = stamp ? { lastModified: stamp.lastModified, size: stamp.size } : null;
+}
+
+export function markRemoteFingerprintNotified(fingerprint: string | null): void {
+  lastNotifiedFingerprint = fingerprint;
 }
 
 // IndexedDB helpers for persisting FileSystemDirectoryHandle across browser restarts
@@ -433,6 +491,7 @@ export async function pickCloudFolder(
   hasGrantedPermission = true;
   lastAcceptedFileStamp = null;
   lastNotifiedFingerprint = null;
+  lastPolledFileMeta = null;
   await saveDirHandleToIDB(targetHandle);
 
   const provider = PROVIDERS[providerId] ?? PROVIDERS.custom;
@@ -457,6 +516,7 @@ export async function restoreSavedConnection(): Promise<RestoreConnectionResult>
     const meta = getNativeProviderMeta();
     saveProviderMeta(meta);
     hasGrantedPermission = true;
+    startSyncPolling();
     return { status: 'connected', meta };
   }
 
@@ -500,6 +560,7 @@ export async function unlinkCloudFolder(): Promise<void> {
   hasGrantedPermission = false;
   lastAcceptedFileStamp = null;
   lastNotifiedFingerprint = null;
+  lastPolledFileMeta = null;
   await clearDirHandleFromIDB();
   clearProviderMeta();
 }
@@ -588,6 +649,34 @@ export async function writeVaultToCloudFolder(
   const serialized = JSON.stringify(envelope, null, 2);
 
   if (isNativeApp()) {
+    // Optimistic concurrency check on native storage too (e.g., iCloud/Files app external edits)
+    if (!options.force) {
+      const existing = await readNativeVault();
+      if (existing.status === 'corrupt') {
+        return {
+          status: 'error',
+          message: `${VAULT_FILENAME} on device is unreadable; refusing to overwrite.`,
+        };
+      }
+      if (existing.status === 'error') {
+        return { status: 'error', message: existing.message };
+      }
+      if (existing.status === 'ok') {
+        const expectedFp =
+          options.expectedFingerprint !== undefined
+            ? options.expectedFingerprint
+            : lastAcceptedFileStamp?.fingerprint ?? null;
+        if (expectedFp === null || existing.stamp.fingerprint !== expectedFp) {
+          lastNotifiedFingerprint = existing.stamp.fingerprint;
+          return {
+            status: 'conflict',
+            remoteEnvelope: existing.envelope,
+            stamp: existing.stamp,
+          };
+        }
+      }
+    }
+
     const ok = await writeNativeVaultText(serialized);
     if (!ok) {
       return { status: 'error', message: 'Failed to write encrypted vault to device storage.' };
@@ -635,6 +724,7 @@ export async function writeVaultToCloudFolder(
           ? options.expectedFingerprint
           : lastAcceptedFileStamp?.fingerprint ?? null;
       if (expectedFp === null || existing.stamp.fingerprint !== expectedFp) {
+        lastNotifiedFingerprint = existing.stamp.fingerprint;
         return {
           status: 'conflict',
           remoteEnvelope: existing.envelope,
@@ -700,11 +790,13 @@ export async function provisionCloudFolderAssets(includePortableHtml = true): Pr
     '     Key Derivation: PBKDF2-SHA256, 600,000 iterations).',
     '     Do NOT delete or manually edit this file.',
     '',
-    `  2. ${PORTABLE_HTML_FILENAME}`,
+    `  2. ${PORTABLE_HTML_FILENAME} (optional)`,
     '     Self-contained portable Crypsy web application.',
-    '     On any computer where this cloud folder is synced, simply',
-    `     open ${PORTABLE_HTML_FILENAME} in Chrome, Edge, or Brave and`,
-    '     link this folder to read and edit your encrypted notes.',
+    '     SECURITY NOTE: Client-side encryption protects vault confidentiality',
+    '     against cloud readers, not against an attacker who can modify files',
+    '     in this folder. On untrusted/shared folders, prefer opening a locally',
+    '     verified copy of Crypsy-Portable.html (checked against SHA256SUMS.txt',
+    '     from GitHub Releases) rather than executing an HTML file from the folder.',
     '',
     `Provisioned at: ${new Date().toISOString()}`,
     '===================================================================',
@@ -807,22 +899,62 @@ export async function buildSelfContainedHtmlInBrowser(): Promise<string> {
 }
 
 /**
- * Polls `vault.crypsy.json` in the cloud directory to detect changes synced from other devices.
- * Does NOT advance `lastAcceptedFileStamp` — callers must call `markRemoteStampAccepted(stamp)`
- * once the remote envelope is actually applied.
+ * Polls `vault.crypsy.json` in the cloud directory (or native Files storage) to detect
+ * changes synced from other devices. Checks lightweight file metadata (`lastModified` + `size`)
+ * before reading/parsing the full JSON body, skips ticks while backgrounded, and does NOT
+ * advance `lastAcceptedFileStamp` until callers explicitly call `markRemoteStampAccepted(stamp)`.
  */
 function startSyncPolling(): void {
   stopSyncPolling();
   pollIntervalId = setInterval(async () => {
-    if (!activeDirHandle || !hasGrantedPermission || !onExternalVaultUpdateCallback) return;
+    if (pollInFlight || !onExternalVaultUpdateCallback) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+    pollInFlight = true;
     try {
+      if (isNativeApp()) {
+        const res = await readNativeVault();
+        if (res.status !== 'ok') return;
+        const acceptedFp = lastAcceptedFileStamp?.fingerprint ?? null;
+        if (
+          res.stamp.fingerprint !== acceptedFp &&
+          res.stamp.fingerprint !== lastNotifiedFingerprint
+        ) {
+          lastNotifiedFingerprint = res.stamp.fingerprint;
+          onExternalVaultUpdateCallback(res.envelope, res.stamp);
+        }
+        return;
+      }
+
+      if (!activeDirHandle || !hasGrantedPermission) return;
       const hasPerm = await verifyPermission(activeDirHandle, false);
       if (!hasPerm) {
         hasGrantedPermission = false;
         return;
       }
+
+      // Cheap metadata check before reading & parsing the entire vault file
+      try {
+        const fileHandle = await activeDirHandle.getFileHandle(VAULT_FILENAME, { create: false });
+        const file = await fileHandle.getFile();
+        if (
+          lastPolledFileMeta &&
+          file.lastModified === lastPolledFileMeta.lastModified &&
+          file.size === lastPolledFileMeta.size
+        ) {
+          return;
+        }
+      } catch (metaErr) {
+        if (isFileNotFoundError(metaErr)) return;
+        if (isPermissionDeniedError(metaErr)) {
+          hasGrantedPermission = false;
+          return;
+        }
+      }
+
       const res = await readCloudFileRaw(activeDirHandle);
       if (res.status !== 'ok') return;
+      lastPolledFileMeta = { lastModified: res.stamp.lastModified, size: res.stamp.size };
 
       const acceptedFp = lastAcceptedFileStamp?.fingerprint ?? null;
       if (
@@ -834,6 +966,8 @@ function startSyncPolling(): void {
       }
     } catch {
       // Ignore transient poll errors
+    } finally {
+      pollInFlight = false;
     }
   }, 3500);
 }

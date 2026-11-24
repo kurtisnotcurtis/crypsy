@@ -16,7 +16,7 @@ export interface VaultModalHost {
   getBlockExternalMedia: () => boolean;
   setBlockExternalMedia: (enabled: boolean) => void;
   validateNewPassphrase: (pass: string, confirm: string) => string | null;
-  onRekeyPassphrase: (nextPassphrase: string) => Promise<void>;
+  onRekeyPassphrase: (currentPassphrase: string, nextPassphrase: string) => Promise<void>;
   onLockNow: () => Promise<void>;
   onExportVault: () => Promise<void>;
   onImportVaultFile: (file: File, backdropToClose?: HTMLElement) => Promise<void>;
@@ -25,6 +25,7 @@ export interface VaultModalHost {
 interface VaultModalElements {
   backdrop: HTMLElement;
   closeBtn: HTMLButtonElement;
+  currentPassphraseInput: HTMLInputElement;
   passphraseInput: HTMLInputElement;
   confirmPassphraseInput: HTMLInputElement;
   passphraseFeedback: HTMLElement;
@@ -47,6 +48,7 @@ export class VaultModalController {
     this.els = {
       backdrop: byId('vaultModalBackdrop'),
       closeBtn: byId<HTMLButtonElement>('closeVaultModalBtn'),
+      currentPassphraseInput: byId<HTMLInputElement>('vaultCurrentPassphraseInput'),
       passphraseInput: byId<HTMLInputElement>('vaultPassphraseInput'),
       confirmPassphraseInput: byId<HTMLInputElement>('vaultConfirmPassphraseInput'),
       passphraseFeedback: byId('vaultPassphraseFeedback'),
@@ -68,6 +70,7 @@ export class VaultModalController {
 
   public open(): void {
     this.updateCiphertextPreview();
+    this.els.currentPassphraseInput.value = '';
     this.els.passphraseInput.value = '';
     this.els.confirmPassphraseInput.value = '';
     this.els.passphraseFeedback.className = 'vault-feedback hidden';
@@ -83,6 +86,7 @@ export class VaultModalController {
   }
 
   public clearSensitiveUI(): void {
+    this.els.currentPassphraseInput.value = '';
     this.els.passphraseInput.value = '';
     this.els.confirmPassphraseInput.value = '';
     this.els.ciphertextPreview.textContent = '';
@@ -122,6 +126,13 @@ export class VaultModalController {
     });
 
     this.els.updatePassphraseBtn.addEventListener('click', async () => {
+      const currentPass = this.els.currentPassphraseInput.value;
+      if (!currentPass) {
+        this.els.passphraseFeedback.className = 'vault-feedback error';
+        this.els.passphraseFeedback.textContent =
+          'Enter your current passphrase to authorize changing the vault key.';
+        return;
+      }
       const nextPass = this.els.passphraseInput.value;
       const confirmPass = this.els.confirmPassphraseInput.value;
       const validationError = this.host.validateNewPassphrase(nextPass, confirmPass);
@@ -134,7 +145,8 @@ export class VaultModalController {
       this.els.updatePassphraseBtn.disabled = true;
       this.els.updatePassphraseBtn.textContent = 'Encrypting...';
       try {
-        await this.host.onRekeyPassphrase(nextPass);
+        await this.host.onRekeyPassphrase(currentPass, nextPass);
+        this.els.currentPassphraseInput.value = '';
         this.els.passphraseInput.value = '';
         this.els.confirmPassphraseInput.value = '';
         this.els.passphraseFeedback.className = 'vault-feedback success';

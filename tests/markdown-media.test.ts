@@ -18,6 +18,7 @@ import {
   getRotatedRectAabb,
   highlightText,
   isExternalHttpUrl,
+  isSafeDataImageUrl,
 } from '../src/utils';
 
 describe('utils, media & context-menu', () => {
@@ -67,12 +68,24 @@ describe('utils, media & context-menu', () => {
     assert.ok(Math.abs(aabb.maxY - 75) < 1e-6);
   });
 
-  it('renders markdown links and bare URLs in board text safely', () => {
+  it('renders markdown links and bare URLs in board text safely and in linear time (M8)', () => {
     const html = renderBoardTextContentHtml('See [Docs](https://example.com) and https://foo.bar', '');
     assert.ok(html.includes('href="https://example.com"'));
     assert.ok(html.includes('href="https://foo.bar"'));
     assert.equal(isExternalHttpUrl('https://example.com'), true);
+    assert.equal(isExternalHttpUrl('https:\\\\evil.example\\px.png'), true);
+    assert.equal(isExternalHttpUrl('ht\ttps://evil.example/px.png'), true);
     assert.equal(isExternalHttpUrl('data:image/webp;base64,abc'), false);
+    assert.equal(isSafeDataImageUrl('data:image/webp;base64,AAAA'), true);
+    assert.equal(isSafeDataImageUrl('https://evil.example/a.png'), false);
+
+    // M8 ReDoS regression: 80,000 '[' characters must render in linear time (<150ms)
+    const t0 = Date.now();
+    const evilLine = '['.repeat(80_000);
+    const out = renderBoardTextContentHtml(evilLine, '');
+    const elapsed = Date.now() - t0;
+    assert.equal(out.length, 80_000);
+    assert.ok(elapsed < 150, `Expected linear-time render (<150ms), took ${elapsed}ms`);
   });
 
   it('extracts standalone image and web URLs', () => {

@@ -34,6 +34,23 @@ export function compareSemver(a: string, b: string): number {
   return 0;
 }
 
+function sanitizeGitHubReleaseUrl(raw: string | undefined, fallback: string): string {
+  if (!raw) return fallback;
+  try {
+    const parsed = new URL(raw);
+    if (
+      parsed.protocol === 'https:' &&
+      parsed.hostname === 'github.com' &&
+      parsed.pathname.startsWith('/kurtisnotcurtis/crypsy/')
+    ) {
+      return parsed.href;
+    }
+  } catch {
+    // fall back
+  }
+  return fallback;
+}
+
 export interface UpdatesHost {
   getAutoCheckUpdates: () => boolean;
   setAutoCheckUpdates: (enabled: boolean) => void;
@@ -102,24 +119,36 @@ export class UpdatesController {
       const release = (await res.json()) as GitHubReleaseResponse;
       const latestTag = release.tag_name || release.name || '';
       const isNewer = compareSemver(latestTag, APP_VERSION) > 0;
+      const fallbackReleaseUrl = 'https://github.com/kurtisnotcurtis/crypsy/releases/latest';
+      const releasePageUrl = sanitizeGitHubReleaseUrl(release.html_url, fallbackReleaseUrl);
       const portableAsset = Array.isArray(release.assets)
         ? release.assets.find((a) => a.name && a.name.toLowerCase().includes('portable'))
         : undefined;
-      const downloadUrl =
-        portableAsset?.browser_download_url ||
-        release.html_url ||
-        'https://github.com/kurtisnotcurtis/crypsy/releases/latest';
+      const checksumsAsset = Array.isArray(release.assets)
+        ? release.assets.find((a) => a.name && /sha256sums/i.test(a.name))
+        : undefined;
+      const downloadUrl = sanitizeGitHubReleaseUrl(
+        portableAsset?.browser_download_url,
+        releasePageUrl
+      );
+      const checksumsUrl = checksumsAsset
+        ? sanitizeGitHubReleaseUrl(checksumsAsset.browser_download_url, releasePageUrl)
+        : null;
 
       if (isNewer) {
         this.els.appVersionBadge.classList.add('update-available');
         this.els.appVersionBadge.textContent = `v${APP_VERSION} • Update`;
         this.els.appVersionBadge.title = `Update available: ${latestTag}`;
         this.els.updateCheckStatus.className = 'update-status-box has-update';
+        const checksumLink = checksumsUrl
+          ? `<a href="${escapeHtml(checksumsUrl)}" target="_blank" rel="noopener noreferrer" class="btn-link">SHA-256 Checksums</a>`
+          : '';
         this.els.updateCheckStatus.innerHTML = `
           <div><strong>Update available: ${escapeHtml(latestTag)}</strong> (installed: v${escapeHtml(APP_VERSION)})</div>
           <div class="update-actions-row">
             <a href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener noreferrer" class="btn-primary" style="text-decoration:none;">Download ${escapeHtml(latestTag)}</a>
-            <a href="${escapeHtml(release.html_url || downloadUrl)}" target="_blank" rel="noopener noreferrer" class="btn-link">Release Notes</a>
+            <a href="${escapeHtml(releasePageUrl)}" target="_blank" rel="noopener noreferrer" class="btn-link">Release Notes</a>
+            ${checksumLink}
           </div>
         `;
       } else {

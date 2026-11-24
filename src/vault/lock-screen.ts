@@ -9,13 +9,14 @@ import {
   readVaultFromCloudFolder,
 } from './cloud-sync';
 import { MIN_PASSPHRASE_LENGTH, VaultDecryptionError } from './crypto';
-import type { CloudProviderId, EncryptedEnvelope } from '../types';
+import type { CloudFileStamp, CloudProviderId, EncryptedEnvelope } from '../types';
 import { byId } from '../utils';
 
 export type LockScreenMode = 'unlock' | 'setup' | 'upgrade';
 
 export interface LockScreenHost {
   isPendingCloudPermission: () => boolean;
+  isUnlocked: () => boolean;
   getSelectedProviderId: () => CloudProviderId;
   validateNewPassphrase: (pass: string, confirm: string) => string | null;
   onCreateOrUpgradeVault: (mode: 'setup' | 'upgrade', passphrase: string) => Promise<void>;
@@ -24,7 +25,7 @@ export interface LockScreenHost {
   onCancelPendingImport: () => void;
   onResumeCloudSync: () => Promise<{ reconnected: boolean; error?: string }>;
   onCloudStatusConnected: () => void;
-  onLoadCloudEnvelope: (envelope: EncryptedEnvelope) => Promise<void>;
+  onLoadCloudEnvelope: (envelope: EncryptedEnvelope, stamp?: CloudFileStamp) => Promise<void>;
   onImportVaultFile: (file: File) => Promise<void>;
 }
 
@@ -116,7 +117,7 @@ export class LockScreenController {
 
     this.els.passphraseInput.setAttribute(
       'autocomplete',
-      isCreate ? 'new-password' : 'current-password'
+      isCreate ? 'new-password' : 'off'
     );
     this.els.confirmWrapper.classList.toggle('hidden', !isCreate);
     this.els.confirmPassphraseInput.required = isCreate;
@@ -165,7 +166,9 @@ export class LockScreenController {
         this.els.submitBtn.textContent = 'Encrypting...';
         try {
           await this.host.onCreateOrUpgradeVault(this.mode, attempt);
-          this.hide();
+          if (this.host.isUnlocked()) {
+            this.hide();
+          }
         } catch (err) {
           this.showError(
             err instanceof Error ? err.message : 'Failed to create encrypted vault.'
@@ -182,7 +185,9 @@ export class LockScreenController {
       this.els.submitBtn.textContent = 'Decrypting...';
       try {
         await this.host.onUnlockVault(attempt);
-        this.hide();
+        if (this.host.isUnlocked()) {
+          this.hide();
+        }
       } catch (err) {
         if (err instanceof VaultDecryptionError) {
           this.showError(err.message);
@@ -218,7 +223,7 @@ export class LockScreenController {
         this.host.onCloudStatusConnected();
         const readRes = await readVaultFromCloudFolder();
         if (readRes.status === 'ok') {
-          await this.host.onLoadCloudEnvelope(readRes.envelope);
+          await this.host.onLoadCloudEnvelope(readRes.envelope, readRes.stamp);
         } else if (readRes.status === 'not_found') {
           this.setMode(
             'setup',
