@@ -1,0 +1,5 @@
+- Hardened locking with atomic draft snapshots, lock-generation fencing, and non-extractable CryptoKeys
+- Added v2 AES-GCM AAD envelope binding, rollback guards, and a 5-envelope local backup ring
+- Required 12+ character passphrases, current-passphrase re-keying, and sync/import confirmations
+- Added cross-tab coordination, FIFO session queueing, and tombstone/item-level board merges
+- Fixed HTTPS image CSP, native sync conflict handling, and added release checksums/provenance

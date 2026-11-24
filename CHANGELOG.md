@@ -3,6 +3,19 @@
 All notable changes to **Crypsy Note** are documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.1] - 2026-11-24
+### Security
+- **Non-Extractable Session Keys & Stronger Passphrase Policy (`src/vault/crypto.ts`, `src/vault/session.ts`, `src/preferences.ts`, `src/vault/modal.ts`, `index.html`)**: Replaced plaintext passphrase retention in session state with non-extractable WebCrypto `CryptoKey` handles (`VaultSessionKey`), required verifying the current passphrase before re-keying, raised the minimum new-vault passphrase length to 12 characters, and rejected repeating, common, or sequential passphrases.
+- **v2 AES-GCM AAD Envelopes, Rollback Guard & Backup Ring (`src/vault/crypto.ts`, `src/vault/cache.ts`, `src/vault/session.ts`)**: Bound v2 envelope headers and monotonic `revision` numbers into AES-GCM Additional Authenticated Data (AAD) while maintaining backward-compatible v1 decryption, added anti-rollback checks, preserved local cached envelopes pre-unlock, and retained a 5-envelope IndexedDB backup ring.
+- **Atomic Lock Snapshotting, Lock-Generation Fencing & Hygiene (`src/vault/session.ts`, `src/app.ts`, `src/board/editor.ts`)**: Snapshotted pending drafts atomically before wiping state/DOM/clipboard on lock with non-aborting encrypted lock flushes, checked monotonic `lockGeneration` tokens after every `await` across unlock/import/sync/re-key flows, and added wake/visibility auto-lock listeners.
+- **Safe Destructive Flows, Media Gating & Supply-Chain Hardening (`src/ui/cloud-wizard.ts`, `src/vault/lock-screen.ts`, `src/board/render.ts`, `src/markdown.ts`, `src/vault/payload.ts`, `.github/workflows/`)**: Added confirmation prompts before destructive cloud-folder links and locked file imports, made copying `Crypsy-Portable.html` into cloud folders opt-in with threat-model docs, added `form-action 'self'` and `connect-src https:` in CSP for WebP URL embedding, canonicalized URLs and gated board image lightboxes, replaced board link regexes with linear-time parsing + payload DoS caps, and pinned GitHub Actions to commit SHAs with `SHA256SUMS.txt` and build provenance attestations.
+
+### Fixed
+- **Serialized Session Queue, Cross-Tab Sync & Merge Fidelity (`src/vault/session.ts`, `src/vault/tab-sync.ts`, `src/vault/cloud-sync.ts`, `src/board/editor.ts`)**: Serialized vault operations through a single FIFO queue with sticky sync conflicts, post-decrypt re-checks, and live board re-fetches; added cross-tab Web Locks, `BroadcastChannel` sync, and per-tab base fingerprints; implemented tombstone and item-level board merges, zero-allocation base64 validation, poll metadata short-circuiting, native dual-directory conflict/cache safety, and touch pinch move commits.
+
+### Added
+- **Playwright End-to-End Test Suite (`e2e/`, `playwright.config.ts`, `.github/workflows/ci.yml`)**: Added an 8-spec Playwright Chromium E2E suite (including `file://` portable bundle verification) wired into CI, alongside fixes for board **Load once** image clicks and item double-click targeting.
+
 ## [1.7.0] - 2026-11-23
 ### Security
 - **Payload Boundary Normalization & Strict CSP (`src/vault/payload.ts`, `index.html`, `install.js`, `src/board/render.ts`, `src/board/ink.ts`)**: Added `normalizeVaultPayload()` at the decryption boundary to coerce/clamp numeric fields, whitelist enums, validate URL/image protocols, and default arrays, paired with defense-in-depth rendering checks. Removed `'unsafe-inline'` from `script-src` (using `'self'` in `index.html` and a build-time/WebCrypto SHA-256 hash in `Crypsy-Portable.html`) and restricted `connect-src` to `'self' https://api.github.com data:`.
