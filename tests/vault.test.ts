@@ -7,14 +7,21 @@ import {
 } from '../src/ui/app-context-menus';
 import { parseStoredPreferences, validateNewPassphrase } from '../src/preferences';
 import { filterBoards, filterNotes } from '../src/search-filter';
-import type { ActiveFilter, Board, Note } from '../src/types';
+import type { ActiveFilter, Board, EncryptedEnvelope, Note } from '../src/types';
 import {
   deleteTagInVault,
   duplicateBoardInList,
   duplicateNoteInList,
   renameTagInVault,
 } from '../src/vault/mutations';
-import { mergeVaultPayloads, normalizeVaultPayload } from '../src/vault/payload';
+import { appendToEnvelopeHistory } from '../src/vault/cache';
+import { pickBestNativeVaultCandidate } from '../src/vault/cloud-sync';
+import {
+  PAYLOAD_LIMITS,
+  mergeVaultPayloads,
+  normalizeSafeHttpUrl,
+  normalizeVaultPayload,
+} from '../src/vault/payload';
 
 const sampleNotes: Note[] = [
   {
@@ -147,6 +154,15 @@ describe('vault search, mutations, preferences & menus', () => {
 
     assert.ok(validateNewPassphrase('', '') !== null);
     assert.ok(validateNewPassphrase('short', 'short') !== null);
+    assert.ok(validateNewPassphrase('12345678', '12345678') !== null);
+    assert.ok(validateNewPassphrase('aaaaaaaaaaaa', 'aaaaaaaaaaaa') !== null);
+    assert.ok(validateNewPassphrase('123456789012', '123456789012') !== null);
+    assert.ok(
+      validateNewPassphrase(
+        'crypsy-local-device-default-key-v1',
+        'crypsy-local-device-default-key-v1'
+      ) !== null
+    );
     assert.ok(validateNewPassphrase('long-enough-1', 'long-enough-2') !== null);
     assert.equal(validateNewPassphrase('correct-horse-battery', 'correct-horse-battery'), null);
   });
@@ -320,5 +336,211 @@ describe('vault search, mutations, preferences & menus', () => {
     assert.ok(merged.notes.some((n) => n.id === 'n2'));
     assert.equal(merged.boards?.length, 1);
     assert.deepEqual(merged.tags.sort(), ['home', 'local', 'work']);
+  });
+
+  it('canonicalizes crafted URLs and blocks Strict Media Privacy bypasses (M2)', () => {
+    assert.equal(normalizeSafeHttpUrl('https:\\\\evil.example\\track.png'), 'https://evil.example/track.png');
+    assert.equal(normalizeSafeHttpUrl('ht\ttps://evil.example/track.png'), null);
+    assert.equal(normalizeSafeHttpUrl('http:\nevil.example/track.png'), null);
+
+    const crafted = {
+      notes: [
+        {
+          id: 'n-craft',
+          title: 'Crafted',
+          description: 'Body',
+          tags: [],
+          images: [
+            // Crafted backslash URL claiming sourceType: 'embedded'
+            { id: 'img1', src: 'https:\\\\evil.example\\px.png', sourceType: 'embedded', createdAt: 1 },
+            // Control char in scheme MUST be dropped
+            { id: 'img2', src: 'ht\ttps://evil.example/px2.png', sourceType: 'embedded', createdAt: 2 },
+            // Genuine embedded data URL
+            {
+              id: 'img3',
+              src: 'data:image/webp;base64,UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAAAfQ//73v/+BiOh/AAA=',
+              sourceType: 'embedded',
+              createdAt: 3,
+            },
+          ],
+        },
+      ],
+      boards: [],
+    };
+    const norm = normalizeVaultPayload(crafted, 1000);
+    const imgs = norm.notes[0]!.images!;
+    assert.equal(imgs.length, 2);
+    assert.equal(imgs[0]!.src, 'https://evil.example/px.png');
+    assert.equal(imgs[0]!.sourceType, 'external');
+    assert.equal(imgs[1]!.sourceType, 'embedded');
+  });
+
+  it('respects deletion tombstones and merges concurrently edited boards at item level (M4)', () => {
+    const local = {
+      notes: [sampleNotes[0]!],
+      tags: ['home'],
+      deletedIds: { n2: 400 },
+      boards: [
+        {
+          ...sampleBoards[0]!,
+          updatedAt: 500,
+          items: [
+            sampleBoards[0]!.items[0]!,
+            {
+              id: 'bi-local',
+              type: 'text' as const,
+              x: 50,
+              y: 50,
+              width: 150,
+              rotation: 0,
+              zIndex: 2,
+              content: 'Local canvas box',
+              align: 'left' as const,
+              fontSize: 15,
+            },
+          ],
+        },
+      ],
+    };
+    const remote = {
+      notes: [sampleNotes[0]!, { ...sampleNotes[1]!, updatedAt: 300 }],
+      tags: ['home', 'work'],
+      boards: [
+        {
+          ...sampleBoards[0]!,
+          updatedAt: 450,
+          items: [
+            sampleBoards[0]!.items[0]!,
+            {
+              id: 'bi-remote',
+              type: 'text' as const,
+              x: 120,
+              y: 120,
+              width: 150,
+              rotation: 0,
+              zIndex: 3,
+              content: 'Remote canvas box',
+              align: 'left' as const,
+              fontSize: 15,
+            },
+          ],
+        },
+      ],
+    };
+
+    const merged = mergeVaultPayloads(local, remote);
+    // Deleted note n2 (updatedAt 300 <= deletedAt 400) MUST NOT be restored!
+    assert.equal(merged.notes.some((n) => n.id === 'n2'), false);
+    // Concurrently edited board keeps BOTH bi-local and bi-remote!
+    const mergedBoard = merged.boards![0]!;
+    assert.ok(mergedBoard.items.some((i) => i.id === 'bi-local'));
+    assert.ok(mergedBoard.items.some((i) => i.id === 'bi-remote'));
+  });
+
+  it('enforces payload DoS caps and deduplicates duplicate IDs at load (M8)', () => {
+    const hugeTitle = 'A'.repeat(PAYLOAD_LIMITS.maxTitleLength + 500);
+    const dupNotes = {
+      notes: [
+        { id: 'dup', title: hugeTitle, description: 'one', tags: [] },
+        { id: 'dup', title: 'second', description: 'two', tags: [] },
+      ],
+      boards: [
+        {
+          id: 'b-dup',
+          title: 'Board',
+          items: [
+            {
+              id: 'item-1',
+              type: 'stroke',
+              tool: 'pen',
+              x: 0,
+              y: 0,
+              width: 100,
+              height: 100,
+              sourceWidth: 100,
+              sourceHeight: 100,
+              points: Array.from({ length: PAYLOAD_LIMITS.maxStrokePoints + 250 }, (_, i) => [
+                i,
+                i,
+                0.5,
+              ]),
+            },
+            {
+              id: 'item-1',
+              type: 'text',
+              x: 0,
+              y: 0,
+              width: 100,
+              content: 'dup item id',
+            },
+          ],
+        },
+      ],
+    };
+    const norm = normalizeVaultPayload(dupNotes, 1000);
+    assert.equal(norm.notes[0]!.title.length, PAYLOAD_LIMITS.maxTitleLength);
+    assert.notEqual(norm.notes[0]!.id, norm.notes[1]!.id);
+    const b = norm.boards![0]!;
+    assert.equal(b.items[0]!.type, 'stroke');
+    if (b.items[0]!.type === 'stroke') {
+      assert.equal(b.items[0]!.points.length, PAYLOAD_LIMITS.maxStrokePoints);
+    }
+    assert.notEqual(b.items[0]!.id, b.items[1]!.id);
+  });
+
+  it('maintains a rolling deduplicated backup ring of up to 5 prior envelopes', () => {
+    const mkEnv = (rev: number) => ({
+      version: 2,
+      appVersion: '1.7.0',
+      cipher: 'AES-256-GCM' as const,
+      kdf: 'PBKDF2-SHA256' as const,
+      iterations: 600000,
+      salt: Buffer.alloc(16, rev).toString('base64'),
+      iv: Buffer.alloc(12, rev).toString('base64'),
+      ciphertext: Buffer.alloc(24, rev).toString('base64'),
+      updatedAt: new Date(1_700_000_000_000 + rev * 1000).toISOString(),
+      revision: rev,
+    });
+    let history: EncryptedEnvelope[] = [];
+    let current = mkEnv(1);
+    for (let r = 2; r <= 8; r++) {
+      const next = mkEnv(r);
+      history = appendToEnvelopeHistory(history, current, next);
+      current = next;
+    }
+    assert.equal(history.length, 5);
+    assert.deepEqual(
+      history.map((e) => e.revision),
+      [7, 6, 5, 4, 3]
+    );
+  });
+
+  it('picks the newer native vault candidate so fallback Data writes are not shadowed by stale Documents', () => {
+    const mk = (rev: number, iso: string) => ({
+      envelope: {
+        version: 2,
+        appVersion: '1.7.0',
+        cipher: 'AES-256-GCM' as const,
+        kdf: 'PBKDF2-SHA256' as const,
+        iterations: 600000,
+        salt: Buffer.alloc(16, rev).toString('base64'),
+        iv: Buffer.alloc(12, rev).toString('base64'),
+        ciphertext: Buffer.alloc(24, rev).toString('base64'),
+        updatedAt: iso,
+        revision: rev,
+      },
+      stamp: { lastModified: Date.parse(iso), size: 100, fingerprint: `fp-${rev}` },
+    });
+
+    const staleDocs = mk(3, '2026-11-23T10:00:00.000Z');
+    const newerData = mk(5, '2026-11-23T12:00:00.000Z');
+    const picked = pickBestNativeVaultCandidate([staleDocs, newerData]);
+    assert.equal(picked?.envelope.revision, 5);
+
+    // Same revision ties break by newer updatedAt
+    const tieOld = mk(4, '2026-11-23T10:00:00.000Z');
+    const tieNew = mk(4, '2026-11-23T15:00:00.000Z');
+    const pickedTie = pickBestNativeVaultCandidate([tieOld, tieNew]);
+    assert.equal(pickedTie?.envelope.updatedAt, '2026-11-23T15:00:00.000Z');
   });
 });

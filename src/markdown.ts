@@ -2,7 +2,8 @@
  * Lightweight note Markdown renderer, checkbox line toggler, and smart list continuation.
  */
 
-import { autoResizeTextarea, escapeHtml, highlightText } from './utils';
+import { autoResizeTextarea, escapeHtml, highlightText, isSafeDataImageUrl } from './utils';
+import { normalizeSafeHttpUrl } from './vault/payload';
 
 export type RenderInlineImageFn = (
   src: string,
@@ -153,17 +154,20 @@ export function renderMarkdownDescription(
     closeList();
     const imgMatch = rawLine
       .trim()
-      .match(/^!\[([^\]]*)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)$/i);
+      .match(/^!\[([^\]]*)\]\(([^\s)]+)\)$/i);
     if (imgMatch && imgMatch[2]) {
-      const altText = imgMatch[1] ?? '';
-      const imgSrc = imgMatch[2];
-      out.push(
-        renderImage(imgSrc, altText || 'Inline note image', {
-          className: 'md-inline-image',
-          lazy: true,
-        })
-      );
-      return;
+      const rawSrc = imgMatch[2];
+      const canonicalSrc = isSafeDataImageUrl(rawSrc) ? rawSrc : normalizeSafeHttpUrl(rawSrc);
+      if (canonicalSrc) {
+        const altText = imgMatch[1] ?? '';
+        out.push(
+          renderImage(canonicalSrc, altText || 'Inline note image', {
+            className: 'md-inline-image',
+            lazy: true,
+          })
+        );
+        return;
+      }
     }
     if (rawLine.trim() === '') {
       out.push('<div class="md-spacer"></div>');

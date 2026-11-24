@@ -29,6 +29,7 @@ import {
   getSavedProviderMeta,
   isConnected,
   isNativeApp,
+  markRemoteFingerprintNotified,
   markRemoteStampAccepted,
   onExternalUpdate,
   readVaultFromCloudFolder,
@@ -72,6 +73,7 @@ import {
   formatTimestamp,
   isEditableElement,
   isExternalHttpUrl,
+  isSafeDataImageUrl,
   normalizeTag,
 } from './utils';
 import { createBrowserVaultCache } from './vault/cache';
@@ -84,12 +86,14 @@ import {
   renameTagInVault,
 } from './vault/mutations';
 import { VaultSession, type PendingSyncConflict } from './vault/session';
+import { createBrowserTabCoordinator } from './vault/tab-sync';
 
 // Snapshot pristine portable HTML before any vault data is decrypted or rendered
 captureCleanPortableTemplate();
 
 const sessionAllowedExternalUrls = new Set<string>();
 let lastActivityAt = Date.now();
+let copiedSensitiveToClipboard = false;
 
 // Application State
 const state: AppState = {
@@ -97,9 +101,10 @@ const state: AppState = {
   notes: [],
   boards: [],
   tags: ['security', 'ideas', 'work', 'personal'],
+  deletedIds: {},
   searchQuery: '',
   activeFilter: { type: 'all', tag: null },
-  passphrase: null,
+  sessionKey: null,
   lastEncryptedEnvelope: null,
   selectedProviderId: 'onedrive',
   composer: {
@@ -253,16 +258,20 @@ function clearBoardPersistTimer(): boolean {
 function scheduleBoardPersist(immediate = false): void {
   clearBoardPersistTimer();
   if (immediate) {
-    void persistEncryptedVault().catch((err) => {
-      console.warn('Board persist failed:', err);
-    });
+    void persistEncryptedVault()
+      .then(() => vaultSession.flushPendingExternalUpdate())
+      .catch((err) => {
+        console.warn('Board persist failed:', err);
+      });
     return;
   }
   boardPersistTimer = window.setTimeout(() => {
     boardPersistTimer = null;
-    void persistEncryptedVault().catch((err) => {
-      console.warn('Debounced board persist failed:', err);
-    });
+    void persistEncryptedVault()
+      .then(() => vaultSession.flushPendingExternalUpdate())
+      .catch((err) => {
+        console.warn('Debounced board persist failed:', err);
+      });
   }, 500);
 }
 
@@ -339,6 +348,7 @@ function clearSensitiveStateAndDom(): void {
   state.notes = [];
   state.boards = [];
   state.tags = [];
+  state.deletedIds = {};
   state.activeBoardId = null;
   state.editingNoteId = null;
   state.editingDraft = null;
@@ -356,7 +366,15 @@ function clearSensitiveStateAndDom(): void {
   els.editModalTagsRow.innerHTML = '';
   els.editModalTimestamp.textContent = '';
   els.composerTagSearch.value = '';
+  els.composerTagOptions.innerHTML = '';
+  els.composerTagPopover.classList.add('hidden');
+  els.composerImagePopover.classList.add('hidden');
+  els.composerImageStatus.textContent = '';
   els.editModalTagSearch.value = '';
+  els.editModalTagOptions.innerHTML = '';
+  els.editModalTagPopover.classList.add('hidden');
+  els.editModalImagePopover.classList.add('hidden');
+  els.editModalImageStatus.textContent = '';
   els.composerImageUrlInput.value = '';
   els.editModalImageUrlInput.value = '';
   els.newBoardInput.value = '';
@@ -393,20 +411,22 @@ function renderConflictBanner(conflict: PendingSyncConflict | null): void {
 // Vault Session Engine (Load / Save / Sync / Conflict / Lock)
 const vaultSession: VaultSession = new VaultSession({
   cache: createBrowserVaultCache(),
+  tabs: createBrowserTabCoordinator(),
   cloud: {
     isConnected,
     getConnectionStatus,
     readVault: readVaultFromCloudFolder,
     writeVault: writeVaultToCloudFolder,
     markRemoteStampAccepted,
+    markRemoteFingerprintNotified,
     reconnectSavedHandle,
   },
   host: {
-    get passphrase() {
-      return state.passphrase;
+    get sessionKey() {
+      return state.sessionKey;
     },
-    set passphrase(v: string | null) {
-      state.passphrase = v;
+    set sessionKey(v) {
+      state.sessionKey = v;
     },
     get lastEncryptedEnvelope() {
       return state.lastEncryptedEnvelope;
@@ -418,11 +438,13 @@ const vaultSession: VaultSession = new VaultSession({
       notes: state.notes,
       tags: state.tags,
       boards: state.boards,
+      ...(Object.keys(state.deletedIds).length > 0 ? { deletedIds: state.deletedIds } : {}),
     }),
     applyPayload: (payload: VaultPayload) => {
       state.notes = payload.notes;
       state.tags = payload.tags;
       state.boards = payload.boards ?? [];
+      state.deletedIds = payload.deletedIds ? { ...payload.deletedIds } : {};
       if (state.activeBoardId && !state.boards.some((b) => b.id === state.activeBoardId)) {
         state.activeBoardId = null;
       }
@@ -431,6 +453,7 @@ const vaultSession: VaultSession = new VaultSession({
     isBusyEditing: () =>
       boardEditor.isGestureActive() ||
       boardEditor.isEditingText() ||
+      boardPersistTimer !== null ||
       state.editingNoteId !== null ||
       state.composer.expanded,
     commitOpenDrafts: commitOpenDraftsToState,
@@ -469,7 +492,23 @@ async function commitMutation(mutate: () => boolean | void): Promise<void> {
   }
 }
 
-async function lockVault(flushPending = false, errorMsg?: string): Promise<void> {
+async function lockVault(
+  flushPending = false,
+  errorMsg?: string,
+  options: { userInitiated?: boolean } = {}
+): Promise<void> {
+  const boardCopied = boardEditor.consumeCopiedToOsClipboard();
+  if (
+    options.userInitiated &&
+    (copiedSensitiveToClipboard || boardCopied) &&
+    typeof navigator !== 'undefined' &&
+    navigator.clipboard?.writeText
+  ) {
+    copiedSensitiveToClipboard = false;
+    void navigator.clipboard.writeText('').catch(() => {});
+  } else {
+    copiedSensitiveToClipboard = false;
+  }
   await vaultSession.lock({ flushPending, ...(errorMsg ? { errorMsg } : {}) });
 }
 
@@ -738,8 +777,12 @@ const cloudWizard = new CloudWizardController({
   setSelectedProviderId: (id) => {
     state.selectedProviderId = id;
   },
-  onLoadCloudEnvelope: (envelope) =>
-    vaultSession.importEnvelope(envelope, { source: 'cloud' }),
+  onLoadCloudEnvelope: (envelope, stamp) =>
+    vaultSession.importEnvelope(envelope, {
+      requireConfirmIfNonEmpty: true,
+      source: 'cloud',
+      stamp,
+    }),
   persistEncryptedVault,
   updateCloudStatusUI,
   shareOrDownloadVaultJson,
@@ -782,18 +825,11 @@ const vaultModal = new VaultModalController({
     }
   },
   validateNewPassphrase,
-  onRekeyPassphrase: async (nextPassphrase) => {
-    const prev = state.passphrase;
-    state.passphrase = nextPassphrase;
-    try {
-      await persistEncryptedVault();
-    } catch (err) {
-      state.passphrase = prev;
-      throw err;
-    }
+  onRekeyPassphrase: async (currentPassphrase, nextPassphrase) => {
+    await vaultSession.rekeyPassphrase(currentPassphrase, nextPassphrase);
   },
   onLockNow: async () => {
-    await lockVault(true);
+    await lockVault(true, undefined, { userInitiated: true });
   },
   onExportVault: shareOrDownloadVaultJson,
   onImportVaultFile: importEncryptedVaultFile,
@@ -801,6 +837,7 @@ const vaultModal = new VaultModalController({
 
 const lockScreen: LockScreenController = new LockScreenController({
   isPendingCloudPermission: () => getConnectionStatus() === 'needs_permission',
+  isUnlocked: () => vaultSession.isUnlocked(),
   getSelectedProviderId: () => state.selectedProviderId,
   validateNewPassphrase,
   onCreateOrUpgradeVault: async (mode, passphrase) => {
@@ -817,8 +854,8 @@ const lockScreen: LockScreenController = new LockScreenController({
   onCancelPendingImport: () => vaultSession.cancelPendingImport(),
   onResumeCloudSync: () => vaultSession.resumeCloudSync(),
   onCloudStatusConnected: () => updateCloudStatusUI('connected'),
-  onLoadCloudEnvelope: async (envelope) => {
-    await vaultSession.importEnvelope(envelope, { source: 'cloud' });
+  onLoadCloudEnvelope: async (envelope, stamp) => {
+    await vaultSession.importEnvelope(envelope, { source: 'cloud', stamp });
   },
   onImportVaultFile: (file) => importEncryptedVaultFile(file),
 });
@@ -872,7 +909,8 @@ const boardEditor: BoardEditorController = new BoardEditorController({
 });
 
 function isExternalImageAllowed(src: string): boolean {
-  if (!isExternalHttpUrl(src)) return true;
+  if (isSafeDataImageUrl(src)) return true;
+  if (!isExternalHttpUrl(src)) return false;
   if (!state.blockExternalMedia) return true;
   return sessionAllowedExternalUrls.has(src);
 }
@@ -918,6 +956,7 @@ async function deleteBoard(boardId: string): Promise<void> {
   }
   await commitMutation(() => {
     state.boards = state.boards.filter((b) => b.id !== boardId);
+    state.deletedIds[boardId] = Date.now();
     if (state.activeBoardId === boardId) {
       state.activeBoardId = null;
       if (boardEditor.isOpen()) {
@@ -945,6 +984,7 @@ async function deleteNote(noteId: string): Promise<boolean> {
   }
   await commitMutation(() => {
     state.notes = state.notes.filter((n) => n.id !== noteId);
+    state.deletedIds[noteId] = Date.now();
   });
   return true;
 }
@@ -1052,6 +1092,7 @@ function openNoteContextMenu(clientX: number, clientY: number, note: Note): void
       onCopyText: () => {
         const text = [note.title, note.description].filter(Boolean).join('\n\n');
         if (text && navigator.clipboard?.writeText) {
+          copiedSensitiveToClipboard = true;
           void navigator.clipboard.writeText(text).catch(() => {});
         }
       },
@@ -1553,7 +1594,7 @@ async function saveAndCloseEditModal(): Promise<void> {
 }
 
 function openLightbox(src: string): void {
-  if (!src) return;
+  if (!src || !isExternalImageAllowed(src)) return;
   els.lightboxImage.src = src;
   els.imageLightboxBackdrop.classList.remove('hidden');
 }
@@ -2065,8 +2106,8 @@ function bindEvents(): void {
 
   els.encryptionBadge.addEventListener('click', () => vaultModal.open());
   els.topbarLockBtn.addEventListener('click', () => {
-    if (state.passphrase) {
-      void lockVault(true);
+    if (state.sessionKey || !lockScreen.isOpen()) {
+      void lockVault(true, undefined, { userInitiated: true });
     }
   });
 
@@ -2089,20 +2130,27 @@ function bindEvents(): void {
   for (const evt of ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const) {
     document.addEventListener(evt, recordUserActivity, { passive: true });
   }
-  window.setInterval(() => {
+  const checkIdleAutoLock = (): void => {
     if (
-      state.passphrase &&
+      (state.sessionKey || !lockScreen.isOpen()) &&
       state.autoLockMinutes > 0 &&
       Date.now() - lastActivityAt >= state.autoLockMinutes * 60_000
     ) {
       void lockVault(true, `Vault auto-locked after ${state.autoLockMinutes} minutes of inactivity.`);
     }
-  }, 15_000);
+  };
+  window.setInterval(checkIdleAutoLock, 15_000);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && state.lockOnHide && state.passphrase) {
-      void lockVault(true, 'Vault locked when tab was hidden.');
+    if (document.visibilityState === 'hidden') {
+      if (state.lockOnHide && (state.sessionKey || !lockScreen.isOpen())) {
+        void lockVault(true, 'Vault locked when tab was hidden.');
+      }
+    } else if (document.visibilityState === 'visible') {
+      checkIdleAutoLock();
     }
   });
+  window.addEventListener('focus', checkIdleAutoLock);
+  window.addEventListener('pageshow', checkIdleAutoLock);
 
   document.addEventListener('keydown', (e) => {
     if (lockScreen.isOpen()) {
@@ -2144,8 +2192,8 @@ function bindEvents(): void {
 
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
       e.preventDefault();
-      if (state.passphrase) {
-        void lockVault(true);
+      if (state.sessionKey || !lockScreen.isOpen()) {
+        void lockVault(true, undefined, { userInitiated: true });
       }
       return;
     }

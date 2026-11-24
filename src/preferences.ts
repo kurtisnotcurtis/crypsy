@@ -72,12 +72,37 @@ export function savePreferencesFromState(state: AppState): void {
   localStorage.setItem(STORAGE_KEY_PREFS, JSON.stringify(out));
 }
 
+const WEAK_PASSPHRASES = new Set([
+  'password1234',
+  'password12345',
+  'password123456',
+  'passphrase12',
+  '123456789012',
+  '1234567890123',
+  'qwertyuiopas',
+  'qwerty123456',
+  'letmein12345',
+  'crypsy-local-device-default-key-v1',
+]);
+
 export function validateNewPassphrase(pass: string, confirm: string): string | null {
   if (!pass || pass.trim().length === 0) {
     return 'Enter a passphrase to encrypt your vault.';
   }
   if (pass.length < MIN_PASSPHRASE_LENGTH) {
     return `Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters long.`;
+  }
+  const normalized = pass.trim().toLowerCase();
+  if (/^(.)\1+$/.test(pass) || /^(.)\1+$/.test(normalized)) {
+    return 'Choose a stronger passphrase (avoid repeating a single character).';
+  }
+  if (
+    WEAK_PASSPHRASES.has(normalized) ||
+    '01234567890123456789'.includes(normalized) ||
+    '98765432109876543210'.includes(normalized) ||
+    'abcdefghijklmnopqrstuvwxyz'.includes(normalized)
+  ) {
+    return 'Choose a stronger passphrase (avoid common or sequential passphrases).';
   }
   if (pass !== confirm) {
     return 'Passphrases do not match.';

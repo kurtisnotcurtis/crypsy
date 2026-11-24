@@ -109,6 +109,7 @@ export interface Board {
   gridStyle?: BoardGridStyle | undefined;
   viewport: BoardViewport;
   items: BoardItem[];
+  deletedItemIds?: Record<string, number> | undefined;
   createdAt: number;
   updatedAt: number;
 }
@@ -117,6 +118,14 @@ export interface VaultPayload {
   notes: Note[];
   tags: string[];
   boards?: Board[];
+  deletedIds?: Record<string, number> | undefined;
+}
+
+export interface VaultSessionKey {
+  readonly salt: string;
+  readonly iterations: number;
+  /** Opaque non-extractable key handle (WebCrypto CryptoKeys or test adapter handle). */
+  readonly _handle: unknown;
 }
 
 export interface EncryptedEnvelope {
@@ -242,9 +251,10 @@ export interface AppState extends UiPreferences {
   notes: Note[];
   boards: Board[];
   tags: string[];
+  deletedIds: Record<string, number>;
   searchQuery: string;
   activeFilter: ActiveFilter;
-  passphrase: string | null;
+  sessionKey: VaultSessionKey | null;
   lastEncryptedEnvelope: EncryptedEnvelope | null;
   selectedProviderId: CloudProviderId;
   composer: ComposerState;

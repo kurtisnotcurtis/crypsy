@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; connect-src 'self' https://api.github.com data:; object-src 'none'; base-uri 'none';"
+    content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; connect-src 'self' https: data:; object-src 'none'; base-uri 'none'; form-action 'self';"
   />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#202124" />
@@ -589,10 +589,10 @@
             </label>
 
             <label class="checkbox-row">
-              <input type="checkbox" id="provisionPortableHtmlCb" checked />
+              <input type="checkbox" id="provisionPortableHtmlCb" />
               <div>
-                <strong>Copy portable <code>Crypsy-Portable.html</code> into cloud folder</strong>
-                <p>Allows you to open Crypsy directly from your cloud folder on any other synced computer without installing anything.</p>
+                <strong>Also copy portable <code>Crypsy-Portable.html</code> into cloud folder (optional)</strong>
+                <p>Convenient on trusted private cloud drives, but anyone with write access to the folder could modify that HTML file. For stronger security, launch Crypsy from a locally verified copy instead.</p>
               </div>
             </label>
           </div>
@@ -695,13 +695,20 @@
       </div>
 
       <div class="vault-controls">
-        <label for="vaultPassphraseInput" class="vault-label">Change Vault Passphrase (PBKDF2-SHA256, 600,000 iterations)</label>
+        <label for="vaultCurrentPassphraseInput" class="vault-label">Change Vault Passphrase (PBKDF2-SHA256, 600,000 iterations)</label>
         <div class="vault-pass-row">
+          <input
+            type="password"
+            id="vaultCurrentPassphraseInput"
+            class="vault-input"
+            placeholder="Current passphrase..."
+            autocomplete="off"
+          />
           <input
             type="password"
             id="vaultPassphraseInput"
             class="vault-input"
-            placeholder="New passphrase (min 8 chars)..."
+            placeholder="New passphrase (min 12 chars)..."
             autocomplete="new-password"
           />
           <input
@@ -855,7 +862,7 @@
           id="unlockPassphraseInput"
           class="vault-input"
           placeholder="Vault passphrase..."
-          autocomplete="current-password"
+          autocomplete="off"
           required
         />
         <div id="unlockConfirmWrapper" class="hidden">
@@ -864,7 +871,7 @@
             id="unlockConfirmPassphraseInput"
             class="vault-input"
             style="width:100%;"
-            placeholder="Confirm vault passphrase (min 8 chars)..."
+            placeholder="Confirm vault passphrase (min 12 chars)..."
             autocomplete="new-password"
           />
         </div>

@@ -3,6 +3,8 @@ node_modules/
 /www/
 /_pages/
 /Crypsy-Portable.html
+/playwright-report/
+/test-results/
 *.crypsy.json
 .DS_Store
 Thumbs.db
